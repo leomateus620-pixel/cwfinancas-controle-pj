@@ -15,7 +15,7 @@ export function DashboardHeader() {
   return (
     <header className="h-16 border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-40">
       <div className="h-full px-4 md:px-6 flex items-center justify-between gap-4">
-        {/* Left side - Menu trigger and search */}
+        {/* Lado esquerdo - Menu e busca */}
         <div className="flex items-center gap-4 flex-1">
           <SidebarTrigger className="text-muted-foreground hover:text-foreground transition-premium">
             <Menu className="w-5 h-5" />
@@ -25,38 +25,38 @@ export function DashboardHeader() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input 
               type="search"
-              placeholder="Search transactions, reports..."
+              placeholder="Buscar transações, relatórios..."
               className="pl-10 bg-secondary/50 border-transparent focus:border-border focus:bg-background transition-premium"
             />
           </div>
         </div>
 
-        {/* Right side - Actions */}
+        {/* Lado direito - Ações */}
         <div className="flex items-center gap-2">
-          {/* Export button */}
+          {/* Botão de exportar */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="hidden sm:flex gap-2">
                 <Download className="w-4 h-4" />
-                <span>Export</span>
+                <span>Exportar</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel>Export Data</DropdownMenuLabel>
+              <DropdownMenuLabel>Exportar Dados</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Export as PDF</DropdownMenuItem>
-              <DropdownMenuItem>Export as CSV</DropdownMenuItem>
-              <DropdownMenuItem>Export as Excel</DropdownMenuItem>
+              <DropdownMenuItem>Exportar como PDF</DropdownMenuItem>
+              <DropdownMenuItem>Exportar como CSV</DropdownMenuItem>
+              <DropdownMenuItem>Exportar como Excel</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Notifications */}
+          {/* Notificações */}
           <Button variant="ghost" size="icon" className="relative">
             <Bell className="w-4 h-4" />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
           </Button>
 
-          {/* User menu */}
+          {/* Menu do usuário */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="rounded-full">
@@ -68,16 +68,16 @@ export function DashboardHeader() {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
                 <div className="flex flex-col">
-                  <span>John Doe</span>
-                  <span className="text-xs font-normal text-muted-foreground">john@company.com</span>
+                  <span>João Silva</span>
+                  <span className="text-xs font-normal text-muted-foreground">joao@empresa.com</span>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>Profile</DropdownMenuItem>
-              <DropdownMenuItem>Team Settings</DropdownMenuItem>
-              <DropdownMenuItem>Billing</DropdownMenuItem>
+              <DropdownMenuItem>Perfil</DropdownMenuItem>
+              <DropdownMenuItem>Configurações da Equipe</DropdownMenuItem>
+              <DropdownMenuItem>Faturamento</DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-destructive">Log out</DropdownMenuItem>
+              <DropdownMenuItem className="text-destructive">Sair</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

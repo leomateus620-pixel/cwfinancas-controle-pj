@@ -2,35 +2,35 @@ import { ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
-// Sample data - will be replaced with real data
+// Dados de exemplo - serão substituídos por dados reais
 const transactions = [
   {
     id: 1,
-    description: "Enterprise Software License",
-    category: "Product Sales",
+    description: "Licença de Software Empresarial",
+    category: "Vendas de Produtos",
     amount: 24500,
     type: "income",
     date: "2024-01-15",
   },
   {
     id: 2,
-    description: "AWS Cloud Services",
-    category: "Technology",
+    description: "Serviços de Nuvem AWS",
+    category: "Tecnologia",
     amount: -8420,
     type: "expense",
     date: "2024-01-14",
   },
   {
     id: 3,
-    description: "Consulting Services",
-    category: "Services",
+    description: "Consultoria de TI",
+    category: "Serviços",
     amount: 15000,
     type: "income",
     date: "2024-01-13",
   },
   {
     id: 4,
-    description: "Marketing Campaign",
+    description: "Campanha de Marketing",
     category: "Marketing",
     amount: -12800,
     type: "expense",
@@ -38,8 +38,8 @@ const transactions = [
   },
   {
     id: 5,
-    description: "SaaS Subscription Revenue",
-    category: "Subscriptions",
+    description: "Receita de Assinaturas SaaS",
+    category: "Assinaturas",
     amount: 8900,
     type: "income",
     date: "2024-01-11",
@@ -47,15 +47,15 @@ const transactions = [
 ];
 
 const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "USD",
+    currency: "BRL",
     maximumFractionDigits: 0,
   }).format(Math.abs(value));
 };
 
 const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+  return new Date(dateStr).toLocaleDateString("pt-BR", {
     month: "short",
     day: "numeric",
   });
@@ -65,8 +65,8 @@ export function RecentTransactions() {
   return (
     <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Recent Transactions</CardTitle>
-        <CardDescription>Latest financial activity</CardDescription>
+        <CardTitle className="text-lg font-semibold">Transações Recentes</CardTitle>
+        <CardDescription>Últimas movimentações financeiras</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">

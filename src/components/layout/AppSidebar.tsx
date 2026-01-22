@@ -25,15 +25,15 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNavItems = [
-  { title: "Overview", url: "/", icon: LayoutDashboard },
-  { title: "Income", url: "/income", icon: TrendingUp },
-  { title: "Expenses", url: "/expenses", icon: TrendingDown },
-  { title: "Forecasts", url: "/forecasts", icon: LineChart },
+  { title: "Visão Geral", url: "/", icon: LayoutDashboard },
+  { title: "Receitas", url: "/income", icon: TrendingUp },
+  { title: "Despesas", url: "/expenses", icon: TrendingDown },
+  { title: "Previsões", url: "/forecasts", icon: LineChart },
 ];
 
 const toolsNavItems = [
-  { title: "Upload Data", url: "/upload", icon: Upload },
-  { title: "AI Insights", url: "/insights", icon: Sparkles },
+  { title: "Upload de Dados", url: "/upload", icon: Upload },
+  { title: "Insights IA", url: "/insights", icon: Sparkles },
 ];
 
 export function AppSidebar() {
@@ -60,7 +60,7 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="flex flex-col">
               <span className="font-semibold text-foreground tracking-tight">FinSight</span>
-              <span className="text-xs text-muted-foreground">Financial Analytics</span>
+              <span className="text-xs text-muted-foreground">Análise Financeira</span>
             </div>
           )}
         </div>
@@ -69,7 +69,7 @@ export function AppSidebar() {
       <SidebarContent className="px-2 py-4">
         <SidebarGroup>
           <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-2">
-            Dashboard
+            Painel
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -98,7 +98,7 @@ export function AppSidebar() {
 
         <SidebarGroup className="mt-6">
           <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-2">
-            Tools
+            Ferramentas
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -131,7 +131,7 @@ export function AppSidebar() {
             <SidebarMenuButton 
               asChild
               isActive={isActive("/settings")}
-              tooltip="Settings"
+              tooltip="Configurações"
             >
               <NavLink 
                 to="/settings" 
@@ -139,7 +139,7 @@ export function AppSidebar() {
                 activeClassName="bg-accent text-accent-foreground font-medium"
               >
                 <Settings className="w-4 h-4 shrink-0" />
-                {!collapsed && <span>Settings</span>}
+                {!collapsed && <span>Configurações</span>}
               </NavLink>
             </SidebarMenuButton>
           </SidebarMenuItem>

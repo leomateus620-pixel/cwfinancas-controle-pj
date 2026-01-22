@@ -8,12 +8,12 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-// Sample data - will be replaced with real data
+// Dados de exemplo - serão substituídos por dados reais
 const profitData = [
-  { name: "Product Sales", value: 45, color: "hsl(var(--chart-1))" },
-  { name: "Services", value: 28, color: "hsl(var(--chart-2))" },
-  { name: "Subscriptions", value: 18, color: "hsl(var(--chart-3))" },
-  { name: "Other", value: 9, color: "hsl(var(--chart-4))" },
+  { name: "Vendas de Produtos", value: 45, color: "hsl(var(--chart-1))" },
+  { name: "Serviços", value: 28, color: "hsl(var(--chart-2))" },
+  { name: "Assinaturas", value: 18, color: "hsl(var(--chart-3))" },
+  { name: "Outros", value: 9, color: "hsl(var(--chart-4))" },
 ];
 
 interface CustomTooltipProps {
@@ -68,8 +68,8 @@ export function ProfitDistributionChart() {
   return (
     <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Profit Distribution</CardTitle>
-        <CardDescription>Revenue streams breakdown</CardDescription>
+        <CardTitle className="text-lg font-semibold">Distribuição de Lucros</CardTitle>
+        <CardDescription>Divisão por fonte de receita</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] md:h-[350px]">
