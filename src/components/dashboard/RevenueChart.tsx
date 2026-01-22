@@ -1,6 +1,4 @@
 import { 
-  LineChart, 
-  Line, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -11,26 +9,26 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-// Sample data - will be replaced with real data
+// Dados de exemplo - serão substituídos por dados reais
 const revenueData = [
-  { month: "Jan", revenue: 186000, expenses: 142000 },
-  { month: "Feb", revenue: 205000, expenses: 148000 },
-  { month: "Mar", revenue: 237000, expenses: 156000 },
-  { month: "Apr", revenue: 273000, expenses: 165000 },
-  { month: "May", revenue: 209000, expenses: 158000 },
-  { month: "Jun", revenue: 314000, expenses: 172000 },
-  { month: "Jul", revenue: 298000, expenses: 168000 },
-  { month: "Aug", revenue: 342000, expenses: 185000 },
-  { month: "Sep", revenue: 378000, expenses: 192000 },
-  { month: "Oct", revenue: 356000, expenses: 188000 },
-  { month: "Nov", revenue: 401000, expenses: 198000 },
-  { month: "Dec", revenue: 445000, expenses: 215000 },
+  { month: "Jan", receita: 186000, despesas: 142000 },
+  { month: "Fev", receita: 205000, despesas: 148000 },
+  { month: "Mar", receita: 237000, despesas: 156000 },
+  { month: "Abr", receita: 273000, despesas: 165000 },
+  { month: "Mai", receita: 209000, despesas: 158000 },
+  { month: "Jun", receita: 314000, despesas: 172000 },
+  { month: "Jul", receita: 298000, despesas: 168000 },
+  { month: "Ago", receita: 342000, despesas: 185000 },
+  { month: "Set", receita: 378000, despesas: 192000 },
+  { month: "Out", receita: 356000, despesas: 188000 },
+  { month: "Nov", receita: 401000, despesas: 198000 },
+  { month: "Dez", receita: 445000, despesas: 215000 },
 ];
 
 const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "USD",
+    currency: "BRL",
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
@@ -46,6 +44,11 @@ interface CustomTooltipProps {
   label?: string;
 }
 
+const dataKeyLabels: Record<string, string> = {
+  receita: "Receita",
+  despesas: "Despesas",
+};
+
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     return (
@@ -57,7 +60,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
               className="w-2 h-2 rounded-full" 
               style={{ backgroundColor: entry.color }}
             />
-            <span className="text-muted-foreground capitalize">{entry.dataKey}:</span>
+            <span className="text-muted-foreground">{dataKeyLabels[entry.dataKey] || entry.dataKey}:</span>
             <span className="font-medium text-foreground">
               {formatCurrency(entry.value)}
             </span>
@@ -73,8 +76,8 @@ export function RevenueChart() {
   return (
     <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Revenue Trends</CardTitle>
-        <CardDescription>Monthly revenue vs expenses over the past year</CardDescription>
+        <CardTitle className="text-lg font-semibold">Tendência de Receita</CardTitle>
+        <CardDescription>Receita mensal vs despesas ao longo do ano</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] md:h-[350px]">
@@ -115,14 +118,14 @@ export function RevenueChart() {
               <Tooltip content={<CustomTooltip />} />
               <Area
                 type="monotone"
-                dataKey="revenue"
+                dataKey="receita"
                 stroke="hsl(var(--chart-1))"
                 strokeWidth={2}
                 fill="url(#revenueGradient)"
               />
               <Area
                 type="monotone"
-                dataKey="expenses"
+                dataKey="despesas"
                 stroke="hsl(var(--chart-5))"
                 strokeWidth={2}
                 fill="url(#expensesGradient)"

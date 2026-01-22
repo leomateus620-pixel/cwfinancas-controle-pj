@@ -10,20 +10,20 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-// Sample data - will be replaced with real data
+// Dados de exemplo - serão substituídos por dados reais
 const expenseData = [
-  { category: "Salaries", amount: 485000, color: "hsl(var(--chart-1))" },
+  { category: "Salários", amount: 485000, color: "hsl(var(--chart-1))" },
   { category: "Marketing", amount: 128000, color: "hsl(var(--chart-2))" },
-  { category: "Operations", amount: 95000, color: "hsl(var(--chart-3))" },
-  { category: "Technology", amount: 82000, color: "hsl(var(--chart-4))" },
-  { category: "Office", amount: 45000, color: "hsl(var(--chart-5))" },
-  { category: "Other", amount: 32000, color: "hsl(var(--muted-foreground))" },
+  { category: "Operações", amount: 95000, color: "hsl(var(--chart-3))" },
+  { category: "Tecnologia", amount: 82000, color: "hsl(var(--chart-4))" },
+  { category: "Escritório", amount: 45000, color: "hsl(var(--chart-5))" },
+  { category: "Outros", amount: 32000, color: "hsl(var(--muted-foreground))" },
 ];
 
 const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "USD",
+    currency: "BRL",
     notation: "compact",
     maximumFractionDigits: 1,
   }).format(value);
@@ -64,8 +64,8 @@ export function ExpenseChart() {
   return (
     <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Expense Breakdown</CardTitle>
-        <CardDescription>Spending by category this year</CardDescription>
+        <CardTitle className="text-lg font-semibold">Despesas por Categoria</CardTitle>
+        <CardDescription>Gastos por categoria neste ano</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] md:h-[350px]">

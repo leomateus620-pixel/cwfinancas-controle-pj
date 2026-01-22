@@ -16,7 +16,7 @@ export function KPICard({
   title,
   value,
   change,
-  changeLabel = "vs last period",
+  changeLabel = "vs período anterior",
   icon,
   trend = "neutral",
   className,
@@ -52,11 +52,11 @@ export function KPICard({
         className
       )}
     >
-      {/* Subtle gradient overlay on hover */}
+      {/* Gradiente sutil no hover */}
       <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-premium pointer-events-none" />
       
       <div className="relative">
-        {/* Header */}
+        {/* Cabeçalho */}
         <div className="flex items-start justify-between mb-4">
           <div className="p-2.5 rounded-xl bg-secondary/80">
             {icon}
@@ -69,14 +69,14 @@ export function KPICard({
           )}
         </div>
 
-        {/* Value */}
+        {/* Valor */}
         <div className="mb-1">
           <span className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
             {value}
           </span>
         </div>
 
-        {/* Title and change label */}
+        {/* Título e label de mudança */}
         <div className="flex items-center justify-between">
           <span className="text-sm text-muted-foreground font-medium">{title}</span>
           {change !== undefined && (

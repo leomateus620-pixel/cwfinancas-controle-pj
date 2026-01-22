@@ -5,8 +5,8 @@ const insights = [
   {
     id: 1,
     type: "trend",
-    title: "Revenue Growth Detected",
-    description: "Your Q4 revenue shows a 23% increase compared to Q3. Marketing investments appear to be paying off.",
+    title: "Crescimento de Receita Detectado",
+    description: "Sua receita do Q4 mostra um aumento de 23% comparado ao Q3. Os investimentos em marketing estão dando resultado.",
     icon: TrendingUp,
     color: "text-success",
     bgColor: "bg-success/10",
@@ -14,8 +14,8 @@ const insights = [
   {
     id: 2,
     type: "anomaly",
-    title: "Unusual Expense Spike",
-    description: "Technology spending increased by 45% in December. This may require review.",
+    title: "Pico Incomum de Despesas",
+    description: "Os gastos com tecnologia aumentaram 45% em dezembro. Isso pode necessitar de revisão.",
     icon: AlertTriangle,
     color: "text-warning",
     bgColor: "bg-warning/10",
@@ -23,8 +23,8 @@ const insights = [
   {
     id: 3,
     type: "forecast",
-    title: "Q1 Projection",
-    description: "Based on current trends, projected Q1 2025 revenue is $1.4M with 85% confidence.",
+    title: "Projeção Q1 2025",
+    description: "Com base nas tendências atuais, a receita projetada para o Q1 2025 é de R$ 4,2M com 85% de confiança.",
     icon: LineChart,
     color: "text-primary",
     bgColor: "bg-primary/10",
@@ -37,10 +37,10 @@ export function InsightsPage() {
       <div>
         <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight flex items-center gap-3">
           <Sparkles className="w-7 h-7 text-primary" />
-          AI Insights
+          Insights com IA
         </h1>
         <p className="text-muted-foreground mt-1">
-          Intelligent analysis of your financial data.
+          Análise inteligente dos seus dados financeiros.
         </p>
       </div>
       
@@ -71,10 +71,10 @@ export function InsightsPage() {
         <CardContent className="py-8 text-center">
           <Sparkles className="w-12 h-12 text-primary/60 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-foreground mb-2">
-            More Insights Available
+            Mais Insights Disponíveis
           </h3>
           <p className="text-muted-foreground text-sm max-w-md mx-auto">
-            Upload your financial data to unlock personalized AI-powered insights, trend analysis, and predictive forecasting.
+            Faça upload dos seus dados financeiros para desbloquear insights personalizados com IA, análise de tendências e previsões.
           </p>
         </CardContent>
       </Card>
