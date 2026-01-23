@@ -7,7 +7,10 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import OverviewPage from "@/pages/OverviewPage";
 import IncomePage from "@/pages/IncomePage";
 import ExpensesPage from "@/pages/ExpensesPage";
+import CashFlowPage from "@/pages/CashFlowPage";
+import BalanceSheetPage from "@/pages/BalanceSheetPage";
 import ForecastsPage from "@/pages/ForecastsPage";
+import InvoicesPage from "@/pages/InvoicesPage";
 import UploadPage from "@/pages/UploadPage";
 import InsightsPage from "@/pages/InsightsPage";
 import SettingsPage from "@/pages/SettingsPage";
@@ -26,7 +29,10 @@ const App = () => (
             <Route path="/" element={<OverviewPage />} />
             <Route path="/income" element={<IncomePage />} />
             <Route path="/expenses" element={<ExpensesPage />} />
+            <Route path="/cash-flow" element={<CashFlowPage />} />
+            <Route path="/balance" element={<BalanceSheetPage />} />
             <Route path="/forecasts" element={<ForecastsPage />} />
+            <Route path="/invoices" element={<InvoicesPage />} />
             <Route path="/upload" element={<UploadPage />} />
             <Route path="/insights" element={<InsightsPage />} />
             <Route path="/settings" element={<SettingsPage />} />

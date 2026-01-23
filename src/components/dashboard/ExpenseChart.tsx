@@ -41,7 +41,7 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0];
     return (
-      <div className="bg-popover border border-border rounded-lg p-3 shadow-premium-lg">
+      <div className="bg-card/95 backdrop-blur-md border border-border rounded-xl p-3 shadow-corporate-lg">
         <div className="flex items-center gap-2">
           <div 
             className="w-3 h-3 rounded-sm" 
@@ -51,7 +51,7 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
             {data.payload.category}
           </span>
         </div>
-        <p className="text-lg font-semibold text-foreground mt-1">
+        <p className="text-lg font-bold text-foreground mt-1">
           {formatCurrency(data.value)}
         </p>
       </div>
@@ -62,10 +62,10 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
 
 export function ExpenseChart() {
   return (
-    <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
+    <Card className="bg-card/95 backdrop-blur-md border-border shadow-corporate-md hover:shadow-corporate-lg transition-corporate animate-corporate-enter rounded-2xl">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Despesas por Categoria</CardTitle>
-        <CardDescription>Gastos por categoria neste ano</CardDescription>
+        <CardTitle className="text-lg font-semibold text-foreground">Despesas por Categoria</CardTitle>
+        <CardDescription className="text-muted-foreground">Gastos acumulados no ano</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] md:h-[350px]">
@@ -96,10 +96,10 @@ export function ExpenseChart() {
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                 width={80}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted)/0.3)' }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted)/0.2)' }} />
               <Bar 
                 dataKey="amount" 
-                radius={[0, 6, 6, 0]}
+                radius={[0, 8, 8, 0]}
                 maxBarSize={32}
               >
                 {expenseData.map((entry, index) => (

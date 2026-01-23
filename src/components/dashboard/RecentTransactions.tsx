@@ -63,17 +63,17 @@ const formatDate = (dateStr: string) => {
 
 export function RecentTransactions() {
   return (
-    <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
+    <Card className="bg-card/95 backdrop-blur-md border-border shadow-corporate-md hover:shadow-corporate-lg transition-corporate animate-corporate-enter rounded-2xl">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Transações Recentes</CardTitle>
-        <CardDescription>Últimas movimentações financeiras</CardDescription>
+        <CardTitle className="text-lg font-semibold text-foreground">Transações Recentes</CardTitle>
+        <CardDescription className="text-muted-foreground">Últimas movimentações financeiras</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           {transactions.map((transaction) => (
             <div 
               key={transaction.id}
-              className="flex items-center justify-between py-3 border-b border-border/50 last:border-0 last:pb-0"
+              className="flex items-center justify-between py-3 border-b border-border last:border-0 last:pb-0 hover:bg-accent/50 -mx-2 px-2 rounded-lg transition-corporate"
             >
               <div className="flex items-center gap-3">
                 <div 
@@ -85,9 +85,9 @@ export function RecentTransactions() {
                   )}
                 >
                   {transaction.type === "income" ? (
-                    <ArrowDownLeft className="w-4 h-4 text-success" />
+                    <ArrowDownLeft className="w-5 h-5 text-success" />
                   ) : (
-                    <ArrowUpRight className="w-4 h-4 text-destructive" />
+                    <ArrowUpRight className="w-5 h-5 text-destructive" />
                   )}
                 </div>
                 <div>
@@ -101,7 +101,7 @@ export function RecentTransactions() {
               </div>
               <span 
                 className={cn(
-                  "text-sm font-semibold",
+                  "text-sm font-bold",
                   transaction.type === "income" 
                     ? "text-success" 
                     : "text-destructive"
