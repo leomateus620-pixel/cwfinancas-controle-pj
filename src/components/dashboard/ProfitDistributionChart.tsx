@@ -28,7 +28,7 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0];
     return (
-      <div className="bg-popover border border-border rounded-lg p-3 shadow-premium-lg">
+      <div className="bg-card/95 backdrop-blur-md border border-border rounded-xl p-3 shadow-corporate-lg">
         <div className="flex items-center gap-2">
           <div 
             className="w-3 h-3 rounded-full" 
@@ -38,7 +38,7 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
             {data.payload.name}
           </span>
         </div>
-        <p className="text-lg font-semibold text-foreground mt-1">
+        <p className="text-lg font-bold text-foreground mt-1">
           {data.value}%
         </p>
       </div>
@@ -54,7 +54,7 @@ const renderLegend = (props: any) => {
       {payload.map((entry: any, index: number) => (
         <div key={`legend-${index}`} className="flex items-center gap-2">
           <div 
-            className="w-2.5 h-2.5 rounded-full" 
+            className="w-3 h-3 rounded-full" 
             style={{ backgroundColor: entry.color }}
           />
           <span className="text-sm text-muted-foreground">{entry.value}</span>
@@ -66,10 +66,10 @@ const renderLegend = (props: any) => {
 
 export function ProfitDistributionChart() {
   return (
-    <Card className="shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in border-border/50">
+    <Card className="bg-card/95 backdrop-blur-md border-border shadow-corporate-md hover:shadow-corporate-lg transition-corporate animate-corporate-enter rounded-2xl">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">Distribuição de Lucros</CardTitle>
-        <CardDescription>Divisão por fonte de receita</CardDescription>
+        <CardTitle className="text-lg font-semibold text-foreground">Distribuição de Receita</CardTitle>
+        <CardDescription className="text-muted-foreground">Divisão por fonte de receita</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px] md:h-[350px]">

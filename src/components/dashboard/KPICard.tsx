@@ -9,6 +9,7 @@ interface KPICardProps {
   changeLabel?: string;
   icon: ReactNode;
   trend?: "up" | "down" | "neutral";
+  valueColor?: "default" | "success" | "danger" | "primary";
   className?: string;
 }
 
@@ -19,6 +20,7 @@ export function KPICard({
   changeLabel = "vs período anterior",
   icon,
   trend = "neutral",
+  valueColor = "default",
   className,
 }: KPICardProps) {
   const getTrendColor = () => {
@@ -35,34 +37,46 @@ export function KPICard({
   const getTrendIcon = () => {
     switch (trend) {
       case "up":
-        return <TrendingUp className="w-3 h-3" />;
+        return <TrendingUp className="w-4 h-4" />;
       case "down":
-        return <TrendingDown className="w-3 h-3" />;
+        return <TrendingDown className="w-4 h-4" />;
       default:
-        return <Minus className="w-3 h-3" />;
+        return <Minus className="w-4 h-4" />;
+    }
+  };
+
+  const getValueColor = () => {
+    switch (valueColor) {
+      case "success":
+        return "text-success";
+      case "danger":
+        return "text-destructive";
+      case "primary":
+        return "text-primary";
+      default:
+        return "text-foreground";
     }
   };
 
   return (
     <div 
       className={cn(
-        "group relative bg-card rounded-2xl p-6 border border-border/50",
-        "shadow-premium-sm hover:shadow-premium-md transition-premium",
-        "animate-fade-in",
+        "group relative bg-card/95 backdrop-blur-md rounded-2xl p-6 border border-border",
+        "shadow-corporate-md hover:shadow-corporate-lg transition-corporate",
+        "animate-corporate-enter hover:-translate-y-0.5",
         className
       )}
     >
-      {/* Gradiente sutil no hover */}
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-primary/[0.02] to-transparent opacity-0 group-hover:opacity-100 transition-premium pointer-events-none" />
-      
       <div className="relative">
         {/* Cabeçalho */}
         <div className="flex items-start justify-between mb-4">
-          <div className="p-2.5 rounded-xl bg-secondary/80">
+          <div className="p-3 rounded-xl bg-primary/10 text-primary">
             {icon}
           </div>
           {change !== undefined && (
-            <div className={cn("flex items-center gap-1 text-sm font-medium", getTrendColor())}>
+            <div className={cn("flex items-center gap-1.5 text-sm font-semibold px-2.5 py-1 rounded-lg", getTrendColor(), 
+              trend === "up" ? "bg-success/10" : trend === "down" ? "bg-destructive/10" : "bg-muted"
+            )}>
               {getTrendIcon()}
               <span>{Math.abs(change)}%</span>
             </div>
@@ -70,8 +84,8 @@ export function KPICard({
         </div>
 
         {/* Valor */}
-        <div className="mb-1">
-          <span className="text-2xl md:text-3xl font-semibold tracking-tight text-foreground">
+        <div className="mb-2">
+          <span className={cn("text-3xl md:text-4xl font-bold tracking-tight", getValueColor())}>
             {value}
           </span>
         </div>
