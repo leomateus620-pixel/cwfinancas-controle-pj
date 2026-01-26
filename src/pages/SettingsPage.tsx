@@ -1,12 +1,59 @@
-import { User, Bell, Palette, Database, Shield } from "lucide-react";
+import { useState, useEffect } from "react";
+import { User, Bell, Palette, Database, Shield, Loader2, LogOut } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { useProfile } from "@/hooks/useProfile";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export function SettingsPage() {
+  const { profile, isLoading, updateProfile } = useProfile();
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
+
+  const [fullName, setFullName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || "");
+      setCompanyName(profile.company_name || "");
+    }
+  }, [profile]);
+
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
+    try {
+      await updateProfile.mutateAsync({
+        full_name: fullName,
+        company_name: companyName,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    toast({
+      title: "Logout realizado",
+      description: "Você foi desconectado com sucesso.",
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -33,18 +80,35 @@ export function SettingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Nome</Label>
-              <Input id="name" defaultValue="João Silva" />
+              <Input 
+                id="name" 
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
-              <Input id="email" type="email" defaultValue="joao@empresa.com" />
+              <Input 
+                id="email" 
+                type="email" 
+                value={user?.email || ""} 
+                disabled 
+                className="bg-muted"
+              />
             </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="company">Empresa</Label>
-            <Input id="company" defaultValue="FinSight Ltda." />
+            <Input 
+              id="company" 
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+            />
           </div>
-          <Button>Salvar Alterações</Button>
+          <Button onClick={handleSaveProfile} disabled={isSaving}>
+            {isSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Salvar Alterações
+          </Button>
         </CardContent>
       </Card>
 
@@ -172,6 +236,17 @@ export function SettingsPage() {
               <p className="text-sm text-muted-foreground">Adicione uma camada extra de segurança</p>
             </div>
             <Switch />
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-foreground">Sair da Conta</p>
+              <p className="text-sm text-muted-foreground">Encerrar sua sessão atual</p>
+            </div>
+            <Button variant="outline" onClick={handleLogout} className="gap-2">
+              <LogOut className="w-4 h-4" />
+              Sair
+            </Button>
           </div>
         </CardContent>
       </Card>
