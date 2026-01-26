@@ -1,29 +1,13 @@
-import { FileCheck, Search, Filter, Calendar, Calculator, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { useState, useMemo } from "react";
+import { FileCheck, Search, Filter, Calendar, Calculator, Clock, CheckCircle, AlertCircle, Plus, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { CorporateCard } from "@/components/corporate/CorporateCard";
-import { cn } from "@/lib/utils";
-
-// Dados de exemplo - Notas Fiscais
-const invoices = [
-  { id: "NF-001234", client: "Empresa ABC Ltda", value: 45000, issueDate: "2024-01-15", dueDate: "2024-02-15", status: "paid" },
-  { id: "NF-001235", client: "Tech Solutions S.A.", value: 28500, issueDate: "2024-01-18", dueDate: "2024-02-18", status: "pending" },
-  { id: "NF-001236", client: "Global Corp", value: 89000, issueDate: "2024-01-20", dueDate: "2024-01-25", status: "overdue" },
-  { id: "NF-001237", client: "Startup XYZ", value: 15200, issueDate: "2024-01-22", dueDate: "2024-02-22", status: "paid" },
-  { id: "NF-001238", client: "Indústria Nacional", value: 67800, issueDate: "2024-01-24", dueDate: "2024-02-24", status: "pending" },
-  { id: "NF-001239", client: "Serviços Prime", value: 32400, issueDate: "2024-01-26", dueDate: "2024-02-26", status: "pending" },
-];
-
-const taxSummary = {
-  icms: 42500,
-  pis: 8900,
-  cofins: 18200,
-  iss: 12800,
-  irpj: 28000,
-  csll: 9500,
-};
+import { InvoiceModal } from "@/components/modals/InvoiceModal";
+import { useInvoices, Invoice } from "@/hooks/useInvoices";
+import { InvoiceFormData } from "@/lib/validators";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("pt-BR", {
@@ -54,9 +38,76 @@ const getStatusBadge = (status: string) => {
   }
 };
 
-const totalTax = Object.values(taxSummary).reduce((acc, val) => acc + val, 0);
-
 export function InvoicesPage() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+
+  const { invoices, isLoading, summary, createInvoice, updateInvoice } = useInvoices();
+
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter(invoice => 
+      invoice.invoice_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.client_name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [invoices, searchTerm]);
+
+  // Calculate estimated taxes (simplified)
+  const taxSummary = useMemo(() => {
+    const baseValue = summary.totalValue;
+    return {
+      icms: Math.round(baseValue * 0.18),
+      pis: Math.round(baseValue * 0.0165),
+      cofins: Math.round(baseValue * 0.076),
+      iss: Math.round(baseValue * 0.05),
+      irpj: Math.round(baseValue * 0.15),
+      csll: Math.round(baseValue * 0.09),
+    };
+  }, [summary.totalValue]);
+
+  const totalTax = Object.values(taxSummary).reduce((acc, val) => acc + val, 0);
+
+  const handleSubmit = async (data: InvoiceFormData) => {
+    if (editingInvoice) {
+      await updateInvoice.mutateAsync({ 
+        id: editingInvoice.id,
+        invoice_number: data.invoice_number,
+        client_name: data.client_name,
+        value: data.value,
+        issue_date: data.issue_date,
+        due_date: data.due_date,
+        status: data.status,
+      });
+    } else {
+      await createInvoice.mutateAsync({
+        invoice_number: data.invoice_number,
+        client_name: data.client_name,
+        value: data.value,
+        issue_date: data.issue_date,
+        due_date: data.due_date,
+        status: data.status,
+      });
+    }
+  };
+
+  const handleEdit = (invoice: Invoice) => {
+    setEditingInvoice(invoice);
+    setModalOpen(true);
+  };
+
+  const handleNewInvoice = () => {
+    setEditingInvoice(null);
+    setModalOpen(true);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 md:space-y-8">
       {/* Cabeçalho */}
@@ -70,8 +121,8 @@ export function InvoicesPage() {
             Gestão de notas fiscais e impostos.
           </p>
         </div>
-        <Button className="gap-2 rounded-xl bg-primary hover:bg-primary/90 self-start">
-          <FileCheck className="w-4 h-4" />
+        <Button className="gap-2 rounded-xl bg-primary hover:bg-primary/90 self-start" onClick={handleNewInvoice}>
+          <Plus className="w-4 h-4" />
           <span>Nova Nota Fiscal</span>
         </Button>
       </div>
@@ -85,7 +136,7 @@ export function InvoicesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Total de NFs</p>
-              <p className="text-xl font-bold text-foreground">{invoices.length}</p>
+              <p className="text-xl font-bold text-foreground">{summary.total}</p>
             </div>
           </div>
         </CorporateCard>
@@ -97,9 +148,7 @@ export function InvoicesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Pagas</p>
-              <p className="text-xl font-bold text-success">
-                {invoices.filter(i => i.status === "paid").length}
-              </p>
+              <p className="text-xl font-bold text-success">{summary.paid}</p>
             </div>
           </div>
         </CorporateCard>
@@ -111,9 +160,7 @@ export function InvoicesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Pendentes</p>
-              <p className="text-xl font-bold text-warning">
-                {invoices.filter(i => i.status === "pending").length}
-              </p>
+              <p className="text-xl font-bold text-warning">{summary.pending}</p>
             </div>
           </div>
         </CorporateCard>
@@ -125,9 +172,7 @@ export function InvoicesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Vencidas</p>
-              <p className="text-xl font-bold text-destructive">
-                {invoices.filter(i => i.status === "overdue").length}
-              </p>
+              <p className="text-xl font-bold text-destructive">{summary.overdue}</p>
             </div>
           </div>
         </CorporateCard>
@@ -148,6 +193,8 @@ export function InvoicesPage() {
                   <Input 
                     placeholder="Buscar NF..." 
                     className="pl-9 w-48 rounded-xl border-border"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
                 <Button variant="outline" size="icon" className="rounded-xl border-border">
@@ -158,29 +205,38 @@ export function InvoicesPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {invoices.map((invoice) => (
-                <div 
-                  key={invoice.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-xl hover:bg-accent/50 transition-corporate"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <FileCheck className="w-5 h-5 text-primary" />
+              {filteredInvoices.length > 0 ? (
+                filteredInvoices.map((invoice) => (
+                  <div 
+                    key={invoice.id}
+                    className="flex items-center justify-between p-4 border border-border rounded-xl hover:bg-accent/50 transition-corporate cursor-pointer"
+                    onClick={() => handleEdit(invoice)}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <FileCheck className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{invoice.invoice_number}</p>
+                        <p className="text-xs text-muted-foreground">{invoice.client_name}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{invoice.id}</p>
-                      <p className="text-xs text-muted-foreground">{invoice.client}</p>
+                    <div className="text-right flex items-center gap-4">
+                      <div>
+                        <p className="text-sm font-bold text-foreground">{formatCurrency(Number(invoice.value))}</p>
+                        <p className="text-xs text-muted-foreground">Venc: {formatDate(invoice.due_date)}</p>
+                      </div>
+                      {getStatusBadge(invoice.status)}
                     </div>
                   </div>
-                  <div className="text-right flex items-center gap-4">
-                    <div>
-                      <p className="text-sm font-bold text-foreground">{formatCurrency(invoice.value)}</p>
-                      <p className="text-xs text-muted-foreground">Venc: {formatDate(invoice.dueDate)}</p>
-                    </div>
-                    {getStatusBadge(invoice.status)}
-                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  {invoices.length === 0 
+                    ? "Nenhuma nota fiscal cadastrada. Clique em 'Nova Nota Fiscal' para começar."
+                    : "Nenhum resultado encontrado para a busca."}
                 </div>
-              ))}
+              )}
             </div>
           </CardContent>
         </Card>
@@ -194,7 +250,7 @@ export function InvoicesPage() {
               </div>
               <div>
                 <CardTitle className="text-lg font-semibold text-foreground">Impostos</CardTitle>
-                <CardDescription className="text-muted-foreground">Resumo de tributos</CardDescription>
+                <CardDescription className="text-muted-foreground">Resumo de tributos estimados</CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -210,7 +266,7 @@ export function InvoicesPage() {
 
             <div className="pt-4 border-t border-border">
               <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
-                <span className="text-sm font-semibold text-foreground">Total a Pagar</span>
+                <span className="text-sm font-semibold text-foreground">Total Estimado</span>
                 <span className="text-lg font-bold text-warning">{formatCurrency(totalTax)}</span>
               </div>
             </div>
@@ -222,6 +278,13 @@ export function InvoicesPage() {
           </CardContent>
         </Card>
       </div>
+
+      <InvoiceModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onSubmit={handleSubmit}
+        invoice={editingInvoice}
+      />
     </div>
   );
 }
