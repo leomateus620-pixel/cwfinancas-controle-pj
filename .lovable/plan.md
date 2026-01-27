@@ -1,408 +1,366 @@
 
-# Plano de Implementação: Coleta de Dados na Nuvem e Segurança
 
-## Visão Geral
+# Plano de Melhoria Visual: Graficos Premium com Animacoes Impactantes
 
-Implementação completa de backend com **Lovable Cloud** incluindo:
-- Banco de dados para transações financeiras
-- Sistema de autenticação com login/registro
-- Sistema de roles para controle de acesso
-- Row Level Security (RLS) em todas as tabelas
-- Proteção de rotas no frontend
-- Integração do upload de Excel com o banco de dados
+## Visao Geral
 
----
+Transformacao completa da apresentacao visual dos graficos, valores e animacoes para criar uma experiencia que "brilhe os olhos" de quem visualiza. O foco sera em:
 
-## Fase 1: Configuração do Lovable Cloud
-
-### 1.1 Ativar Lovable Cloud
-- Configurar conexão com banco de dados
-- Habilitar autenticação
-- Configurar storage para arquivos
-
-### 1.2 Estrutura de Tabelas
-
-**Tabela: profiles**
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK, referência auth.users |
-| full_name | text | Nome completo |
-| company_name | text | Nome da empresa |
-| avatar_url | text | URL do avatar |
-| preferences | jsonb | Preferências do usuário |
-| created_at | timestamptz | Data de criação |
-| updated_at | timestamptz | Data de atualização |
-
-**Tabela: user_roles**
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| user_id | uuid | FK para auth.users |
-| role | app_role (enum) | admin, manager, user |
-
-**Tabela: transactions**
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| user_id | uuid | FK para auth.users |
-| type | text | income / expense |
-| description | text | Descrição |
-| amount | numeric | Valor |
-| category | text | Categoria |
-| date | date | Data da transação |
-| client_vendor | text | Cliente/Fornecedor |
-| notes | text | Observações |
-| created_at | timestamptz | Data de criação |
-
-**Tabela: invoices**
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| user_id | uuid | FK para auth.users |
-| invoice_number | text | Número da NF |
-| client_name | text | Nome do cliente |
-| value | numeric | Valor |
-| issue_date | date | Data de emissão |
-| due_date | date | Data de vencimento |
-| status | text | paid/pending/overdue |
-| created_at | timestamptz | Data de criação |
-
-**Tabela: balance_sheet_items**
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| user_id | uuid | FK para auth.users |
-| type | text | asset / liability / equity |
-| category | text | Categoria |
-| name | text | Nome do item |
-| amount | numeric | Valor |
-| date | date | Data de referência |
-| created_at | timestamptz | Data de criação |
-
-**Tabela: uploaded_files**
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid | PK |
-| user_id | uuid | FK para auth.users |
-| file_name | text | Nome do arquivo |
-| file_path | text | Caminho no storage |
-| rows_imported | integer | Linhas importadas |
-| status | text | success/error |
-| created_at | timestamptz | Data de criação |
+1. **Graficos mais modernos e interativos** com animacoes fluidas
+2. **Valores financeiros com contadores animados** (counting up)
+3. **Microinteracoes e hover states premium**
+4. **Gradientes mais vibrantes e sombras luminosas**
+5. **Skeleton loading elegante**
+6. **Badges e indicadores animados**
 
 ---
 
-## Fase 2: Sistema de Segurança (RLS)
+## Fase 1: Sistema de Animacoes Premium
 
-### 2.1 Enum de Roles
-```sql
-CREATE TYPE public.app_role AS ENUM ('admin', 'manager', 'user');
-```
+### 1.1 Novas Animacoes CSS (src/index.css)
 
-### 2.2 Função Security Definer para Verificar Role
-```sql
-CREATE OR REPLACE FUNCTION public.has_role(_user_id uuid, _role app_role)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.user_roles
-    WHERE user_id = _user_id
-      AND role = _role
-  )
-$$;
-```
+| Animacao | Descricao | Uso |
+|----------|-----------|-----|
+| `count-up` | Numeros crescem de 0 ao valor final | Valores financeiros |
+| `pulse-glow` | Pulsacao com brilho sutil | Indicadores positivos |
+| `float` | Flutuacao suave | Cards e icones |
+| `shimmer-slide` | Efeito de luz deslizante | Loading e highlights |
+| `gradient-shift` | Gradiente que muda suavemente | Backgrounds de graficos |
+| `scale-bounce` | Escala com bounce elastico | Hover em botoes |
+| `slide-up-fade` | Desliza para cima com fade | Tooltips e modais |
+| `progress-fill` | Preenchimento de barra | Barras de progresso |
 
-### 2.3 Políticas RLS
-
-**profiles:**
-- SELECT: Usuário pode ver apenas seu próprio perfil
-- UPDATE: Usuário pode atualizar apenas seu próprio perfil
-- INSERT: Trigger automático ao criar usuário
-
-**user_roles:**
-- SELECT: Usuário pode ver suas próprias roles
-- INSERT/UPDATE/DELETE: Apenas admins
-
-**transactions:**
-- SELECT/INSERT/UPDATE/DELETE: Usuário vê/edita apenas suas transações
-- Admins podem ver todas
-
-**invoices:**
-- SELECT/INSERT/UPDATE/DELETE: Usuário vê/edita apenas suas notas
-- Admins podem ver todas
-
-**balance_sheet_items:**
-- SELECT/INSERT/UPDATE/DELETE: Usuário vê/edita apenas seus itens
-- Admins podem ver todos
-
-**uploaded_files:**
-- SELECT/INSERT/UPDATE/DELETE: Usuário vê/edita apenas seus uploads
-
----
-
-## Fase 3: Autenticação no Frontend
-
-### 3.1 Novos Arquivos
-
-**src/integrations/supabase/client.ts**
-- Configuração do cliente Supabase
-
-**src/contexts/AuthContext.tsx**
-- Context para gerenciamento de autenticação
-- Estado do usuário logado
-- Funções: signIn, signUp, signOut
-- Listener para mudanças de sessão
-
-**src/hooks/useAuth.ts**
-- Hook para acessar o contexto de autenticação
-- Retorna: user, loading, signIn, signUp, signOut
-
-**src/hooks/useUserRole.ts**
-- Hook para verificar role do usuário
-- Retorna: role, isAdmin, isManager
-
-### 3.2 Páginas de Autenticação
-
-**src/pages/LoginPage.tsx**
-- Formulário de login (email + senha)
-- Link para registro
-- Link para recuperar senha
-- Validação com Zod
-
-**src/pages/RegisterPage.tsx**
-- Formulário de registro (nome, email, empresa, senha)
-- Validação de campos
-- Redirecionamento após registro
-
-**src/pages/ForgotPasswordPage.tsx**
-- Formulário para recuperar senha
-
-### 3.3 Componente de Proteção de Rotas
-
-**src/components/auth/ProtectedRoute.tsx**
-- Verifica se usuário está logado
-- Redireciona para login se não autenticado
-- Pode verificar roles específicas
-
----
-
-## Fase 4: Integração de Dados
-
-### 4.1 Hooks de Dados
-
-**src/hooks/useTransactions.ts**
-- CRUD de transações
-- Filtros por tipo, categoria, período
-- React Query para cache e invalidação
-
-**src/hooks/useInvoices.ts**
-- CRUD de notas fiscais
-- Filtros por status, período
-
-**src/hooks/useBalanceSheet.ts**
-- CRUD de itens do balanço
-- Agrupamento por tipo (ativo/passivo/PL)
-
-**src/hooks/useUploadedFiles.ts**
-- Histórico de uploads
-- Status de importação
-
-### 4.2 Upload de Excel Integrado
-
-Atualizar **src/pages/UploadPage.tsx**:
-- Após parsing, salvar dados no banco
-- Mapear colunas do Excel para campos do banco
-- Criar registro em uploaded_files
-- Inserir transações em batch
-- Exibir status de importação
-
----
-
-## Fase 5: Atualização das Páginas
-
-### 5.1 Páginas com Dados Reais
-
-**OverviewPage.tsx**
-- Buscar totais do banco
-- KPIs calculados dos dados reais
-- Gráficos com dados do usuário
-
-**IncomePage.tsx**
-- Listar transações tipo "income"
-- Filtros funcionais
-- Botão "Nova Receita" abre modal
-
-**ExpensesPage.tsx**
-- Listar transações tipo "expense"
-- Filtros funcionais
-- Botão "Nova Despesa" abre modal
-
-**CashFlowPage.tsx**
-- Calcular fluxo de caixa real
-- Projeções baseadas em histórico
-
-**BalanceSheetPage.tsx**
-- Buscar itens do balanço
-- Calcular totais por categoria
-
-**InvoicesPage.tsx**
-- Listar notas fiscais reais
-- CRUD de notas
-
-**SettingsPage.tsx**
-- Atualizar perfil no banco
-- Preferências salvas
-
-### 5.2 Modais de CRUD
-
-**src/components/modals/TransactionModal.tsx**
-- Formulário para adicionar/editar transação
-- Validação com Zod
-- Campos: tipo, descrição, valor, categoria, data, cliente/fornecedor
-
-**src/components/modals/InvoiceModal.tsx**
-- Formulário para adicionar/editar nota fiscal
-- Campos: número, cliente, valor, datas, status
-
----
-
-## Fase 6: Storage para Arquivos
-
-### 6.1 Bucket de Uploads
-
-**Bucket: excel-uploads**
-- Privado
-- RLS: usuário acessa apenas seus arquivos
-
-### 6.2 Fluxo de Upload
-
-1. Usuário seleciona arquivo Excel
-2. Parse local com xlsx
-3. Preview dos dados
-4. Ao confirmar:
-   - Upload do arquivo para storage
-   - Inserção em batch das transações
-   - Registro em uploaded_files
-5. Feedback de sucesso/erro
-
----
-
-## Fase 7: Estrutura de Arquivos Final
+### 1.2 Variaveis CSS para Efeitos
 
 ```text
-src/
-  integrations/
-    supabase/
-      client.ts
-      types.ts (tipos gerados)
-  
-  contexts/
-    AuthContext.tsx
-  
-  hooks/
-    useAuth.ts
-    useUserRole.ts
-    useTransactions.ts
-    useInvoices.ts
-    useBalanceSheet.ts
-    useUploadedFiles.ts
-    useProfile.ts
-  
-  components/
-    auth/
-      ProtectedRoute.tsx
-      AuthGuard.tsx
-    modals/
-      TransactionModal.tsx
-      InvoiceModal.tsx
-      BalanceItemModal.tsx
-  
-  pages/
-    LoginPage.tsx (novo)
-    RegisterPage.tsx (novo)
-    ForgotPasswordPage.tsx (novo)
-    (demais páginas atualizadas)
-  
-  lib/
-    validators.ts (schemas Zod)
-    formatters.ts (funções de formatação)
+Novas variaveis:
+--glow-primary: azul com blur luminoso
+--glow-success: verde com blur luminoso
+--glow-danger: vermelho com blur luminoso
+--gradient-premium: gradiente diagonal animado
 ```
 
 ---
 
-## Fase 8: Validação e Segurança Frontend
+## Fase 2: Componente AnimatedValue
 
-### 8.1 Validação de Inputs
+### 2.1 Novo Componente: src/components/ui/animated-value.tsx
 
-**src/lib/validators.ts**
-```typescript
-// Schemas Zod para todos os formulários
-const transactionSchema = z.object({
-  description: z.string().min(3).max(200),
-  amount: z.number().positive(),
-  category: z.string().min(1),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  type: z.enum(['income', 'expense']),
-});
+Funcionalidades:
+- Contador animado de 0 ate o valor final
+- Duracao configuravel (default 1.5s)
+- Easing suave (ease-out)
+- Prefixo e sufixo (R$, %, etc)
+- Formatacao automatica de moeda
+- Cor dinamica (success/danger/primary)
+- Efeito de glow no valor ao terminar
 
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-});
-
-// etc...
+Exemplo de uso:
+```text
+<AnimatedValue 
+  value={253412}
+  prefix="R$ "
+  color="primary"
+  glow={true}
+  duration={1500}
+/>
 ```
 
-### 8.2 Sanitização
+---
 
-- Validar todos os inputs antes de enviar ao banco
-- Usar encodeURIComponent para URLs
-- Nunca usar dangerouslySetInnerHTML com dados do usuário
+## Fase 3: Graficos Premium Redesenhados
+
+### 3.1 RevenueChart Aprimorado
+
+Melhorias:
+- Gradientes mais vibrantes e profundos
+- Linha com sombra/glow suave
+- Pontos nos vertices com animacao de pulso
+- Area com gradiente mesh (multiplas cores)
+- Cursor animado ao hover
+- Tooltip glassmorphism com animacao slide-up
+- Legenda interativa com hover
+- Grid pontilhado mais sutil
+
+### 3.2 ExpenseChart Aprimorado
+
+Melhorias:
+- Barras com gradiente vertical
+- Animacao de preenchimento progressivo (da esquerda para direita)
+- Bordas arredondadas mais pronunciadas
+- Valores exibidos na ponta das barras
+- Hover com scale e glow
+- Cores mais vibrantes e contrastantes
+- Icones minimalistas por categoria
+
+### 3.3 ProfitDistributionChart Aprimorado
+
+Melhorias:
+- Donut chart com sombra interna
+- Segmentos com animacao de "desenho" (stroke-dasharray)
+- Valor central grande com animacao de contagem
+- Hover: segmento se destaca com scale
+- Cores com gradiente radial
+- Legenda redesenhada com badges coloridos
+- Porcentagens animadas
+
+### 3.4 CashFlow Chart Aprimorado
+
+Melhorias:
+- Areas com gradientes mais vivos
+- Linha de referencia zero animada
+- Marcadores nos pontos de cruzamento
+- Projecao futura em linha pontilhada
+- Setas indicando tendencia
 
 ---
 
-## Ordem de Implementação
+## Fase 4: KPI Cards Premium
 
-| Etapa | Descrição | Arquivos |
-|-------|-----------|----------|
-| 1 | Ativar Lovable Cloud | Dashboard Lovable |
-| 2 | Criar tabelas e RLS | Migrations SQL |
-| 3 | Configurar cliente Supabase | integrations/supabase/client.ts |
-| 4 | Context de autenticação | contexts/AuthContext.tsx |
-| 5 | Páginas de login/registro | pages/LoginPage.tsx, RegisterPage.tsx |
-| 6 | Componente ProtectedRoute | components/auth/ProtectedRoute.tsx |
-| 7 | Atualizar App.tsx com rotas protegidas | App.tsx |
-| 8 | Hook useTransactions | hooks/useTransactions.ts |
-| 9 | Atualizar UploadPage | pages/UploadPage.tsx |
-| 10 | Atualizar páginas com dados reais | Todas as páginas |
-| 11 | Modais de CRUD | components/modals/*.tsx |
-| 12 | Configurar storage | Bucket excel-uploads |
-| 13 | Testes e validação final | Todos os componentes |
+### 4.1 KPICard Redesenhado
+
+Melhorias:
+- Valores com AnimatedValue (contador)
+- Icone com fundo gradiente e glow
+- Badge de tendencia com animacao de pulse
+- Seta de tendencia animada (bounce)
+- Borda com gradiente sutil
+- Hover: elevacao + glow colorido
+- Linha de progresso animada na base do card
+- Sparkline minigraphic opcional
+
+### 4.2 Novo Componente: SparklineChart
+
+Grafico de linha minimalista para dentro dos cards:
+- Sem eixos, apenas a linha
+- Gradiente de preenchimento sutil
+- Responsivo ao tamanho do container
+- Animacao de desenho da linha
 
 ---
 
-## Pré-requisitos
+## Fase 5: Tooltips e Popovers Premium
 
-Antes de iniciar a implementação:
-1. **Ativar Lovable Cloud** através do painel do projeto
-2. Confirmar que o banco de dados está acessível
+### 5.1 Novo Componente: GlassTooltip
+
+Caracteristicas:
+- Glassmorphism com blur mais forte (20px)
+- Borda com gradiente animado
+- Animacao de entrada slide-up + scale
+- Seta indicadora estilizada
+- Shadow com cor do contexto
+- Conteudo com tipografia refinada
+
+---
+
+## Fase 6: Indicadores e Badges Animados
+
+### 6.1 TrendBadge Component
+
+Novo componente para indicadores de tendencia:
+- Icone de seta com animacao bounce
+- Fundo com gradiente suave
+- Texto com cor contextual
+- Animacao de pulse quando positivo
+- Glow sutil colorido
+
+### 6.2 StatusIndicator Component
+
+Indicador de status animado:
+- Ponto com animacao de pulse
+- Cores: success (verde), warning (amarelo), danger (vermelho)
+- Tooltip ao hover
+- Versao grande e pequena
+
+---
+
+## Fase 7: Loading States Premium
+
+### 7.1 ChartSkeleton Component
+
+Skeleton especifico para graficos:
+- Formato do grafico desenhado
+- Animacao shimmer mais suave
+- Pulso de opacidade
+- Transicao suave ao carregar dados
+
+### 7.2 ValueSkeleton Component
+
+Skeleton para valores:
+- Largura proporcional ao valor esperado
+- Shimmer animado
+- Bordas arredondadas
+
+---
+
+## Fase 8: Atualizacao dos Componentes Existentes
+
+### 8.1 OverviewPage
+
+Alteracoes:
+- Saldo total com AnimatedValue gigante
+- Card principal com glow primario
+- KPIs com contadores animados
+- Graficos com novas animacoes
+- Espacamento refinado
+
+### 8.2 CashFlowPage
+
+Alteracoes:
+- KPIs com AnimatedValue
+- Grafico com animacoes de entrada
+- Lista de vencimentos com indicadores animados
+
+### 8.3 BalanceSheetPage
+
+Alteracoes:
+- Totais com AnimatedValue
+- Items com animacao de slide ao aparecer
+- Hover states mais pronunciados
+
+### 8.4 InvoicesPage
+
+Alteracoes:
+- Status badges animados
+- Valores com formatacao premium
+- Lista com animacoes staggered
+
+---
+
+## Fase 9: Paleta de Cores Vibrante
+
+### 9.1 Atualizacao de Variaveis CSS
+
+Novas cores para graficos:
+```text
+--chart-1: azul vibrante com saturacao alta
+--chart-2: verde esmeralda vivo
+--chart-3: roxo/violeta moderno
+--chart-4: laranja/amber quente
+--chart-5: rosa/magenta destaque
+```
+
+### 9.2 Gradientes Premium
+
+Novos gradientes para uso em cards e graficos:
+```text
+--gradient-blue: linear de azul claro para azul escuro
+--gradient-success: linear de verde claro para verde escuro
+--gradient-mesh: gradiente conic/radial multicolorido
+```
+
+---
+
+## Fase 10: Detalhes de Implementacao
+
+### 10.1 Dependencias
+
+Nenhuma nova dependencia necessaria. Utilizaremos:
+- Recharts (ja instalado) - animacoes nativas
+- CSS animations - keyframes customizados
+- React hooks (useState, useEffect) - logica de contagem
+
+### 10.2 Arquivos a Criar/Modificar
+
+**Novos arquivos:**
+- `src/components/ui/animated-value.tsx`
+- `src/components/ui/sparkline-chart.tsx`
+- `src/components/ui/glass-tooltip.tsx`
+- `src/components/ui/trend-badge.tsx`
+- `src/components/ui/status-indicator.tsx`
+- `src/components/ui/chart-skeleton.tsx`
+
+**Arquivos a modificar:**
+- `src/index.css` - novas animacoes e variaveis
+- `src/tailwind.config.ts` - novas cores e animacoes
+- `src/components/dashboard/KPICard.tsx`
+- `src/components/dashboard/RevenueChart.tsx`
+- `src/components/dashboard/ExpenseChart.tsx`
+- `src/components/dashboard/ProfitDistributionChart.tsx`
+- `src/components/dashboard/RecentTransactions.tsx`
+- `src/pages/OverviewPage.tsx`
+- `src/pages/CashFlowPage.tsx`
+- `src/pages/BalanceSheetPage.tsx`
+
+---
+
+## Fase 11: Especificacoes Tecnicas
+
+### 11.1 AnimatedValue Hook
+
+```text
+useAnimatedValue(targetValue, options):
+  - startValue: 0 (default)
+  - duration: 1500ms
+  - easing: easeOutExpo
+  - delay: 0ms
+  - decimals: 0
+  - onComplete: callback
+  
+  Retorna: currentValue (interpolado)
+```
+
+### 11.2 CSS Keyframes Principais
+
+```text
+@keyframes pulse-glow:
+  0%, 100%: box-shadow normal
+  50%: box-shadow com blur expandido
+
+@keyframes count-emphasis:
+  0%: scale 1
+  50%: scale 1.05, color intensified
+  100%: scale 1
+
+@keyframes draw-line (para graficos):
+  0%: stroke-dashoffset = total
+  100%: stroke-dashoffset = 0
+
+@keyframes gradient-flow:
+  0%: background-position 0% 50%
+  50%: background-position 100% 50%
+  100%: background-position 0% 50%
+```
+
+### 11.3 Configuracao Recharts
+
+Propriedades de animacao:
+```text
+isAnimationActive={true}
+animationBegin={0}
+animationDuration={1200}
+animationEasing="ease-out"
+```
 
 ---
 
 ## Resultado Esperado
 
-Sistema completo com:
-- Autenticação segura (login, registro, logout)
-- Banco de dados com todas as entidades financeiras
-- RLS protegendo dados por usuário
-- Sistema de roles (admin, manager, user)
-- Upload de Excel salvando no banco
-- Todas as páginas consumindo dados reais
-- Validação de inputs em todos os formulários
-- Storage seguro para arquivos
-- Interface responsiva e profissional
+Interface financeira com visual que impressiona:
+
+1. **Valores que "crescem"** - Numeros animados de 0 ao valor final
+2. **Graficos vivos** - Animacoes de desenho e transicoes suaves
+3. **Cores vibrantes** - Paleta mais rica e gradientes premium
+4. **Microinteracoes** - Hover states, pulsos e glows sutis
+5. **Profundidade** - Sombras luminosas e glassmorphism refinado
+6. **Fluidez** - Transicoes suaves em toda interacao
+7. **Feedback visual** - Indicadores animados de status e tendencia
+8. **Loading elegante** - Skeletons com shimmer suave
+
+---
+
+## Ordem de Implementacao
+
+| Etapa | Descricao | Arquivos |
+|-------|-----------|----------|
+| 1 | Animacoes CSS base | index.css |
+| 2 | Componente AnimatedValue | animated-value.tsx |
+| 3 | TrendBadge e StatusIndicator | trend-badge.tsx, status-indicator.tsx |
+| 4 | KPICard redesenhado | KPICard.tsx |
+| 5 | RevenueChart premium | RevenueChart.tsx |
+| 6 | ExpenseChart premium | ExpenseChart.tsx |
+| 7 | ProfitDistributionChart premium | ProfitDistributionChart.tsx |
+| 8 | OverviewPage com animacoes | OverviewPage.tsx |
+| 9 | Demais paginas | CashFlowPage, BalanceSheetPage |
+| 10 | Polimento final | Todos os componentes |
+
