@@ -117,23 +117,23 @@ export default {
           to: { height: "0" },
         },
         "fade-in": {
-          from: { opacity: "0", transform: "translateY(10px)" },
+          from: { opacity: "0", transform: "translateY(12px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "fade-in-scale": {
-          from: { opacity: "0", transform: "scale(0.95)" },
+          from: { opacity: "0", transform: "scale(0.92)" },
           to: { opacity: "1", transform: "scale(1)" },
         },
         "slide-in-right": {
-          from: { opacity: "0", transform: "translateX(20px)" },
+          from: { opacity: "0", transform: "translateX(24px)" },
           to: { opacity: "1", transform: "translateX(0)" },
         },
         "corporate-enter": {
-          from: { opacity: "0", transform: "translateY(16px)" },
+          from: { opacity: "0", transform: "translateY(20px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "page-slide": {
-          from: { opacity: "0", transform: "translateX(20px)" },
+          from: { opacity: "0", transform: "translateX(24px)" },
           to: { opacity: "1", transform: "translateX(0)" },
         },
         shimmer: {
@@ -144,21 +144,54 @@ export default {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.5" },
         },
-        "hover-lift": {
-          from: { transform: "translateY(0)" },
-          to: { transform: "translateY(-2px)" },
+        "pulse-glow": {
+          "0%, 100%": { opacity: "1", boxShadow: "0 0 0 0 hsl(var(--primary) / 0.4)" },
+          "50%": { opacity: "0.9", boxShadow: "0 0 20px 4px hsl(var(--primary) / 0.2)" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-6px)" },
+        },
+        "scale-bounce": {
+          "0%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.08)" },
+          "100%": { transform: "scale(1)" },
+        },
+        "slide-up-fade": {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "trend-bounce": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "25%": { transform: "translateY(-3px)" },
+          "75%": { transform: "translateY(1px)" },
+        },
+        "glow-pulse": {
+          "0%, 100%": { filter: "drop-shadow(0 0 2px currentColor)" },
+          "50%": { filter: "drop-shadow(0 0 8px currentColor)" },
+        },
+        "count-emphasis": {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(1.02)" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.4s ease-out forwards",
-        "fade-in-scale": "fade-in-scale 0.3s ease-out forwards",
-        "slide-in-right": "slide-in-right 0.4s ease-out forwards",
-        "corporate-enter": "corporate-enter 0.4s ease-out forwards",
-        "page-slide": "page-slide 0.4s ease-out forwards",
-        shimmer: "shimmer 2s infinite linear",
+        "fade-in": "fade-in 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "fade-in-scale": "fade-in-scale 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "slide-in-right": "slide-in-right 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "corporate-enter": "corporate-enter 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "page-slide": "page-slide 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        shimmer: "shimmer 2.5s linear infinite",
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "pulse-glow": "pulse-glow 2.5s ease-in-out infinite",
+        float: "float 4s ease-in-out infinite",
+        "scale-bounce": "scale-bounce 0.4s ease-out",
+        "slide-up-fade": "slide-up-fade 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "trend-bounce": "trend-bounce 1s ease-in-out infinite",
+        "glow-pulse": "glow-pulse 2s ease-in-out infinite",
+        "count-emphasis": "count-emphasis 0.6s ease-out",
       },
       spacing: {
         "18": "4.5rem",

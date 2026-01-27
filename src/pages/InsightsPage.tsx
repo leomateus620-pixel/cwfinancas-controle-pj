@@ -1,5 +1,7 @@
 import { Sparkles, TrendingUp, AlertTriangle, LineChart } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { StatusIndicator } from "@/components/ui/status-indicator";
+import { cn } from "@/lib/utils";
 
 const insights = [
   {
@@ -10,6 +12,7 @@ const insights = [
     icon: TrendingUp,
     color: "text-success",
     bgColor: "bg-success/10",
+    status: "success" as const,
   },
   {
     id: 2,
@@ -19,6 +22,7 @@ const insights = [
     icon: AlertTriangle,
     color: "text-warning",
     bgColor: "bg-warning/10",
+    status: "warning" as const,
   },
   {
     id: 3,
@@ -28,6 +32,7 @@ const insights = [
     icon: LineChart,
     color: "text-primary",
     bgColor: "bg-primary/10",
+    status: "info" as const,
   },
 ];
 
@@ -35,8 +40,8 @@ export function InsightsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl md:text-3xl font-semibold text-foreground tracking-tight flex items-center gap-3">
-          <Sparkles className="w-7 h-7 text-primary" />
+        <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight flex items-center gap-3">
+          <Sparkles className="w-7 h-7 text-primary animate-pulse-glow" />
           Insights com IA
         </h1>
         <p className="text-muted-foreground mt-1">
@@ -44,20 +49,38 @@ export function InsightsPage() {
         </p>
       </div>
       
-      <div className="grid gap-4">
-        {insights.map((insight) => (
+      <div className="grid gap-4 stagger-children">
+        {insights.map((insight, index) => (
           <Card 
             key={insight.id} 
-            className="border-border/50 shadow-premium-sm hover:shadow-premium-md transition-premium animate-fade-in"
+            className={cn(
+              "glass-premium border-border/50 shadow-premium-sm hover:shadow-premium-md transition-premium",
+              "cursor-pointer group overflow-hidden relative"
+            )}
+            style={{ animationDelay: `${index * 80}ms` }}
           >
-            <CardHeader className="pb-2">
+            {/* Gradient overlay */}
+            <div className={cn(
+              "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
+              insight.bgColor.replace('/10', '/5')
+            )} />
+            
+            <CardHeader className="pb-2 relative z-10">
               <div className="flex items-start gap-4">
-                <div className={`w-10 h-10 rounded-xl ${insight.bgColor} flex items-center justify-center shrink-0`}>
-                  <insight.icon className={`w-5 h-5 ${insight.color}`} />
+                <div className={cn(
+                  "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all duration-300 group-hover:scale-110",
+                  insight.bgColor
+                )}>
+                  <insight.icon className={cn("w-6 h-6", insight.color)} />
                 </div>
-                <div>
-                  <CardTitle className="text-base font-semibold">{insight.title}</CardTitle>
-                  <CardDescription className="mt-1.5 text-sm leading-relaxed">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-semibold group-hover:text-primary transition-colors">
+                      {insight.title}
+                    </CardTitle>
+                    <StatusIndicator status={insight.status} size="sm" pulse={false} />
+                  </div>
+                  <CardDescription className="mt-2 text-sm leading-relaxed">
                     {insight.description}
                   </CardDescription>
                 </div>
@@ -67,9 +90,12 @@ export function InsightsPage() {
         ))}
       </div>
 
-      <Card className="border-border/50 shadow-premium-sm bg-gradient-to-br from-primary/5 to-transparent">
-        <CardContent className="py-8 text-center">
-          <Sparkles className="w-12 h-12 text-primary/60 mx-auto mb-4" />
+      <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-primary/5 to-transparent overflow-hidden relative">
+        <div className="absolute inset-0 gradient-mesh opacity-40 pointer-events-none" />
+        <CardContent className="py-10 text-center relative z-10">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-5 animate-float">
+            <Sparkles className="w-8 h-8 text-primary" />
+          </div>
           <h3 className="text-lg font-semibold text-foreground mb-2">
             Mais Insights Disponíveis
           </h3>

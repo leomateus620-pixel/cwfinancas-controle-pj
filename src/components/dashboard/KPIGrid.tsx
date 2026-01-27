@@ -10,7 +10,8 @@ import { KPICard } from "./KPICard";
 const kpiData = [
   {
     title: "Receita Total",
-    value: "R$ 3.644.000",
+    value: 3644000,
+    prefix: "R$ ",
     change: 12.5,
     trend: "up" as const,
     icon: <Wallet className="w-5 h-5" />,
@@ -18,7 +19,8 @@ const kpiData = [
   },
   {
     title: "Lucro Líquido",
-    value: "R$ 1.457.000",
+    value: 1457000,
+    prefix: "R$ ",
     change: 8.2,
     trend: "up" as const,
     icon: <TrendingUp className="w-5 h-5" />,
@@ -26,19 +28,22 @@ const kpiData = [
   },
   {
     title: "Despesas Totais",
-    value: "R$ 2.187.000",
-    change: -3.4,
+    value: 2187000,
+    prefix: "R$ ",
+    change: 3.4,
     trend: "down" as const,
     icon: <TrendingDown className="w-5 h-5" />,
     valueColor: "default" as const,
   },
   {
     title: "Margem de Lucro",
-    value: "40,0%",
+    value: 40.0,
+    suffix: "%",
     change: 5.2,
     trend: "up" as const,
     icon: <PiggyBank className="w-5 h-5" />,
     valueColor: "success" as const,
+    decimals: 1,
   },
 ];
 
@@ -50,10 +55,13 @@ export function KPIGrid() {
           key={kpi.title}
           title={kpi.title}
           value={kpi.value}
+          prefix={kpi.prefix}
+          suffix={kpi.suffix}
           change={kpi.change}
           trend={kpi.trend}
           icon={kpi.icon}
           valueColor={kpi.valueColor}
+          decimals={kpi.decimals}
         />
       ))}
     </div>
