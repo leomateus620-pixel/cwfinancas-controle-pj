@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { 
   PieChart, 
   Pie, 
   Cell, 
   ResponsiveContainer,
   Tooltip,
-  Legend
+  Sector
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { AnimatedValue } from "@/components/ui/animated-value";
 
 // Dados de exemplo - serão substituídos por dados reais
 const profitData = [
@@ -28,17 +30,20 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0];
     return (
-      <div className="bg-card/95 backdrop-blur-md border border-border rounded-xl p-3 shadow-corporate-lg">
-        <div className="flex items-center gap-2">
+      <div className="glass-premium rounded-xl p-4 shadow-premium-lg border border-border/50 animate-slide-up-fade">
+        <div className="flex items-center gap-3">
           <div 
-            className="w-3 h-3 rounded-full" 
-            style={{ backgroundColor: data.payload.color }}
+            className="w-4 h-4 rounded-full" 
+            style={{ 
+              backgroundColor: data.payload.color,
+              boxShadow: `0 0 12px ${data.payload.color}60`
+            }}
           />
-          <span className="text-sm font-medium text-foreground">
+          <span className="text-sm font-semibold text-foreground">
             {data.payload.name}
           </span>
         </div>
-        <p className="text-lg font-bold text-foreground mt-1">
+        <p className="text-3xl font-bold text-foreground mt-2">
           {data.value}%
         </p>
       </div>
@@ -47,56 +52,149 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   return null;
 };
 
-const renderLegend = (props: any) => {
-  const { payload } = props;
+// Active shape for hover state
+const renderActiveShape = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload } = props;
+
   return (
-    <div className="flex flex-wrap justify-center gap-4 mt-4">
-      {payload.map((entry: any, index: number) => (
-        <div key={`legend-${index}`} className="flex items-center gap-2">
-          <div 
-            className="w-3 h-3 rounded-full" 
-            style={{ backgroundColor: entry.color }}
-          />
-          <span className="text-sm text-muted-foreground">{entry.value}</span>
-        </div>
-      ))}
-    </div>
+    <g>
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius - 4}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        style={{ 
+          filter: `drop-shadow(0 0 12px ${fill}60)`,
+          transition: "all 0.3s ease"
+        }}
+      />
+      <Sector
+        cx={cx}
+        cy={cy}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        innerRadius={outerRadius + 12}
+        outerRadius={outerRadius + 16}
+        fill={fill}
+        opacity={0.3}
+      />
+    </g>
   );
 };
 
 export function ProfitDistributionChart() {
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const totalValue = profitData.reduce((acc, item) => acc + item.value, 0);
+
+  const onPieEnter = (_: any, index: number) => {
+    setActiveIndex(index);
+  };
+
+  const onPieLeave = () => {
+    setActiveIndex(-1);
+  };
+
   return (
-    <Card className="bg-card/95 backdrop-blur-md border-border shadow-corporate-md hover:shadow-corporate-lg transition-corporate animate-corporate-enter rounded-2xl">
-      <CardHeader>
+    <Card className="glass-premium border-border/50 shadow-premium-md hover:shadow-premium-lg transition-premium animate-corporate-enter rounded-2xl overflow-hidden relative">
+      {/* Gradient mesh background */}
+      <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+      
+      <CardHeader className="relative z-10">
         <CardTitle className="text-lg font-semibold text-foreground">Distribuição de Receita</CardTitle>
         <CardDescription className="text-muted-foreground">Divisão por fonte de receita</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="h-[300px] md:h-[350px]">
+      <CardContent className="relative z-10">
+        <div className="h-[300px] md:h-[350px] relative">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
+              <defs>
+                {profitData.map((entry, index) => (
+                  <linearGradient key={`pieGradient-${index}`} id={`pieGradient-${index}`} x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor={entry.color} stopOpacity={1}/>
+                    <stop offset="100%" stopColor={entry.color} stopOpacity={0.7}/>
+                  </linearGradient>
+                ))}
+                <filter id="pieShadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="4" stdDeviation="6" floodOpacity="0.15"/>
+                </filter>
+              </defs>
               <Pie
                 data={profitData}
                 cx="50%"
                 cy="45%"
-                innerRadius={60}
+                innerRadius={65}
                 outerRadius={100}
-                paddingAngle={3}
+                paddingAngle={4}
                 dataKey="value"
                 strokeWidth={0}
+                activeIndex={activeIndex}
+                activeShape={renderActiveShape}
+                onMouseEnter={onPieEnter}
+                onMouseLeave={onPieLeave}
+                isAnimationActive={true}
+                animationBegin={0}
+                animationDuration={1200}
+                animationEasing="ease-out"
+                style={{ filter: "url(#pieShadow)" }}
               >
                 {profitData.map((entry, index) => (
                   <Cell 
                     key={`cell-${index}`} 
-                    fill={entry.color}
-                    className="transition-all duration-200 hover:opacity-80"
+                    fill={`url(#pieGradient-${index})`}
+                    className="transition-all duration-300 cursor-pointer"
+                    stroke="hsl(var(--background))"
+                    strokeWidth={2}
                   />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
-              <Legend content={renderLegend} />
             </PieChart>
           </ResponsiveContainer>
+          
+          {/* Center value */}
+          <div className="absolute top-[45%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+            <AnimatedValue 
+              value={totalValue} 
+              suffix="%" 
+              className="text-4xl font-bold"
+              color="primary"
+              glow
+              duration={1500}
+            />
+            <p className="text-xs text-muted-foreground mt-1 font-medium">Total</p>
+          </div>
+        </div>
+        
+        {/* Legend */}
+        <div className="grid grid-cols-2 gap-3 mt-2">
+          {profitData.map((entry, index) => (
+            <div 
+              key={`legend-${index}`} 
+              className={`flex items-center gap-3 p-3 rounded-xl transition-all duration-300 cursor-pointer ${
+                activeIndex === index 
+                  ? 'bg-muted/80 shadow-sm' 
+                  : 'hover:bg-muted/50'
+              }`}
+              onMouseEnter={() => setActiveIndex(index)}
+              onMouseLeave={() => setActiveIndex(-1)}
+            >
+              <div 
+                className="w-4 h-4 rounded-full flex-shrink-0"
+                style={{ 
+                  backgroundColor: entry.color,
+                  boxShadow: activeIndex === index ? `0 0 12px ${entry.color}60` : 'none',
+                  transition: 'box-shadow 0.3s ease'
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{entry.name}</p>
+                <p className="text-xs text-muted-foreground">{entry.value}%</p>
+              </div>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>

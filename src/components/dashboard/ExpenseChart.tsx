@@ -6,18 +6,27 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  Cell
+  Cell,
+  LabelList
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { 
+  Briefcase, 
+  Megaphone, 
+  Settings, 
+  Monitor, 
+  Building2, 
+  MoreHorizontal 
+} from "lucide-react";
 
 // Dados de exemplo - serão substituídos por dados reais
 const expenseData = [
-  { category: "Salários", amount: 485000, color: "hsl(var(--chart-1))" },
-  { category: "Marketing", amount: 128000, color: "hsl(var(--chart-2))" },
-  { category: "Operações", amount: 95000, color: "hsl(var(--chart-3))" },
-  { category: "Tecnologia", amount: 82000, color: "hsl(var(--chart-4))" },
-  { category: "Escritório", amount: 45000, color: "hsl(var(--chart-5))" },
-  { category: "Outros", amount: 32000, color: "hsl(var(--muted-foreground))" },
+  { category: "Salários", amount: 485000, color: "hsl(var(--chart-1))", icon: Briefcase },
+  { category: "Marketing", amount: 128000, color: "hsl(var(--chart-3))", icon: Megaphone },
+  { category: "Operações", amount: 95000, color: "hsl(var(--chart-2))", icon: Settings },
+  { category: "Tecnologia", amount: 82000, color: "hsl(var(--chart-4))", icon: Monitor },
+  { category: "Escritório", amount: 45000, color: "hsl(var(--chart-5))", icon: Building2 },
+  { category: "Outros", amount: 32000, color: "hsl(var(--muted-foreground))", icon: MoreHorizontal },
 ];
 
 const formatCurrency = (value: number) => {
@@ -41,18 +50,24 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0];
     return (
-      <div className="bg-card/95 backdrop-blur-md border border-border rounded-xl p-3 shadow-corporate-lg">
-        <div className="flex items-center gap-2">
+      <div className="glass-premium rounded-xl p-4 shadow-premium-lg border border-border/50 animate-slide-up-fade">
+        <div className="flex items-center gap-3 mb-2">
           <div 
-            className="w-3 h-3 rounded-sm" 
-            style={{ backgroundColor: data.payload.color }}
+            className="w-4 h-4 rounded-md" 
+            style={{ 
+              backgroundColor: data.payload.color,
+              boxShadow: `0 0 10px ${data.payload.color}50`
+            }}
           />
-          <span className="text-sm font-medium text-foreground">
+          <span className="text-sm font-semibold text-foreground">
             {data.payload.category}
           </span>
         </div>
-        <p className="text-lg font-bold text-foreground mt-1">
+        <p className="text-2xl font-bold text-foreground">
           {formatCurrency(data.value)}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {((data.value / 867000) * 100).toFixed(1)}% do total
         </p>
       </div>
     );
@@ -60,32 +75,70 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   return null;
 };
 
-export function ExpenseChart() {
+const CustomLabel = (props: any) => {
+  const { x, y, width, value } = props;
   return (
-    <Card className="bg-card/95 backdrop-blur-md border-border shadow-corporate-md hover:shadow-corporate-lg transition-corporate animate-corporate-enter rounded-2xl">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold text-foreground">Despesas por Categoria</CardTitle>
-        <CardDescription className="text-muted-foreground">Gastos acumulados no ano</CardDescription>
+    <text 
+      x={x + width + 8} 
+      y={y + 16} 
+      fill="hsl(var(--foreground))"
+      fontSize={12}
+      fontWeight={600}
+      className="animate-fade-in"
+    >
+      {formatCurrency(value)}
+    </text>
+  );
+};
+
+export function ExpenseChart() {
+  const total = expenseData.reduce((acc, item) => acc + item.amount, 0);
+
+  return (
+    <Card className="glass-premium border-border/50 shadow-premium-md hover:shadow-premium-lg transition-premium animate-corporate-enter rounded-2xl overflow-hidden relative">
+      {/* Gradient mesh background */}
+      <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+      
+      <CardHeader className="relative z-10">
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="text-lg font-semibold text-foreground">Despesas por Categoria</CardTitle>
+            <CardDescription className="text-muted-foreground">Gastos acumulados no ano</CardDescription>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Total</p>
+            <p className="text-lg font-bold text-foreground">{formatCurrency(total)}</p>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative z-10">
         <div className="h-[300px] md:h-[350px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart 
               data={expenseData}
               layout="vertical"
-              margin={{ top: 0, right: 20, left: 0, bottom: 0 }}
+              margin={{ top: 0, right: 80, left: 0, bottom: 0 }}
             >
+              <defs>
+                {expenseData.map((entry, index) => (
+                  <linearGradient key={`gradient-${index}`} id={`barGradient-${index}`} x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor={entry.color} stopOpacity={0.9}/>
+                    <stop offset="100%" stopColor={entry.color} stopOpacity={0.6}/>
+                  </linearGradient>
+                ))}
+              </defs>
               <CartesianGrid 
-                strokeDasharray="3 3" 
+                strokeDasharray="4 4" 
                 stroke="hsl(var(--border))" 
                 horizontal={true}
                 vertical={false}
+                strokeOpacity={0.5}
               />
               <XAxis 
                 type="number"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
                 tickFormatter={formatCurrency}
               />
               <YAxis 
@@ -93,21 +146,47 @@ export function ExpenseChart() {
                 dataKey="category"
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                width={80}
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
+                width={85}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted)/0.2)' }} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--muted)/0.15)', radius: 8 }} />
               <Bar 
                 dataKey="amount" 
-                radius={[0, 8, 8, 0]}
-                maxBarSize={32}
+                radius={[0, 10, 10, 0]}
+                maxBarSize={28}
+                isAnimationActive={true}
+                animationBegin={0}
+                animationDuration={1200}
+                animationEasing="ease-out"
               >
                 {expenseData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={`url(#barGradient-${index})`}
+                    className="transition-all duration-300 hover:opacity-80"
+                    style={{ filter: `drop-shadow(0 2px 4px ${entry.color}30)` }}
+                  />
                 ))}
+                <LabelList dataKey="amount" content={<CustomLabel />} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+        </div>
+        
+        {/* Category legend with icons */}
+        <div className="flex flex-wrap justify-center gap-3 mt-4 pt-4 border-t border-border/50">
+          {expenseData.slice(0, 4).map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <div 
+                key={index} 
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/50 hover:bg-muted transition-colors"
+              >
+                <Icon className="w-3.5 h-3.5" style={{ color: item.color }} />
+                <span className="text-xs font-medium text-muted-foreground">{item.category}</span>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>
