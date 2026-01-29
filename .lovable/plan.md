@@ -1,351 +1,388 @@
 
 
-# Plano de Melhoria Visual: Graficos Premium com Animacoes Impactantes
+# Plano de Integracao: Google Sheets com FinSight
 
 ## Visao Geral
 
-Transformacao completa da apresentacao visual dos graficos, valores e animacoes para criar uma experiencia que "brilhe os olhos" de quem visualiza. O foco sera em:
-
-1. **Graficos mais modernos e interativos** com animacoes fluidas
-2. **Valores financeiros com contadores animados** (counting up)
-3. **Microinteracoes e hover states premium**
-4. **Gradientes mais vibrantes e sombras luminosas**
-5. **Skeleton loading elegante**
-6. **Badges e indicadores animados**
+Implementacao de uma integracao completa com o Google Sheets (Google Planilhas) que permite aos usuarios conectar suas planilhas financeiras e sincronizar automaticamente os dados com o sistema. A integracao fara uma analise precisa de toda a planilha, incluindo todos os meses e dados necessarios para alimentar as funcionalidades do projeto.
 
 ---
 
-## Fase 1: Sistema de Animacoes Premium
-
-### 1.1 Novas Animacoes CSS (src/index.css)
-
-| Animacao | Descricao | Uso |
-|----------|-----------|-----|
-| `count-up` | Numeros crescem de 0 ao valor final | Valores financeiros |
-| `pulse-glow` | Pulsacao com brilho sutil | Indicadores positivos |
-| `float` | Flutuacao suave | Cards e icones |
-| `shimmer-slide` | Efeito de luz deslizante | Loading e highlights |
-| `gradient-shift` | Gradiente que muda suavemente | Backgrounds de graficos |
-| `scale-bounce` | Escala com bounce elastico | Hover em botoes |
-| `slide-up-fade` | Desliza para cima com fade | Tooltips e modais |
-| `progress-fill` | Preenchimento de barra | Barras de progresso |
-
-### 1.2 Variaveis CSS para Efeitos
+## Arquitetura da Solucao
 
 ```text
-Novas variaveis:
---glow-primary: azul com blur luminoso
---glow-success: verde com blur luminoso
---glow-danger: vermelho com blur luminoso
---gradient-premium: gradiente diagonal animado
++-------------------+         +-------------------+         +-------------------+
+|   Google Sheets   |   -->   |   Edge Function   |   -->   |    Supabase DB    |
+|   (Planilha)      |         |   (Deno/Backend)  |         |   (Dados)         |
++-------------------+         +-------------------+         +-------------------+
+        |                             |                             |
+        v                             v                             v
+  - Transacoes                - Autenticacao OAuth        - transactions
+  - Receitas/Despesas         - Leitura de dados          - invoices
+  - Notas Fiscais             - Mapeamento colunas        - balance_sheet_items
+  - Balanco Patrimonial       - Sincronizacao             - google_sheet_connections
 ```
 
 ---
 
-## Fase 2: Componente AnimatedValue
+## Fase 1: Banco de Dados - Novas Tabelas
 
-### 2.1 Novo Componente: src/components/ui/animated-value.tsx
+### 1.1 Tabela: google_sheet_connections
+
+Armazena as conexoes de planilhas Google dos usuarios.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid | PK |
+| user_id | uuid | FK para auth.users |
+| spreadsheet_id | text | ID da planilha Google |
+| spreadsheet_name | text | Nome da planilha |
+| sheet_name | text | Nome da aba (sheet) |
+| refresh_token | text | Token OAuth (encriptado) |
+| column_mapping | jsonb | Mapeamento de colunas |
+| last_sync_at | timestamptz | Ultima sincronizacao |
+| sync_status | text | success/error/syncing |
+| sync_frequency | text | manual/hourly/daily |
+| created_at | timestamptz | Data de criacao |
+| updated_at | timestamptz | Data de atualizacao |
+
+### 1.2 Tabela: google_sheet_sync_logs
+
+Historico de sincronizacoes.
+
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid | PK |
+| connection_id | uuid | FK para google_sheet_connections |
+| rows_processed | integer | Linhas processadas |
+| rows_imported | integer | Linhas importadas |
+| rows_updated | integer | Linhas atualizadas |
+| errors | jsonb | Erros encontrados |
+| started_at | timestamptz | Inicio da sync |
+| completed_at | timestamptz | Fim da sync |
+| status | text | success/error |
+
+### 1.3 Politicas RLS
+
+- Usuarios podem ver/editar apenas suas proprias conexoes
+- Logs de sincronizacao vinculados ao usuario via connection
+
+---
+
+## Fase 2: Autenticacao OAuth com Google
+
+### 2.1 Fluxo OAuth 2.0
+
+1. Usuario clica em "Conectar Google Sheets"
+2. Redireciona para tela de consentimento do Google
+3. Usuario autoriza acesso as planilhas
+4. Google retorna authorization code
+5. Backend troca code por access_token + refresh_token
+6. Tokens salvos de forma segura no banco
+
+### 2.2 Secrets Necessarias
+
+| Secret | Descricao |
+|--------|-----------|
+| GOOGLE_CLIENT_ID | ID do cliente OAuth |
+| GOOGLE_CLIENT_SECRET | Secret do cliente OAuth |
+
+### 2.3 Escopos OAuth Requeridos
+
+```text
+https://www.googleapis.com/auth/spreadsheets.readonly
+https://www.googleapis.com/auth/drive.metadata.readonly
+```
+
+---
+
+## Fase 3: Edge Functions
+
+### 3.1 google-sheets-auth
+
+Gerencia o fluxo de autenticacao OAuth.
+
+Endpoints:
+- `GET /auth-url`: Gera URL de autorizacao
+- `POST /callback`: Processa callback do OAuth
+
+### 3.2 google-sheets-sync
+
+Sincroniza dados da planilha com o banco.
 
 Funcionalidades:
-- Contador animado de 0 ate o valor final
-- Duracao configuravel (default 1.5s)
-- Easing suave (ease-out)
-- Prefixo e sufixo (R$, %, etc)
-- Formatacao automatica de moeda
-- Cor dinamica (success/danger/primary)
-- Efeito de glow no valor ao terminar
+- Leitura completa da planilha
+- Deteccao automatica de colunas
+- Mapeamento inteligente de campos
+- Importacao em batch
+- Tratamento de datas/valores
 
-Exemplo de uso:
-```text
-<AnimatedValue 
-  value={253412}
-  prefix="R$ "
-  color="primary"
-  glow={true}
-  duration={1500}
-/>
+### 3.3 google-sheets-list
+
+Lista planilhas disponiveis na conta do usuario.
+
+Retorna:
+- Lista de spreadsheets acessiveis
+- Abas (sheets) de cada planilha
+- Cabecalhos de cada aba
+
+---
+
+## Fase 4: Analise Inteligente da Planilha
+
+### 4.1 Deteccao Automatica de Colunas
+
+O sistema analisara os cabecalhos e conteudo para identificar:
+
+| Campo Sistema | Cabecalhos Detectados |
+|---------------|----------------------|
+| description | Descricao, Historico, Lancamento, Obs |
+| amount | Valor, Montante, Quantia, R$, Total |
+| date | Data, Dt, Date, Vencimento, Competencia |
+| type | Tipo, Entrada/Saida, D/C, Natureza |
+| category | Categoria, Classificacao, Grupo, Centro Custo |
+| client_vendor | Cliente, Fornecedor, Razao Social, Empresa |
+
+### 4.2 Analise de Meses
+
+- Detectar coluna de data
+- Agrupar dados por mes/ano
+- Identificar padrao de organizacao:
+  - Uma aba por mes
+  - Todas as transacoes em uma aba
+  - Colunas separadas por mes
+
+### 4.3 Tipos de Dados Detectados
+
+- **Transacoes**: Receitas e despesas
+- **Notas Fiscais**: NFe, numero, cliente, valor, vencimento
+- **Balanco**: Ativos, passivos, patrimonio liquido
+
+---
+
+## Fase 5: Frontend - Componentes
+
+### 5.1 Nova Pagina: GoogleSheetsPage
+
+Arquivo: `src/pages/GoogleSheetsPage.tsx`
+
+Secoes:
+- Botao "Conectar Google Sheets"
+- Lista de planilhas conectadas
+- Status de sincronizacao
+- Botao de sincronizar manualmente
+- Historico de sincronizacoes
+
+### 5.2 Modal: SpreadsheetSelectorModal
+
+Arquivo: `src/components/modals/SpreadsheetSelectorModal.tsx`
+
+Funcionalidades:
+- Listar planilhas disponiveis
+- Selecionar aba especifica
+- Preview dos dados
+- Configurar mapeamento de colunas
+- Escolher frequencia de sync
+
+### 5.3 Componente: ColumnMappingForm
+
+Arquivo: `src/components/google-sheets/ColumnMappingForm.tsx`
+
+Interface para mapear colunas da planilha para campos do sistema:
+- Dropdowns para cada campo
+- Auto-deteccao com sugestoes
+- Preview dos dados mapeados
+
+### 5.4 Componente: SyncStatusCard
+
+Arquivo: `src/components/google-sheets/SyncStatusCard.tsx`
+
+Exibe:
+- Status da ultima sincronizacao
+- Linhas importadas
+- Erros encontrados
+- Botao de re-sincronizar
+
+---
+
+## Fase 6: Hook useGoogleSheets
+
+Arquivo: `src/hooks/useGoogleSheets.ts`
+
+Funcionalidades:
+- Iniciar fluxo OAuth
+- Listar planilhas conectadas
+- Sincronizar dados
+- Desconectar planilha
+- Atualizar mapeamento
+
+---
+
+## Fase 7: Sincronizacao Automatica
+
+### 7.1 Opcoes de Frequencia
+
+| Frequencia | Descricao |
+|------------|-----------|
+| manual | Apenas quando usuario solicita |
+| hourly | A cada hora via cron |
+| daily | Uma vez por dia as 6h |
+
+### 7.2 Cron Job (Opcional)
+
+Usar `pg_cron` + `pg_net` para executar sincronizacao periodica:
+
+```sql
+-- Sincronizar planilhas daily
+SELECT cron.schedule(
+  'sync-google-sheets-daily',
+  '0 6 * * *',
+  $$ SELECT net.http_post(...) $$
+);
 ```
 
 ---
 
-## Fase 3: Graficos Premium Redesenhados
+## Fase 8: Tratamento de Dados
 
-### 3.1 RevenueChart Aprimorado
+### 8.1 Parsing de Valores
 
-Melhorias:
-- Gradientes mais vibrantes e profundos
-- Linha com sombra/glow suave
-- Pontos nos vertices com animacao de pulso
-- Area com gradiente mesh (multiplas cores)
-- Cursor animado ao hover
-- Tooltip glassmorphism com animacao slide-up
-- Legenda interativa com hover
-- Grid pontilhado mais sutil
-
-### 3.2 ExpenseChart Aprimorado
-
-Melhorias:
-- Barras com gradiente vertical
-- Animacao de preenchimento progressivo (da esquerda para direita)
-- Bordas arredondadas mais pronunciadas
-- Valores exibidos na ponta das barras
-- Hover com scale e glow
-- Cores mais vibrantes e contrastantes
-- Icones minimalistas por categoria
-
-### 3.3 ProfitDistributionChart Aprimorado
-
-Melhorias:
-- Donut chart com sombra interna
-- Segmentos com animacao de "desenho" (stroke-dasharray)
-- Valor central grande com animacao de contagem
-- Hover: segmento se destaca com scale
-- Cores com gradiente radial
-- Legenda redesenhada com badges coloridos
-- Porcentagens animadas
-
-### 3.4 CashFlow Chart Aprimorado
-
-Melhorias:
-- Areas com gradientes mais vivos
-- Linha de referencia zero animada
-- Marcadores nos pontos de cruzamento
-- Projecao futura em linha pontilhada
-- Setas indicando tendencia
-
----
-
-## Fase 4: KPI Cards Premium
-
-### 4.1 KPICard Redesenhado
-
-Melhorias:
-- Valores com AnimatedValue (contador)
-- Icone com fundo gradiente e glow
-- Badge de tendencia com animacao de pulse
-- Seta de tendencia animada (bounce)
-- Borda com gradiente sutil
-- Hover: elevacao + glow colorido
-- Linha de progresso animada na base do card
-- Sparkline minigraphic opcional
-
-### 4.2 Novo Componente: SparklineChart
-
-Grafico de linha minimalista para dentro dos cards:
-- Sem eixos, apenas a linha
-- Gradiente de preenchimento sutil
-- Responsivo ao tamanho do container
-- Animacao de desenho da linha
-
----
-
-## Fase 5: Tooltips e Popovers Premium
-
-### 5.1 Novo Componente: GlassTooltip
-
-Caracteristicas:
-- Glassmorphism com blur mais forte (20px)
-- Borda com gradiente animado
-- Animacao de entrada slide-up + scale
-- Seta indicadora estilizada
-- Shadow com cor do contexto
-- Conteudo com tipografia refinada
-
----
-
-## Fase 6: Indicadores e Badges Animados
-
-### 6.1 TrendBadge Component
-
-Novo componente para indicadores de tendencia:
-- Icone de seta com animacao bounce
-- Fundo com gradiente suave
-- Texto com cor contextual
-- Animacao de pulse quando positivo
-- Glow sutil colorido
-
-### 6.2 StatusIndicator Component
-
-Indicador de status animado:
-- Ponto com animacao de pulse
-- Cores: success (verde), warning (amarelo), danger (vermelho)
-- Tooltip ao hover
-- Versao grande e pequena
-
----
-
-## Fase 7: Loading States Premium
-
-### 7.1 ChartSkeleton Component
-
-Skeleton especifico para graficos:
-- Formato do grafico desenhado
-- Animacao shimmer mais suave
-- Pulso de opacidade
-- Transicao suave ao carregar dados
-
-### 7.2 ValueSkeleton Component
-
-Skeleton para valores:
-- Largura proporcional ao valor esperado
-- Shimmer animado
-- Bordas arredondadas
-
----
-
-## Fase 8: Atualizacao dos Componentes Existentes
-
-### 8.1 OverviewPage
-
-Alteracoes:
-- Saldo total com AnimatedValue gigante
-- Card principal com glow primario
-- KPIs com contadores animados
-- Graficos com novas animacoes
-- Espacamento refinado
-
-### 8.2 CashFlowPage
-
-Alteracoes:
-- KPIs com AnimatedValue
-- Grafico com animacoes de entrada
-- Lista de vencimentos com indicadores animados
-
-### 8.3 BalanceSheetPage
-
-Alteracoes:
-- Totais com AnimatedValue
-- Items com animacao de slide ao aparecer
-- Hover states mais pronunciados
-
-### 8.4 InvoicesPage
-
-Alteracoes:
-- Status badges animados
-- Valores com formatacao premium
-- Lista com animacoes staggered
-
----
-
-## Fase 9: Paleta de Cores Vibrante
-
-### 9.1 Atualizacao de Variaveis CSS
-
-Novas cores para graficos:
 ```text
---chart-1: azul vibrante com saturacao alta
---chart-2: verde esmeralda vivo
---chart-3: roxo/violeta moderno
---chart-4: laranja/amber quente
---chart-5: rosa/magenta destaque
+Entrada: "R$ 1.234,56" ou "1234.56" ou "1,234.56"
+Saida: 1234.56 (number)
 ```
 
-### 9.2 Gradientes Premium
+### 8.2 Parsing de Datas
 
-Novos gradientes para uso em cards e graficos:
 ```text
---gradient-blue: linear de azul claro para azul escuro
---gradient-success: linear de verde claro para verde escuro
---gradient-mesh: gradiente conic/radial multicolorido
+Formatos suportados:
+- DD/MM/YYYY (Brasil)
+- YYYY-MM-DD (ISO)
+- MM/DD/YYYY (US)
+- Serial Excel (number)
 ```
 
----
+### 8.3 Deteccao de Tipo (Receita/Despesa)
 
-## Fase 10: Detalhes de Implementacao
-
-### 10.1 Dependencias
-
-Nenhuma nova dependencia necessaria. Utilizaremos:
-- Recharts (ja instalado) - animacoes nativas
-- CSS animations - keyframes customizados
-- React hooks (useState, useEffect) - logica de contagem
-
-### 10.2 Arquivos a Criar/Modificar
-
-**Novos arquivos:**
-- `src/components/ui/animated-value.tsx`
-- `src/components/ui/sparkline-chart.tsx`
-- `src/components/ui/glass-tooltip.tsx`
-- `src/components/ui/trend-badge.tsx`
-- `src/components/ui/status-indicator.tsx`
-- `src/components/ui/chart-skeleton.tsx`
-
-**Arquivos a modificar:**
-- `src/index.css` - novas animacoes e variaveis
-- `src/tailwind.config.ts` - novas cores e animacoes
-- `src/components/dashboard/KPICard.tsx`
-- `src/components/dashboard/RevenueChart.tsx`
-- `src/components/dashboard/ExpenseChart.tsx`
-- `src/components/dashboard/ProfitDistributionChart.tsx`
-- `src/components/dashboard/RecentTransactions.tsx`
-- `src/pages/OverviewPage.tsx`
-- `src/pages/CashFlowPage.tsx`
-- `src/pages/BalanceSheetPage.tsx`
+Logica:
+1. Se existe coluna "tipo": usar valor
+2. Se valor negativo: despesa
+3. Se cabecalho indica "saida"/"debito": despesa
+4. Caso contrario: receita
 
 ---
 
-## Fase 11: Especificacoes Tecnicas
-
-### 11.1 AnimatedValue Hook
+## Fase 9: Estrutura de Arquivos
 
 ```text
-useAnimatedValue(targetValue, options):
-  - startValue: 0 (default)
-  - duration: 1500ms
-  - easing: easeOutExpo
-  - delay: 0ms
-  - decimals: 0
-  - onComplete: callback
+supabase/
+  functions/
+    google-sheets-auth/
+      index.ts
+    google-sheets-sync/
+      index.ts
+    google-sheets-list/
+      index.ts
+
+src/
+  pages/
+    GoogleSheetsPage.tsx (novo)
   
-  Retorna: currentValue (interpolado)
-```
-
-### 11.2 CSS Keyframes Principais
-
-```text
-@keyframes pulse-glow:
-  0%, 100%: box-shadow normal
-  50%: box-shadow com blur expandido
-
-@keyframes count-emphasis:
-  0%: scale 1
-  50%: scale 1.05, color intensified
-  100%: scale 1
-
-@keyframes draw-line (para graficos):
-  0%: stroke-dashoffset = total
-  100%: stroke-dashoffset = 0
-
-@keyframes gradient-flow:
-  0%: background-position 0% 50%
-  50%: background-position 100% 50%
-  100%: background-position 0% 50%
-```
-
-### 11.3 Configuracao Recharts
-
-Propriedades de animacao:
-```text
-isAnimationActive={true}
-animationBegin={0}
-animationDuration={1200}
-animationEasing="ease-out"
+  components/
+    google-sheets/
+      ColumnMappingForm.tsx (novo)
+      SpreadsheetList.tsx (novo)
+      SyncStatusCard.tsx (novo)
+      ConnectionCard.tsx (novo)
+    modals/
+      SpreadsheetSelectorModal.tsx (novo)
+  
+  hooks/
+    useGoogleSheets.ts (novo)
+  
+  lib/
+    google-sheets-parser.ts (novo)
 ```
 
 ---
 
-## Resultado Esperado
+## Fase 10: Fluxo do Usuario
 
-Interface financeira com visual que impressiona:
+1. Usuario acessa pagina "Integracoes" ou "Google Sheets"
+2. Clica em "Conectar Google Sheets"
+3. Autoriza acesso via OAuth do Google
+4. Sistema lista planilhas disponiveis
+5. Usuario seleciona planilha e aba
+6. Sistema analisa e sugere mapeamento de colunas
+7. Usuario confirma/ajusta mapeamento
+8. Sistema importa dados para o banco
+9. Dashboard atualizado com dados reais
+10. Sincronizacoes futuras automaticas ou manuais
 
-1. **Valores que "crescem"** - Numeros animados de 0 ao valor final
-2. **Graficos vivos** - Animacoes de desenho e transicoes suaves
-3. **Cores vibrantes** - Paleta mais rica e gradientes premium
-4. **Microinteracoes** - Hover states, pulsos e glows sutis
-5. **Profundidade** - Sombras luminosas e glassmorphism refinado
-6. **Fluidez** - Transicoes suaves em toda interacao
-7. **Feedback visual** - Indicadores animados de status e tendencia
-8. **Loading elegante** - Skeletons com shimmer suave
+---
+
+## Fase 11: Atualizacao da Navegacao
+
+### 11.1 AppSidebar
+
+Adicionar novo item:
+- Icone: FileSpreadsheet ou Sheet
+- Label: "Google Sheets" ou "Integracoes"
+- Rota: /google-sheets
+
+### 11.2 SettingsPage
+
+Adicionar secao "Integracoes" com:
+- Status da conexao Google
+- Botao conectar/desconectar
+- Link para gerenciar planilhas
+
+---
+
+## Secao Tecnica: Implementacao
+
+### Edge Function - google-sheets-sync (exemplo)
+
+```typescript
+// Estrutura da edge function
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': '...',
+};
+
+Deno.serve(async (req) => {
+  // 1. Obter connection_id do body
+  // 2. Buscar tokens e configuracao do banco
+  // 3. Chamar Google Sheets API
+  // 4. Parsear dados conforme mapeamento
+  // 5. Inserir/atualizar no banco
+  // 6. Registrar log de sincronizacao
+});
+```
+
+### Google Sheets API - Leitura
+
+```typescript
+// Leitura de valores
+const response = await fetch(
+  `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
+  {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  }
+);
+```
+
+---
+
+## Consideracoes de Seguranca
+
+1. **Tokens OAuth**: Armazenados com criptografia no banco
+2. **Refresh Token**: Renovacao automatica quando access_token expira
+3. **RLS**: Usuarios acessam apenas suas conexoes
+4. **Validacao**: Todos os dados validados antes da insercao
+5. **Rate Limiting**: Respeitar limites da API do Google
 
 ---
 
@@ -353,14 +390,41 @@ Interface financeira com visual que impressiona:
 
 | Etapa | Descricao | Arquivos |
 |-------|-----------|----------|
-| 1 | Animacoes CSS base | index.css |
-| 2 | Componente AnimatedValue | animated-value.tsx |
-| 3 | TrendBadge e StatusIndicator | trend-badge.tsx, status-indicator.tsx |
-| 4 | KPICard redesenhado | KPICard.tsx |
-| 5 | RevenueChart premium | RevenueChart.tsx |
-| 6 | ExpenseChart premium | ExpenseChart.tsx |
-| 7 | ProfitDistributionChart premium | ProfitDistributionChart.tsx |
-| 8 | OverviewPage com animacoes | OverviewPage.tsx |
-| 9 | Demais paginas | CashFlowPage, BalanceSheetPage |
-| 10 | Polimento final | Todos os componentes |
+| 1 | Configurar secrets Google OAuth | Settings do projeto |
+| 2 | Criar tabelas no banco | Migracao SQL |
+| 3 | Edge Function de autenticacao | google-sheets-auth/index.ts |
+| 4 | Edge Function de listagem | google-sheets-list/index.ts |
+| 5 | Edge Function de sincronizacao | google-sheets-sync/index.ts |
+| 6 | Hook useGoogleSheets | hooks/useGoogleSheets.ts |
+| 7 | Pagina Google Sheets | pages/GoogleSheetsPage.tsx |
+| 8 | Componentes de mapeamento | components/google-sheets/*.tsx |
+| 9 | Modal de selecao | modals/SpreadsheetSelectorModal.tsx |
+| 10 | Atualizar navegacao | AppSidebar.tsx, App.tsx |
+| 11 | Testes e polimento | Todos os arquivos |
+
+---
+
+## Pre-requisitos
+
+Antes de iniciar a implementacao:
+1. **Criar projeto no Google Cloud Console**
+2. **Habilitar Google Sheets API e Google Drive API**
+3. **Configurar tela de consentimento OAuth**
+4. **Obter GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET**
+5. **Adicionar secrets no projeto Lovable**
+
+---
+
+## Resultado Esperado
+
+Sistema com integracao completa Google Sheets:
+
+- Conexao OAuth segura com Google
+- Listagem e selecao de planilhas
+- Mapeamento inteligente de colunas
+- Importacao automatica de transacoes, notas fiscais e balanco
+- Sincronizacao periodica ou manual
+- Dashboard alimentado por dados reais da planilha
+- Historico de sincronizacoes com logs de erro
+- Interface intuitiva para gerenciar conexoes
 
