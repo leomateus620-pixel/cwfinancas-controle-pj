@@ -50,6 +50,107 @@ export type Database = {
         }
         Relationships: []
       }
+      google_sheet_connections: {
+        Row: {
+          access_token: string | null
+          column_mapping: Json | null
+          created_at: string
+          data_type: string
+          id: string
+          last_sync_at: string | null
+          refresh_token: string
+          sheet_name: string | null
+          spreadsheet_id: string
+          spreadsheet_name: string
+          sync_frequency: string
+          sync_status: string
+          token_expires_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token?: string | null
+          column_mapping?: Json | null
+          created_at?: string
+          data_type?: string
+          id?: string
+          last_sync_at?: string | null
+          refresh_token: string
+          sheet_name?: string | null
+          spreadsheet_id: string
+          spreadsheet_name: string
+          sync_frequency?: string
+          sync_status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string | null
+          column_mapping?: Json | null
+          created_at?: string
+          data_type?: string
+          id?: string
+          last_sync_at?: string | null
+          refresh_token?: string
+          sheet_name?: string | null
+          spreadsheet_id?: string
+          spreadsheet_name?: string
+          sync_frequency?: string
+          sync_status?: string
+          token_expires_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      google_sheet_sync_logs: {
+        Row: {
+          completed_at: string | null
+          connection_id: string
+          errors: Json | null
+          id: string
+          rows_imported: number | null
+          rows_processed: number | null
+          rows_skipped: number | null
+          rows_updated: number | null
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          connection_id: string
+          errors?: Json | null
+          id?: string
+          rows_imported?: number | null
+          rows_processed?: number | null
+          rows_skipped?: number | null
+          rows_updated?: number | null
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          connection_id?: string
+          errors?: Json | null
+          id?: string
+          rows_imported?: number | null
+          rows_processed?: number | null
+          rows_skipped?: number | null
+          rows_updated?: number | null
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "google_sheet_sync_logs_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoices: {
         Row: {
           client_name: string
