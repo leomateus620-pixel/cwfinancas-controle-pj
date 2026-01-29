@@ -10,7 +10,8 @@ import {
   Upload, 
   Settings,
   Sparkles,
-  LineChart
+  LineChart,
+  FileSpreadsheet
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -40,6 +41,7 @@ const mainNavItems = [
 
 const toolsNavItems = [
   { title: "Notas Fiscais", url: "/invoices", icon: FileCheck },
+  { title: "Google Sheets", url: "/google-sheets", icon: FileSpreadsheet },
   { title: "Upload de Dados", url: "/upload", icon: Upload },
   { title: "Insights IA", url: "/insights", icon: Sparkles },
 ];

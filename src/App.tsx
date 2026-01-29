@@ -16,6 +16,7 @@ import InvoicesPage from "@/pages/InvoicesPage";
 import UploadPage from "@/pages/UploadPage";
 import InsightsPage from "@/pages/InsightsPage";
 import SettingsPage from "@/pages/SettingsPage";
+import GoogleSheetsPage from "@/pages/GoogleSheetsPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
@@ -51,6 +52,7 @@ const App = () => (
               <Route path="/invoices" element={<InvoicesPage />} />
               <Route path="/upload" element={<UploadPage />} />
               <Route path="/insights" element={<InsightsPage />} />
+              <Route path="/google-sheets" element={<GoogleSheetsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
             
