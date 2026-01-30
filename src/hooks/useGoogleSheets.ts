@@ -76,19 +76,23 @@ export function useGoogleSheets() {
   const getAuthUrl = useCallback(async () => {
     const redirectUri = `${window.location.origin}/google-sheets`;
     
-    const { data, error } = await supabase.functions.invoke("google-sheets-auth", {
-      body: null,
-      headers: {},
-    });
-
-    if (error) throw error;
-
-    // Construct URL manually since we need query params
+    // Use direct fetch with proper headers
     const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/google-sheets-auth?action=auth-url&redirect_uri=${encodeURIComponent(redirectUri)}`;
     
-    const response = await fetch(functionUrl);
-    const result = await response.json();
+    const response = await fetch(functionUrl, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      },
+    });
     
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    }
+    
+    const result = await response.json();
     if (result.error) throw new Error(result.error);
     return result.auth_url;
   }, []);
@@ -255,8 +259,11 @@ export function useGoogleSheets() {
       return data as SyncResult;
     },
     onSuccess: (data) => {
+      // Invalidar todas as queries de dados para atualizar dashboards
       queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
       toast({
         title: "Sincronização concluída",
         description: `${data.rows_imported} linhas importadas de ${data.rows_processed} processadas.`,

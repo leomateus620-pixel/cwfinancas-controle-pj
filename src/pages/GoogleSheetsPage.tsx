@@ -18,6 +18,7 @@ import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 import { SpreadsheetSelectorModal } from "@/components/modals/SpreadsheetSelectorModal";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return "Nunca";
@@ -34,6 +35,7 @@ export function GoogleSheetsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [showSelector, setShowSelector] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const { toast } = useToast();
   
   const {
     connections,
@@ -68,6 +70,11 @@ export function GoogleSheetsPage() {
       window.location.href = authUrl;
     } catch (error) {
       console.error("Failed to get auth URL:", error);
+      toast({
+        title: "Erro ao conectar",
+        description: error instanceof Error ? error.message : "Não foi possível iniciar a conexão com o Google",
+        variant: "destructive",
+      });
       setIsConnecting(false);
     }
   };

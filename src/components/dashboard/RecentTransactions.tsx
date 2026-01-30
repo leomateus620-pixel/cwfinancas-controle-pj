@@ -1,51 +1,8 @@
-import { ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { ArrowUpRight, ArrowDownLeft, Loader2, FileQuestion } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { cn } from "@/lib/utils";
-
-// Dados de exemplo - serão substituídos por dados reais
-const transactions = [
-  {
-    id: 1,
-    description: "Licença de Software Empresarial",
-    category: "Vendas de Produtos",
-    amount: 24500,
-    type: "income",
-    date: "2024-01-15",
-  },
-  {
-    id: 2,
-    description: "Serviços de Nuvem AWS",
-    category: "Tecnologia",
-    amount: -8420,
-    type: "expense",
-    date: "2024-01-14",
-  },
-  {
-    id: 3,
-    description: "Consultoria de TI",
-    category: "Serviços",
-    amount: 15000,
-    type: "income",
-    date: "2024-01-13",
-  },
-  {
-    id: 4,
-    description: "Campanha de Marketing",
-    category: "Marketing",
-    amount: -12800,
-    type: "expense",
-    date: "2024-01-12",
-  },
-  {
-    id: 5,
-    description: "Receita de Assinaturas SaaS",
-    category: "Assinaturas",
-    amount: 8900,
-    type: "income",
-    date: "2024-01-11",
-  },
-];
+import { useTransactions } from "@/hooks/useTransactions";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("pt-BR", {
@@ -63,6 +20,11 @@ const formatDate = (dateStr: string) => {
 };
 
 export function RecentTransactions() {
+  const { transactions, isLoading } = useTransactions();
+
+  // Pegar as últimas 5 transações
+  const recentTransactions = transactions.slice(0, 5);
+
   return (
     <Card className="glass-premium border-border/50 shadow-premium-md hover:shadow-premium-lg transition-premium animate-corporate-enter rounded-2xl overflow-hidden relative">
       {/* Gradient mesh background */}
@@ -78,65 +40,77 @@ export function RecentTransactions() {
         </div>
       </CardHeader>
       <CardContent className="relative z-10">
-        <div className="space-y-2 stagger-list">
-          {transactions.map((transaction, index) => (
-            <div 
-              key={transaction.id}
-              className={cn(
-                "flex items-center justify-between py-4 px-4 -mx-2 rounded-xl",
-                "border border-transparent hover:border-border/50",
-                "hover:bg-muted/50 transition-all duration-300",
-                "cursor-pointer group"
-              )}
-              style={{ animationDelay: `${index * 50}ms` }}
-            >
-              <div className="flex items-center gap-4">
-                <div 
-                  className={cn(
-                    "w-11 h-11 rounded-xl flex items-center justify-center",
-                    "transition-all duration-300 group-hover:scale-110",
-                    transaction.type === "income" 
-                      ? "bg-success/10 group-hover:bg-success/20" 
-                      : "bg-destructive/10 group-hover:bg-destructive/20"
-                  )}
-                  style={{
-                    boxShadow: transaction.type === "income" 
-                      ? '0 0 0 0 hsl(var(--success) / 0)' 
-                      : '0 0 0 0 hsl(var(--destructive) / 0)'
-                  }}
-                >
-                  {transaction.type === "income" ? (
-                    <ArrowDownLeft className="w-5 h-5 text-success" />
-                  ) : (
-                    <ArrowUpRight className="w-5 h-5 text-destructive" />
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                    {transaction.description}
-                  </p>
-                  <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                    <span className="px-2 py-0.5 bg-muted/50 rounded-full">{transaction.category}</span>
-                    <span>•</span>
-                    <span>{formatDate(transaction.date)}</span>
-                  </p>
-                </div>
-              </div>
-              <span 
+        {isLoading ? (
+          <div className="flex items-center justify-center h-64">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        ) : recentTransactions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-center">
+            <FileQuestion className="w-12 h-12 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground">Nenhuma transação encontrada</p>
+            <p className="text-xs text-muted-foreground mt-1">Importe dados ou adicione transações manualmente</p>
+          </div>
+        ) : (
+          <div className="space-y-2 stagger-list">
+            {recentTransactions.map((transaction, index) => (
+              <div 
+                key={transaction.id}
                 className={cn(
-                  "text-sm font-bold tabular-nums transition-all duration-300",
-                  "group-hover:scale-105",
-                  transaction.type === "income" 
-                    ? "text-success" 
-                    : "text-destructive"
+                  "flex items-center justify-between py-4 px-4 -mx-2 rounded-xl",
+                  "border border-transparent hover:border-border/50",
+                  "hover:bg-muted/50 transition-all duration-300",
+                  "cursor-pointer group"
                 )}
+                style={{ animationDelay: `${index * 50}ms` }}
               >
-                {transaction.type === "income" ? "+" : "-"}
-                {formatCurrency(transaction.amount)}
-              </span>
-            </div>
-          ))}
-        </div>
+                <div className="flex items-center gap-4">
+                  <div 
+                    className={cn(
+                      "w-11 h-11 rounded-xl flex items-center justify-center",
+                      "transition-all duration-300 group-hover:scale-110",
+                      transaction.type === "income" 
+                        ? "bg-success/10 group-hover:bg-success/20" 
+                        : "bg-destructive/10 group-hover:bg-destructive/20"
+                    )}
+                    style={{
+                      boxShadow: transaction.type === "income" 
+                        ? '0 0 0 0 hsl(var(--success) / 0)' 
+                        : '0 0 0 0 hsl(var(--destructive) / 0)'
+                    }}
+                  >
+                    {transaction.type === "income" ? (
+                      <ArrowDownLeft className="w-5 h-5 text-success" />
+                    ) : (
+                      <ArrowUpRight className="w-5 h-5 text-destructive" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                      {transaction.description}
+                    </p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                      <span className="px-2 py-0.5 bg-muted/50 rounded-full">{transaction.category}</span>
+                      <span>•</span>
+                      <span>{formatDate(transaction.date)}</span>
+                    </p>
+                  </div>
+                </div>
+                <span 
+                  className={cn(
+                    "text-sm font-bold tabular-nums transition-all duration-300",
+                    "group-hover:scale-105",
+                    transaction.type === "income" 
+                      ? "text-success" 
+                      : "text-destructive"
+                  )}
+                >
+                  {transaction.type === "income" ? "+" : "-"}
+                  {formatCurrency(Number(transaction.amount))}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
