@@ -14,35 +14,64 @@ import {
   Table,
   CheckCircle
 } from "lucide-react";
-import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 import { cn } from "@/lib/utils";
+import type { UseMutationResult } from "@tanstack/react-query";
+
+interface Spreadsheet {
+  id: string;
+  name: string;
+  modified_time: string;
+  owner?: string;
+}
+
+interface Sheet {
+  sheet_id: number;
+  title: string;
+  index: number;
+}
 
 interface SpreadsheetSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Props from parent hook
+  spreadsheets: Spreadsheet[] | undefined;
+  isLoadingSpreadsheets: boolean;
+  onLoadSpreadsheets: () => void;
+  onGetSheets: (spreadsheetId: string) => void;
+  sheetsData: { spreadsheet_name: string; sheets: Sheet[] } | undefined;
+  isLoadingSheets: boolean;
+  onCreateConnection: (params: {
+    spreadsheetId: string;
+    spreadsheetName: string;
+    sheetName: string | null;
+  }) => Promise<void>;
+  isCreatingConnection: boolean;
 }
 
 type Step = "spreadsheets" | "sheets" | "confirm";
 
-export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSelectorModalProps) {
+export function SpreadsheetSelectorModal({ 
+  open, 
+  onOpenChange,
+  spreadsheets,
+  isLoadingSpreadsheets,
+  onLoadSpreadsheets,
+  onGetSheets,
+  sheetsData,
+  isLoadingSheets,
+  onCreateConnection,
+  isCreatingConnection,
+}: SpreadsheetSelectorModalProps) {
   const [step, setStep] = useState<Step>("spreadsheets");
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
 
-  const {
-    tempTokens,
-    listSpreadsheets,
-    getSpreadsheetSheets,
-    createConnection,
-    previewData,
-  } = useGoogleSheets();
-
   // Load spreadsheets when modal opens
   useEffect(() => {
-    if (open && tempTokens && step === "spreadsheets") {
-      listSpreadsheets.mutate();
+    if (open && step === "spreadsheets" && !spreadsheets) {
+      onLoadSpreadsheets();
     }
-  }, [open, tempTokens, step]);
+  }, [open, step, spreadsheets, onLoadSpreadsheets]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -55,7 +84,7 @@ export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSele
 
   const handleSelectSpreadsheet = (spreadsheet: { id: string; name: string }) => {
     setSelectedSpreadsheet(spreadsheet);
-    getSpreadsheetSheets.mutate(spreadsheet.id);
+    onGetSheets(spreadsheet.id);
     setStep("sheets");
   };
 
@@ -67,7 +96,7 @@ export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSele
   const handleConfirm = async () => {
     if (!selectedSpreadsheet) return;
 
-    await createConnection.mutateAsync({
+    await onCreateConnection({
       spreadsheetId: selectedSpreadsheet.id,
       spreadsheetName: selectedSpreadsheet.name,
       sheetName: selectedSheet,
@@ -107,16 +136,16 @@ export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSele
           {/* Step: Spreadsheets */}
           {step === "spreadsheets" && (
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {listSpreadsheets.isPending ? (
+              {isLoadingSpreadsheets ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
                 </div>
-              ) : listSpreadsheets.data?.length === 0 ? (
+              ) : spreadsheets?.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
                   Nenhuma planilha encontrada.
                 </p>
               ) : (
-                listSpreadsheets.data?.map((spreadsheet) => (
+                spreadsheets?.map((spreadsheet) => (
                   <button
                     key={spreadsheet.id}
                     onClick={() => handleSelectSpreadsheet(spreadsheet)}
@@ -155,7 +184,7 @@ export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSele
                 Planilha: <span className="font-medium text-foreground">{selectedSpreadsheet?.name}</span>
               </div>
               <div className="space-y-2 max-h-[350px] overflow-y-auto">
-                {getSpreadsheetSheets.isPending ? (
+                {isLoadingSheets ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
                   </div>
@@ -182,7 +211,7 @@ export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSele
                       </div>
                       <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
                     </button>
-                    {getSpreadsheetSheets.data?.sheets.map((sheet) => (
+                    {sheetsData?.sheets.map((sheet) => (
                       <button
                         key={sheet.sheet_id}
                         onClick={() => handleSelectSheet(sheet.title)}
@@ -242,10 +271,10 @@ export function SpreadsheetSelectorModal({ open, onOpenChange }: SpreadsheetSele
                 </Button>
                 <Button 
                   onClick={handleConfirm} 
-                  disabled={createConnection.isPending}
+                  disabled={isCreatingConnection}
                   className="flex-1 gap-2"
                 >
-                  {createConnection.isPending ? (
+                  {isCreatingConnection ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <CheckCircle className="w-4 h-4" />
