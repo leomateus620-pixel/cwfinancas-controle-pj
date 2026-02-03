@@ -112,6 +112,24 @@ Deno.serve(async (req) => {
       // Calculate token expiration
       const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
 
+      // Persist tokens in database (upsert)
+      const { error: upsertError } = await supabase
+        .from("google_oauth_tokens")
+        .upsert(
+          {
+            user_id: userId,
+            access_token,
+            refresh_token,
+            expires_at: expiresAt,
+          },
+          { onConflict: "user_id" }
+        );
+
+      if (upsertError) {
+        console.error("Failed to persist tokens:", upsertError);
+        // Don't throw - tokens can still be used for this session
+      }
+
       return new Response(
         JSON.stringify({
           success: true,

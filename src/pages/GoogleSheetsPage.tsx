@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { 
   FileSpreadsheet, 
@@ -41,8 +41,13 @@ export function GoogleSheetsPage() {
     connections,
     isLoadingConnections,
     tempTokens,
+    isGoogleAuthorized,
+    isCheckingAuth,
     getAuthUrl,
     exchangeCode,
+    listSpreadsheets,
+    getSpreadsheetSheets,
+    createConnection,
     syncData,
     deleteConnection,
   } = useGoogleSheets();
@@ -50,13 +55,13 @@ export function GoogleSheetsPage() {
   // Handle OAuth callback
   useEffect(() => {
     const code = searchParams.get("code");
-    if (code && !tempTokens) {
+    if (code && !tempTokens && !exchangeCode.isPending) {
       setSearchParams({});
       exchangeCode.mutate(code);
     }
-  }, [searchParams, tempTokens]);
+  }, [searchParams, tempTokens, exchangeCode.isPending]);
 
-  // Show selector when tokens are available
+  // Show selector when tokens are available (after OAuth)
   useEffect(() => {
     if (tempTokens) {
       setShowSelector(true);
@@ -64,6 +69,13 @@ export function GoogleSheetsPage() {
   }, [tempTokens]);
 
   const handleConnect = async () => {
+    // If already authorized, just open the modal
+    if (isGoogleAuthorized) {
+      setShowSelector(true);
+      return;
+    }
+
+    // Otherwise, start OAuth flow
     setIsConnecting(true);
     try {
       const authUrl = await getAuthUrl();
@@ -104,6 +116,23 @@ export function GoogleSheetsPage() {
     }
   };
 
+  // Callbacks for the modal
+  const handleLoadSpreadsheets = useCallback(() => {
+    listSpreadsheets.mutate();
+  }, [listSpreadsheets]);
+
+  const handleGetSheets = useCallback((spreadsheetId: string) => {
+    getSpreadsheetSheets.mutate(spreadsheetId);
+  }, [getSpreadsheetSheets]);
+
+  const handleCreateConnection = useCallback(async (params: {
+    spreadsheetId: string;
+    spreadsheetName: string;
+    sheetName: string | null;
+  }) => {
+    await createConnection.mutateAsync(params);
+  }, [createConnection]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -119,10 +148,10 @@ export function GoogleSheetsPage() {
         </div>
         <Button 
           onClick={handleConnect}
-          disabled={isConnecting || exchangeCode.isPending}
+          disabled={isConnecting || exchangeCode.isPending || isCheckingAuth}
           className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium"
         >
-          {isConnecting || exchangeCode.isPending ? (
+          {isConnecting || exchangeCode.isPending || isCheckingAuth ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
@@ -232,10 +261,10 @@ export function GoogleSheetsPage() {
             </p>
             <Button 
               onClick={handleConnect}
-              disabled={isConnecting}
+              disabled={isConnecting || isCheckingAuth}
               className="gap-2 rounded-xl"
             >
-              {isConnecting ? (
+              {isConnecting || isCheckingAuth ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Plus className="w-4 h-4" />
@@ -274,10 +303,18 @@ export function GoogleSheetsPage() {
         </CardContent>
       </Card>
 
-      {/* Spreadsheet Selector Modal */}
+      {/* Spreadsheet Selector Modal - now receives props from hook */}
       <SpreadsheetSelectorModal 
         open={showSelector}
         onOpenChange={setShowSelector}
+        spreadsheets={listSpreadsheets.data}
+        isLoadingSpreadsheets={listSpreadsheets.isPending}
+        onLoadSpreadsheets={handleLoadSpreadsheets}
+        onGetSheets={handleGetSheets}
+        sheetsData={getSpreadsheetSheets.data}
+        isLoadingSheets={getSpreadsheetSheets.isPending}
+        onCreateConnection={handleCreateConnection}
+        isCreatingConnection={createConnection.isPending}
       />
     </div>
   );
