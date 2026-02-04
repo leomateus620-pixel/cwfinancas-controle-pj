@@ -17,6 +17,8 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   try {
     if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
       throw new Error("Google OAuth credentials not configured");
@@ -32,6 +34,26 @@ Deno.serve(async (req) => {
         throw new Error("redirect_uri is required");
       }
 
+      // Check if user already has a refresh token (to decide on prompt)
+      let hasRefreshToken = false;
+      const authHeader = req.headers.get("Authorization");
+      
+      if (authHeader?.startsWith("Bearer ")) {
+        const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+        const token = authHeader.replace("Bearer ", "");
+        const { data: userData } = await supabase.auth.getUser(token);
+        
+        if (userData?.user) {
+          const { data: tokenData } = await supabase
+            .from("google_oauth_tokens")
+            .select("refresh_token")
+            .eq("user_id", userData.user.id)
+            .maybeSingle();
+          
+          hasRefreshToken = !!tokenData?.refresh_token;
+        }
+      }
+
       const scopes = [
         "https://www.googleapis.com/auth/spreadsheets.readonly",
         "https://www.googleapis.com/auth/drive.metadata.readonly",
@@ -43,10 +65,16 @@ Deno.serve(async (req) => {
       authUrl.searchParams.set("response_type", "code");
       authUrl.searchParams.set("scope", scopes.join(" "));
       authUrl.searchParams.set("access_type", "offline");
-      authUrl.searchParams.set("prompt", "consent");
+      authUrl.searchParams.set("include_granted_scopes", "true");
+      
+      // Only use prompt=consent if user doesn't have a refresh token
+      // This ensures we get a refresh token on first auth
+      if (!hasRefreshToken) {
+        authUrl.searchParams.set("prompt", "consent");
+      }
 
       return new Response(
-        JSON.stringify({ auth_url: authUrl.toString() }),
+        JSON.stringify({ auth_url: authUrl.toString(), request_id: requestId }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -64,7 +92,7 @@ Deno.serve(async (req) => {
       const authHeader = req.headers.get("Authorization");
       if (!authHeader?.startsWith("Bearer ")) {
         return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
+          JSON.stringify({ error: "Unauthorized", request_id: requestId }),
           { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -76,12 +104,19 @@ Deno.serve(async (req) => {
       
       if (claimsError || !claimsData?.user) {
         return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
+          JSON.stringify({ error: "Unauthorized", request_id: requestId }),
           { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
       const userId = claimsData.user.id;
+
+      // Check if user already has a refresh token (before exchange)
+      const { data: existingTokenData } = await supabase
+        .from("google_oauth_tokens")
+        .select("refresh_token")
+        .eq("user_id", userId)
+        .maybeSingle();
 
       // Exchange authorization code for tokens
       const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -98,19 +133,24 @@ Deno.serve(async (req) => {
 
       if (!tokenResponse.ok) {
         const error = await tokenResponse.text();
-        console.error("Token exchange error:", error);
+        console.error(`[${requestId}] Token exchange error:`, error);
         throw new Error("Failed to exchange authorization code");
       }
 
       const tokens = await tokenResponse.json();
-      const { access_token, refresh_token, expires_in } = tokens;
-
-      if (!refresh_token) {
-        throw new Error("No refresh token received. Please revoke access and try again.");
-      }
+      const { access_token, refresh_token, expires_in, scope, token_type } = tokens;
 
       // Calculate token expiration
       const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
+
+      // CRITICAL: Don't overwrite refresh_token with null
+      // If no new refresh_token came from Google, keep the existing one
+      const finalRefreshToken = refresh_token || existingTokenData?.refresh_token;
+
+      if (!finalRefreshToken) {
+        console.error(`[${requestId}] No refresh token available for user ${userId}`);
+        throw new Error("Nenhum refresh token disponível. Revogue o acesso do app no Google e tente novamente.");
+      }
 
       // Persist tokens in database (upsert)
       const { error: upsertError } = await supabase
@@ -119,38 +159,42 @@ Deno.serve(async (req) => {
           {
             user_id: userId,
             access_token,
-            refresh_token,
+            refresh_token: finalRefreshToken,
             expires_at: expiresAt,
+            scope: scope || null,
+            token_type: token_type || "Bearer",
+            provider: "google",
           },
           { onConflict: "user_id" }
         );
 
       if (upsertError) {
-        console.error("Failed to persist tokens:", upsertError);
-        // Don't throw - tokens can still be used for this session
+        console.error(`[${requestId}] Failed to persist tokens:`, upsertError);
+        throw new Error("Failed to save Google credentials");
       }
 
+      console.log(`[${requestId}] Successfully authenticated user ${userId} with Google`);
+
+      // SECURITY: Do NOT return tokens to frontend
       return new Response(
         JSON.stringify({
           success: true,
-          access_token,
-          refresh_token,
-          expires_at: expiresAt,
-          user_id: userId,
+          message: "Conta Google conectada com sucesso",
+          request_id: requestId,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     return new Response(
-      JSON.stringify({ error: "Invalid request" }),
+      JSON.stringify({ error: "Invalid request", request_id: requestId }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
-    console.error("Error in google-sheets-auth:", error);
+    console.error(`[${requestId}] Error in google-sheets-auth:`, error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: errorMessage, request_id: requestId }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
