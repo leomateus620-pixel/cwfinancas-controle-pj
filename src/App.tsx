@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ErrorBoundary } from "@/components/error/ErrorBoundary";
+import { GlobalErrorHandler } from "@/components/error/GlobalErrorHandler";
 import OverviewPage from "@/pages/OverviewPage";
 import IncomePage from "@/pages/IncomePage";
 import ExpensesPage from "@/pages/ExpensesPage";
@@ -22,46 +24,59 @@ import RegisterPage from "@/pages/RegisterPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import NotFound from "@/pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 30000,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            
-            {/* Protected routes */}
-            <Route element={
-              <ProtectedRoute>
-                <DashboardLayout />
-              </ProtectedRoute>
-            }>
-              <Route path="/" element={<OverviewPage />} />
-              <Route path="/income" element={<IncomePage />} />
-              <Route path="/expenses" element={<ExpensesPage />} />
-              <Route path="/cash-flow" element={<CashFlowPage />} />
-              <Route path="/balance" element={<BalanceSheetPage />} />
-              <Route path="/forecasts" element={<ForecastsPage />} />
-              <Route path="/invoices" element={<InvoicesPage />} />
-              <Route path="/upload" element={<UploadPage />} />
-              <Route path="/insights" element={<InsightsPage />} />
-              <Route path="/google-sheets" element={<GoogleSheetsPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Route>
-            
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <GlobalErrorHandler />
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <AuthProvider>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              
+              {/* Protected routes */}
+              <Route element={
+                <ProtectedRoute>
+                  <DashboardLayout />
+                </ProtectedRoute>
+              }>
+                <Route path="/" element={<OverviewPage />} />
+                <Route path="/income" element={<IncomePage />} />
+                <Route path="/expenses" element={<ExpensesPage />} />
+                <Route path="/cash-flow" element={<CashFlowPage />} />
+                <Route path="/balance" element={<BalanceSheetPage />} />
+                <Route path="/forecasts" element={<ForecastsPage />} />
+                <Route path="/invoices" element={<InvoicesPage />} />
+                <Route path="/upload" element={<UploadPage />} />
+                <Route path="/insights" element={<InsightsPage />} />
+                <Route path="/google-sheets" element={<GoogleSheetsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+              
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </AuthProvider>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

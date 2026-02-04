@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.google-sheets-sync]
 verify_jwt = false
+
+[functions.google-oauth-status]
+verify_jwt = false
+
+[functions.google-list-sheets]
+verify_jwt = false
+
+[functions.google-read-sheet-preview]
+verify_jwt = false

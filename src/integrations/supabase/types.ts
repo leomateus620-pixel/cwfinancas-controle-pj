@@ -50,13 +50,49 @@ export type Database = {
         }
         Relationships: []
       }
+      google_integration_logs: {
+        Row: {
+          created_at: string
+          details: Json | null
+          id: string
+          level: string
+          message: string
+          request_id: string
+          route: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          level: string
+          message: string
+          request_id: string
+          route: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          level?: string
+          message?: string
+          request_id?: string
+          route?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       google_oauth_tokens: {
         Row: {
           access_token: string
           created_at: string
           expires_at: string
           id: string
+          provider: string | null
           refresh_token: string
+          scope: string | null
+          token_type: string | null
           updated_at: string
           user_id: string
         }
@@ -65,7 +101,10 @@ export type Database = {
           created_at?: string
           expires_at: string
           id?: string
+          provider?: string | null
           refresh_token: string
+          scope?: string | null
+          token_type?: string | null
           updated_at?: string
           user_id: string
         }
@@ -74,7 +113,10 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          provider?: string | null
           refresh_token?: string
+          scope?: string | null
+          token_type?: string | null
           updated_at?: string
           user_id?: string
         }
