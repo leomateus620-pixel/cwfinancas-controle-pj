@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Dialog, 
   DialogContent, 
@@ -65,13 +65,17 @@ export function SpreadsheetSelectorModal({
   const [step, setStep] = useState<Step>("spreadsheets");
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  
+  // Flag to prevent duplicate calls (handles StrictMode and re-renders)
+  const hasLoadedRef = useRef(false);
 
-  // Load spreadsheets when modal opens
+  // Load spreadsheets when modal opens - with duplicate call prevention
   useEffect(() => {
-    if (open && step === "spreadsheets" && !spreadsheets) {
+    if (open && step === "spreadsheets" && !spreadsheets && !isLoadingSpreadsheets && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
       onLoadSpreadsheets();
     }
-  }, [open, step, spreadsheets, onLoadSpreadsheets]);
+  }, [open, step, spreadsheets, isLoadingSpreadsheets, onLoadSpreadsheets]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -79,6 +83,8 @@ export function SpreadsheetSelectorModal({
       setStep("spreadsheets");
       setSelectedSpreadsheet(null);
       setSelectedSheet(null);
+      // Reset the load flag so it can load again next time
+      hasLoadedRef.current = false;
     }
   }, [open]);
 

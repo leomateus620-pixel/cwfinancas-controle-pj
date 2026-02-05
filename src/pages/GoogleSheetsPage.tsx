@@ -11,7 +11,8 @@ import {
   Plus,
   ExternalLink,
   Table,
-  WifiOff
+  WifiOff,
+  LogOut
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,7 @@ function GoogleSheetsPageContent() {
     createConnection,
     syncData,
     deleteConnection,
+    disconnectGoogle,
   } = useGoogleSheets();
 
   // Determine page state
@@ -136,6 +138,12 @@ function GoogleSheetsPageContent() {
   const handleDelete = (connectionId: string) => {
     if (confirm("Tem certeza que deseja desconectar esta planilha?")) {
       deleteConnection.mutate(connectionId);
+    }
+  };
+
+  const handleDisconnectGoogle = () => {
+    if (confirm("Tem certeza que deseja desconectar sua conta Google? Todas as conexões de planilhas serão removidas.")) {
+      disconnectGoogle.mutate();
     }
   };
 
@@ -319,18 +327,33 @@ function GoogleSheetsPageContent() {
             Conecte suas planilhas para importar dados automaticamente.
           </p>
         </div>
-        <Button 
-          onClick={handleConnect}
-          disabled={isConnecting || exchangeCode.isPending || isCheckingAuth}
-          className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium"
-        >
-          {isConnecting || exchangeCode.isPending || isCheckingAuth ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-          )}
-          <span>Conectar Planilha</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline"
+            onClick={handleDisconnectGoogle}
+            disabled={disconnectGoogle.isPending}
+            className="gap-2 rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            {disconnectGoogle.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <LogOut className="w-4 h-4" />
+            )}
+            <span className="hidden sm:inline">Desconectar Google</span>
+          </Button>
+          <Button 
+            onClick={handleConnect}
+            disabled={isConnecting || exchangeCode.isPending || isCheckingAuth}
+            className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium"
+          >
+            {isConnecting || exchangeCode.isPending || isCheckingAuth ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            )}
+            <span>Conectar Planilha</span>
+          </Button>
+        </div>
       </div>
 
       {/* Connections List */}

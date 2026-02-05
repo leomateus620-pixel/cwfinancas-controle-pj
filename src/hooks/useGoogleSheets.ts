@@ -366,6 +366,45 @@ export function useGoogleSheets() {
     },
   });
 
+  // Disconnect Google account entirely
+  const disconnectGoogle = useMutation({
+    mutationFn: async () => {
+      if (!session?.user?.id) throw new Error("Not authenticated");
+      
+      // Delete OAuth tokens
+      const { error: tokenError } = await supabase
+        .from("google_oauth_tokens")
+        .delete()
+        .eq("user_id", session.user.id);
+      
+      if (tokenError) throw tokenError;
+      
+      // Delete all sheet connections
+      const { error: connError } = await supabase
+        .from("google_sheet_connections")
+        .delete()
+        .eq("user_id", session.user.id);
+      
+      if (connError) throw connError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["google-oauth-status"] });
+      queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
+      toast({
+        title: "Desconectado",
+        description: "Sua conta Google foi desconectada com sucesso.",
+      });
+    },
+    onError: (error) => {
+      console.error("Disconnect Google error:", error);
+      toast({
+        title: "Erro ao desconectar",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    },
+  });
+
   return {
     // Auth status
     oauthStatus,
@@ -393,5 +432,6 @@ export function useGoogleSheets() {
     syncData,
     updateMapping,
     deleteConnection,
+    disconnectGoogle,
   };
 }
