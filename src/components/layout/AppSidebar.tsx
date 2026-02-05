@@ -13,6 +13,7 @@ import {
   LineChart,
   FileSpreadsheet
 } from "lucide-react";
+import logoImg from "@/assets/logo.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 
@@ -64,13 +65,15 @@ export function AppSidebar() {
     >
       <SidebarHeader className="p-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shadow-corporate-md">
-            <LineChart className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <img 
+            src={logoImg} 
+            alt="CW Finanças" 
+            className="w-10 h-10 rounded-xl object-contain shadow-corporate-md"
+          />
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-bold text-foreground tracking-tight text-lg">FinSight</span>
-              <span className="text-xs text-muted-foreground">Análise Financeira</span>
+              <span className="font-bold text-foreground tracking-tight text-lg">CW Finanças</span>
+              <span className="text-xs text-muted-foreground">Controle PJ</span>
             </div>
           )}
         </div>
