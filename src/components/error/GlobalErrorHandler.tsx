@@ -1,6 +1,31 @@
 import { useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
 
+// Safe error string extraction - handles any type of error
+function getErrorString(reason: unknown): string {
+  if (typeof reason === 'string') return reason;
+  
+  if (reason instanceof Error) {
+    return reason.message;
+  }
+  
+  if (typeof reason === 'object' && reason !== null) {
+    const obj = reason as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.error === 'string') return obj.error;
+  }
+  
+  try {
+    const serialized = JSON.stringify(reason);
+    if (serialized.length > 150) {
+      return "Ocorreu um erro inesperado";
+    }
+    return serialized;
+  } catch {
+    return "Erro desconhecido";
+  }
+}
+
 export function GlobalErrorHandler() {
   useEffect(() => {
     // Handle unhandled promise rejections
@@ -10,10 +35,8 @@ export function GlobalErrorHandler() {
       // Prevent the default behavior
       event.preventDefault();
       
-      // Show toast notification
-      const errorMessage = event.reason instanceof Error 
-        ? event.reason.message 
-        : "Ocorreu um erro inesperado";
+      // Get safe error message
+      const errorMessage = getErrorString(event.reason);
       
       toast({
         title: "Erro",
@@ -26,10 +49,11 @@ export function GlobalErrorHandler() {
     const handleError = (event: ErrorEvent) => {
       console.error("Runtime error:", event.error);
       
-      // Show toast notification for runtime errors
+      const errorMessage = event.message || getErrorString(event.error) || "Algo deu errado. Tente novamente.";
+      
       toast({
         title: "Erro inesperado",
-        description: event.message || "Algo deu errado. Tente novamente.",
+        description: errorMessage,
         variant: "destructive",
       });
     };

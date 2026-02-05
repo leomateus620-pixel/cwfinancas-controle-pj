@@ -14,6 +14,38 @@ interface State {
   error: Error | null;
 }
 
+// Safe error message extraction
+function getErrorMessage(error: unknown): string {
+  if (!error) return "Ocorreu um erro inesperado";
+  
+  // If it's a string directly
+  if (typeof error === 'string') return error;
+  
+  // If it's an Error with a string message
+  if (error instanceof Error && typeof error.message === 'string') {
+    return error.message;
+  }
+  
+  // If it has .message as string (duck typing)
+  if (typeof error === 'object' && error !== null) {
+    const obj = error as Record<string, unknown>;
+    if (typeof obj.message === 'string') return obj.message;
+    if (typeof obj.error === 'string') return obj.error;
+  }
+  
+  // Fallback - try to serialize
+  try {
+    const serialized = JSON.stringify(error);
+    // Don't show huge objects
+    if (serialized.length > 200) {
+      return "Ocorreu um erro inesperado";
+    }
+    return serialized;
+  } catch {
+    return "Erro desconhecido";
+  }
+}
+
 // Inner component to use hooks
 function GoogleSheetsErrorUI({ 
   error, 
@@ -33,6 +65,8 @@ function GoogleSheetsErrorUI({
     queryClient.invalidateQueries({ queryKey: ["google-spreadsheets"] });
     onRetry();
   };
+
+  const errorMessage = getErrorMessage(error);
 
   return (
     <div className="space-y-6">
@@ -60,11 +94,9 @@ function GoogleSheetsErrorUI({
           </CardDescription>
         </CardHeader>
         <CardContent className="relative z-10 space-y-4">
-          {error && (
-            <div className="p-3 rounded-lg bg-muted/50 text-xs font-mono text-muted-foreground overflow-auto max-h-24">
-              <strong className="text-destructive">Erro:</strong> {error.message}
-            </div>
-          )}
+          <div className="p-3 rounded-lg bg-muted/50 text-xs font-mono text-muted-foreground overflow-auto max-h-24">
+            <strong className="text-destructive">Erro:</strong> {errorMessage}
+          </div>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Button
               variant="outline"
