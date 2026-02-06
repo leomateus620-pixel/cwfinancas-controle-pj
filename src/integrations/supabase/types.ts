@@ -50,6 +50,53 @@ export type Database = {
         }
         Relationships: []
       }
+      financial_daily_aggregates: {
+        Row: {
+          created_at: string | null
+          day: string
+          id: string
+          net: number | null
+          source_sheet_id: string | null
+          total_despesas: number | null
+          total_receitas: number | null
+          transaction_count: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          day: string
+          id?: string
+          net?: number | null
+          source_sheet_id?: string | null
+          total_despesas?: number | null
+          total_receitas?: number | null
+          transaction_count?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          day?: string
+          id?: string
+          net?: number | null
+          source_sheet_id?: string | null
+          total_despesas?: number | null
+          total_receitas?: number | null
+          transaction_count?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_daily_aggregates_source_sheet_id_fkey"
+            columns: ["source_sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_integration_logs: {
         Row: {
           created_at: string
@@ -125,6 +172,8 @@ export type Database = {
       google_sheet_connections: {
         Row: {
           access_token: string | null
+          auto_sync_enabled: boolean | null
+          auto_sync_interval: number | null
           column_mapping: Json | null
           created_at: string
           data_type: string
@@ -142,6 +191,8 @@ export type Database = {
         }
         Insert: {
           access_token?: string | null
+          auto_sync_enabled?: boolean | null
+          auto_sync_interval?: number | null
           column_mapping?: Json | null
           created_at?: string
           data_type?: string
@@ -159,6 +210,8 @@ export type Database = {
         }
         Update: {
           access_token?: string | null
+          auto_sync_enabled?: boolean | null
+          auto_sync_interval?: number | null
           column_mapping?: Json | null
           created_at?: string
           data_type?: string
@@ -180,36 +233,51 @@ export type Database = {
         Row: {
           completed_at: string | null
           connection_id: string
+          error_details: Json | null
           errors: Json | null
+          google_revision: string | null
           id: string
+          mode: string | null
+          retry_count: number | null
           rows_imported: number | null
           rows_processed: number | null
           rows_skipped: number | null
           rows_updated: number | null
+          rows_upserted: number | null
           started_at: string
           status: string
         }
         Insert: {
           completed_at?: string | null
           connection_id: string
+          error_details?: Json | null
           errors?: Json | null
+          google_revision?: string | null
           id?: string
+          mode?: string | null
+          retry_count?: number | null
           rows_imported?: number | null
           rows_processed?: number | null
           rows_skipped?: number | null
           rows_updated?: number | null
+          rows_upserted?: number | null
           started_at?: string
           status?: string
         }
         Update: {
           completed_at?: string | null
           connection_id?: string
+          error_details?: Json | null
           errors?: Json | null
+          google_revision?: string | null
           id?: string
+          mode?: string | null
+          retry_count?: number | null
           rows_imported?: number | null
           rows_processed?: number | null
           rows_skipped?: number | null
           rows_updated?: number | null
+          rows_upserted?: number | null
           started_at?: string
           status?: string
         }
@@ -300,8 +368,14 @@ export type Database = {
           created_at: string
           date: string
           description: string
+          external_row_key: string | null
           id: string
           notes: string | null
+          raw_data: Json | null
+          source: string | null
+          source_row_number: number | null
+          source_sheet_id: string | null
+          source_tab: string | null
           type: string
           updated_at: string
           user_id: string
@@ -313,8 +387,14 @@ export type Database = {
           created_at?: string
           date?: string
           description: string
+          external_row_key?: string | null
           id?: string
           notes?: string | null
+          raw_data?: Json | null
+          source?: string | null
+          source_row_number?: number | null
+          source_sheet_id?: string | null
+          source_tab?: string | null
           type: string
           updated_at?: string
           user_id: string
@@ -326,13 +406,27 @@ export type Database = {
           created_at?: string
           date?: string
           description?: string
+          external_row_key?: string | null
           id?: string
           notes?: string | null
+          raw_data?: Json | null
+          source?: string | null
+          source_row_number?: number | null
+          source_sheet_id?: string | null
+          source_tab?: string | null
           type?: string
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "transactions_source_sheet_id_fkey"
+            columns: ["source_sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       uploaded_files: {
         Row: {
