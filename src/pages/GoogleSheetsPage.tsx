@@ -12,12 +12,19 @@ import {
   ExternalLink,
   Table,
   WifiOff,
-  LogOut
+  LogOut,
+  History,
+  BarChart3,
+  Settings2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { useGoogleSheets } from "@/hooks/useGoogleSheets";
+import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { SpreadsheetSelectorModal } from "@/components/modals/SpreadsheetSelectorModal";
+import { SyncHistoryTable } from "@/components/sheets/SyncHistoryTable";
+import { SyncErrorList } from "@/components/sheets/SyncErrorList";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorBoundary";
 import { cn } from "@/lib/utils";
@@ -35,6 +42,46 @@ const formatDate = (dateStr: string | null) => {
 };
 
 type PageState = "loading" | "not_connected" | "error" | "success";
+
+// Sync History Section Component
+function SyncHistorySection() {
+  const { runs, stats, isLoading } = useSyncStatus();
+  
+  if (isLoading || runs.length === 0) return null;
+
+  const lastRun = runs[0];
+  const hasErrors = lastRun?.rows_failed > 0;
+
+  return (
+    <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+      <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+      <CardHeader className="relative z-10">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <History className="w-5 h-5 text-primary" />
+            Histórico de Sincronização
+          </CardTitle>
+          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <BarChart3 className="w-4 h-4" />
+              {stats.total_rows_upserted} linhas importadas
+            </span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="relative z-10 space-y-4">
+        <SyncHistoryTable runs={runs.slice(0, 5)} />
+        
+        {hasErrors && lastRun.errors?.length > 0 && (
+          <SyncErrorList 
+            errors={lastRun.errors} 
+            maxErrors={5}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function GoogleSheetsPageContent() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -466,6 +513,9 @@ function GoogleSheetsPageContent() {
           </CardContent>
         </Card>
       )}
+
+      {/* Sync History Section - only show when there are connections */}
+      <SyncHistorySection />
 
       {/* Info Card */}
       <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
