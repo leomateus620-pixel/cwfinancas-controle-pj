@@ -1,394 +1,374 @@
 
-# Plano: Pipeline de Sincronização Google Sheets → Supabase (Zero Erro)
+# Plano: Corrigir Definitivamente o Sincronizador de Planilhas
 
-## Visão Geral
+## Diagnóstico do Problema
 
-Implementar um sistema robusto de sincronização que importa dados de planilhas Google Sheets para o banco de dados Supabase, alimentando os módulos Dashboard, Receitas, Despesas e Fluxo de Caixa, com suporte a insights gerados por IA.
+Analisando o código e os dados, identifiquei a causa raiz dos 172 erros de "Valor inválido ou zero":
 
----
+### Problemas no Parser Atual (`parseCurrency`)
 
-## Diagnóstico do Estado Atual
-
-### O que já existe:
-- Conexão OAuth com Google funcionando (`google-sheets-auth`, `google-oauth-status`)
-- Listagem de planilhas (`google-list-sheets`, `google-read-sheet-preview`)
-- Tabela `google_sheet_connections` para armazenar conexões
-- Tabela `google_sheet_sync_logs` para logs de sincronização
-- Tabela `transactions` onde os dados financeiros são armazenados
-- Hook `useTransactions` que alimenta Dashboard, Receitas e Despesas
-
-### Problemas identificados:
-1. **Sync atual não é idempotente** - cada sync insere novos registros, duplicando dados
-2. **Não há chave única** para identificar registros da planilha (external_row_key)
-3. **Não há auto-sync** - apenas sync manual
-4. **Página de Cash Flow usa dados mockados** - não consome do banco
-5. **Insights são estáticos** - não usam IA real
-6. **Falta UI de erros detalhados** na página Google Sheets
-
----
-
-## Arquitetura Proposta
-
-### Parte A: Modelo de Dados (Migrations + RLS)
-
-#### A1. Nova tabela `financial_transactions`
-Tabela dedicada para transações importadas, com suporte a idempotência:
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│ financial_transactions                                          │
-├─────────────────────────────────────────────────────────────────┤
-│ id                  uuid PK DEFAULT gen_random_uuid()           │
-│ user_id             uuid NOT NULL                               │
-│ connected_sheet_id  uuid FK → google_sheet_connections(id)      │
-│ external_row_key    text NOT NULL (chave idempotente)           │
-│ source_tab          text NOT NULL                               │
-│ source_row_number   int NOT NULL                                │
-│ date                date NOT NULL                               │
-│ description         text NOT NULL                               │
-│ category            text NOT NULL                               │
-│ type                text NOT NULL (RECEITA/DESPESA)             │
-│ amount              numeric(14,2) NOT NULL                      │
-│ account             text NULL                                   │
-│ client_name         text NULL                                   │
-│ raw                 jsonb NOT NULL (linha original)             │
-│ created_at          timestamptz DEFAULT now()                   │
-│ updated_at          timestamptz DEFAULT now()                   │
-├─────────────────────────────────────────────────────────────────┤
-│ UNIQUE(user_id, connected_sheet_id, external_row_key)           │
-│ INDEX(user_id, date)                                            │
-│ INDEX(user_id, type)                                            │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-**Chave Idempotente (external_row_key)**:
-- Formato: `{sheet_tab}:{row_number}:{hash_do_conteúdo}`
-- Permite detectar mudanças e evitar duplicações
-
-#### A2. Atualizar `google_sheet_sync_logs` (sheet_sync_runs)
-Adicionar campos para auditoria completa:
-
-- `mode` text ('PUSH' | 'SCHEDULED' | 'MANUAL')
-- `google_revision` text (etag/modifiedTime para detectar mudanças)
-- `rows_upserted` int (substituir rows_imported por upserted)
-- `retry_count` int DEFAULT 0
-- `error_details` jsonb (detalhes estruturados de erros)
-
-#### A3. RLS para todas as tabelas
-- `financial_transactions`: user_id = auth.uid()
-- Políticas existentes mantidas para outras tabelas
-
----
-
-### Parte B: Edge Functions Robustas
-
-#### B1. `/functions/v1/sheets-sync` (Refatorada)
-**Entrada:**
-```json
-{
-  "connectionId": "uuid",
-  "mode": "MANUAL" | "SCHEDULED" | "PUSH"
+```typescript
+// Parser atual - PROBLEMAS:
+function parseCurrency(value: string | number): number {
+  if (typeof value === "number") return value;
+  if (!value) return 0;  // PROBLEMA: retorna 0 em vez de null
+  
+  let cleaned = value.toString().replace(/[R$\s]/g, "").trim();
+  // PROBLEMA: não trata "(1.234,56)" como negativo
+  // PROBLEMA: não remove caracteres invisíveis
+  // PROBLEMA: não trata "R$ - 1.234,56"
+  
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? 0 : num;  // PROBLEMA: retorna 0 em vez de null
 }
 ```
 
-**Fluxo:**
-1. Validar auth.uid()
-2. Buscar conexão e tokens (da tabela `google_oauth_tokens`)
-3. Criar registro em `sheet_sync_runs` com status='RUNNING'
-4. Ler dados da planilha (via Sheets API)
-5. Para cada linha:
-   - Validar campos obrigatórios (data, valor, descrição)
-   - Normalizar dados (parsing de moeda BR, datas)
-   - Gerar `external_row_key` = `{tab}:{row}:{hash}`
-   - UPSERT em `financial_transactions`
-   - Contar: rows_read, rows_upserted, rows_failed
-6. Atualizar `sheet_sync_runs` com métricas finais
-7. Retornar resumo JSON
+### Problemas de Classificacao
 
-**Idempotência:**
-```sql
-INSERT INTO financial_transactions (...)
-ON CONFLICT (user_id, connected_sheet_id, external_row_key)
-DO UPDATE SET
-  date = EXCLUDED.date,
-  description = EXCLUDED.description,
-  ...
-  updated_at = now()
+1. Linhas de "TOTAL", "SALDO", "SUBTOTAL" sao tratadas como erro - deviam ser `skipped`
+2. Linhas vazias ou de cabecalho repetido contam como `failed`
+3. Nao suporta colunas Credito/Debito separadas
+4. `Math.abs()` no valor remove informacao de sinal
+
+### Dados Observados
+
+Os dados importados com sucesso mostram o formato:
+```
+" Valor ": " R$  1.234,56 "  // Espacos no nome e no valor
+" Categoria ": "Receita"      // Espacos no nome da coluna
 ```
 
-#### B2. `/functions/v1/sheets-sync-status`
-Lista histórico de sincronizações com status e erros:
-```json
-{
-  "runs": [
-    {
-      "id": "uuid",
-      "status": "SUCCESS",
-      "started_at": "...",
-      "finished_at": "...",
-      "rows_read": 150,
-      "rows_upserted": 148,
-      "rows_failed": 2,
-      "errors": [...]
-    }
-  ]
-}
-```
+---
 
-#### B3. `/functions/v1/sheets-preview-mapping`
-Preview das colunas detectadas antes de ativar sync:
-- Mostra cabeçalhos da planilha
-- Sugere mapeamento automático (data, valor, descrição, categoria, tipo)
-- Preview de 5 linhas normalizadas
-- Permite ajuste manual do mapeamento
+## Solucao Proposta
 
-#### B4. `/functions/v1/ai-generate-insights`
-**Entrada:**
-```json
-{
-  "connectionId": "uuid",
-  "dateFrom": "2024-01-01",
-  "dateTo": "2024-12-31",
-  "filters": {}
-}
-```
+### A) Parser de Valores Robusto (`parseBRL`)
 
-**Fluxo:**
-1. Buscar transações do período
-2. Calcular KPIs (total receitas, despesas, saldo, variação mensal, top categorias)
-3. Chamar Lovable AI (Gemini) com prompt estruturado:
-   - "Analise estes dados financeiros e forneça insights em PT-BR..."
-   - Incluir números reais como evidência
-4. Parsear resposta em formato estruturado
+Nova funcao que trata TODOS os formatos brasileiros:
 
-**Saída:**
-```json
-{
-  "summary": "Resumo executivo...",
-  "insights": [
-    {
-      "title": "Crescimento de Receita",
-      "evidence": "Receita aumentou de R$ 45.000 para R$ 58.000 (29%)",
-      "impact": "Positivo para fluxo de caixa",
-      "recommendation": "Investigar fontes de crescimento"
-    }
-  ],
-  "risks": [...],
-  "opportunities": [...],
-  "metadata": {
-    "period": "2024-01-01 a 2024-12-31",
-    "transactions_analyzed": 342,
-    "generated_at": "..."
+```typescript
+function parseBRL(value: string | number | null | undefined): number | null {
+  // Retorna null para valores vazios (nao 0!)
+  if (value === null || value === undefined || value === "") return null;
+  
+  // Se ja e numero, retorna direto
+  if (typeof value === "number") return value;
+  
+  let str = String(value).trim();
+  
+  // Remove simbolo de moeda e espacos
+  str = str.replace(/[R$¤€£¥\s]/g, "");
+  
+  // Remove caracteres invisíveis (non-breaking space, etc)
+  str = str.replace(/[\u00A0\u2007\u202F]/g, "");
+  
+  // Se vazio apos limpeza, retorna null
+  if (!str || str === "-") return null;
+  
+  // Detecta negativo por parenteses: (1.234,56) -> -1234.56
+  const isNegativeParens = str.startsWith("(") && str.endsWith(")");
+  if (isNegativeParens) {
+    str = str.slice(1, -1);
   }
+  
+  // Detecta negativo por hifen no inicio ou fim
+  const isNegativePrefix = str.startsWith("-");
+  const isNegativeSuffix = str.endsWith("-");
+  str = str.replace(/^-|-$/g, "");
+  
+  // Determina formato: BR (1.234,56) vs US (1,234.56)
+  const lastComma = str.lastIndexOf(",");
+  const lastDot = str.lastIndexOf(".");
+  const isCommaDecimal = lastComma > lastDot;
+  
+  if (isCommaDecimal) {
+    // Formato BR: 1.234.567,89
+    str = str.replace(/\./g, "");  // Remove pontos (milhares)
+    str = str.replace(",", ".");   // Virgula -> ponto decimal
+  } else {
+    // Formato US: 1,234,567.89
+    str = str.replace(/,/g, "");   // Remove virgulas (milhares)
+  }
+  
+  const num = parseFloat(str);
+  if (isNaN(num)) return null;
+  
+  // Aplica sinal negativo
+  const isNegative = isNegativeParens || isNegativePrefix || isNegativeSuffix;
+  return isNegative ? -num : num;
 }
 ```
 
----
+### B) Detector de Linhas Ignoraveis
 
-### Parte C: Auto-Sync (Push + Fallback)
-
-#### C1. Webhook via Apps Script
-Como o Google Sheets não tem webhook nativo para edições, implementar via Apps Script:
-
-```javascript
-// No Google Apps Script da planilha
-function onEdit(e) {
-  const url = "https://[project].supabase.co/functions/v1/sheets-webhook";
-  UrlFetchApp.fetch(url, {
-    method: "POST",
-    payload: JSON.stringify({
-      spreadsheetId: e.source.getId(),
-      sheetName: e.source.getActiveSheet().getName(),
-      editedRow: e.range.getRow()
-    }),
-    headers: { "Content-Type": "application/json" }
-  });
+```typescript
+function isSkippableRow(rowObj: Record<string, unknown>, description: string): 
+  { skip: boolean; reason?: string } {
+  
+  const descLower = description.toLowerCase();
+  
+  // Linhas de total/subtotal/saldo
+  const totalKeywords = ["total", "subtotal", "saldo", "soma", "acumulado"];
+  if (totalKeywords.some(k => descLower.includes(k))) {
+    return { skip: true, reason: "linha_de_total" };
+  }
+  
+  // Linha so com cabecalhos (verifica se valores parecem cabecalhos)
+  const allValues = Object.values(rowObj).map(v => String(v).toLowerCase());
+  const headerKeywords = ["data", "valor", "descricao", "categoria"];
+  const looksLikeHeader = headerKeywords.filter(k => 
+    allValues.some(v => v.includes(k))
+  ).length >= 2;
+  
+  if (looksLikeHeader) {
+    return { skip: true, reason: "cabecalho_repetido" };
+  }
+  
+  return { skip: false };
 }
 ```
 
-Criar edge function `/functions/v1/sheets-webhook`:
-- Recebe notificação de edição
-- Debounce de 30s para consolidar múltiplas edições
-- Dispara sync com mode='PUSH'
+### C) Deteccao de Colunas Credito/Debito
 
-#### C2. Fallback: Sync Agendado (Cron)
-Usar pg_cron + pg_net para polling a cada 10 minutos:
-
-```sql
-SELECT cron.schedule(
-  'sync-sheets-every-10-min',
-  '*/10 * * * *',
-  $$
-  SELECT net.http_post(
-    url := 'https://[project].supabase.co/functions/v1/sheets-cron-sync',
-    headers := '{"Authorization": "Bearer [ANON_KEY]"}'::jsonb
+```typescript
+function autoDetectMapping(headers: string[]): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  const normalizedHeaders = headers.map(h => 
+    (h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   );
-  $$
-);
+  
+  const patterns = {
+    description: ["descricao", "historico", "lancamento", "memo", "detalhe"],
+    amount: ["valor", "montante", "total", "quantia", "amount"],
+    date: ["data", "dt", "competencia", "vencimento", "emissao"],
+    type: ["tipo", "natureza", "d/c", "entrada/saida"],
+    category: ["categoria", "classificacao", "grupo", "classe"],
+    credit: ["credito", "entrada", "receita", "c"],
+    debit: ["debito", "saida", "despesa", "d"],
+    client_vendor: ["cliente", "fornecedor", "razao social", "empresa"],
+  };
+  
+  for (const [field, keywords] of Object.entries(patterns)) {
+    for (let i = 0; i < normalizedHeaders.length; i++) {
+      if (keywords.some(k => normalizedHeaders[i].includes(k))) {
+        mapping[field] = headers[i];
+        break;
+      }
+    }
+  }
+  
+  return mapping;
+}
 ```
 
-Edge function `/functions/v1/sheets-cron-sync`:
-- Busca todas as conexões ativas
-- Para cada conexão, verifica se precisa sync (última sync > 10 min)
-- Dispara sync com mode='SCHEDULED'
+### D) Logica de Extracao de Valor
+
+```typescript
+function extractAmount(rowObj: Record<string, unknown>, mapping: Record<string, string>): 
+  { value: number | null; type: "income" | "expense" } {
+  
+  // Tenta coluna unica de valor
+  if (mapping.amount) {
+    const raw = rowObj[mapping.amount];
+    const parsed = parseBRL(raw);
+    if (parsed !== null) {
+      return {
+        value: Math.abs(parsed),
+        type: parsed >= 0 ? "income" : "expense"
+      };
+    }
+  }
+  
+  // Tenta colunas credito/debito separadas
+  if (mapping.credit || mapping.debit) {
+    const creditRaw = mapping.credit ? rowObj[mapping.credit] : null;
+    const debitRaw = mapping.debit ? rowObj[mapping.debit] : null;
+    
+    const credit = parseBRL(creditRaw) || 0;
+    const debit = parseBRL(debitRaw) || 0;
+    
+    if (credit > 0) {
+      return { value: credit, type: "income" };
+    }
+    if (debit > 0) {
+      return { value: debit, type: "expense" };
+    }
+  }
+  
+  return { value: null, type: "income" };
+}
+```
+
+### E) Fluxo de Processamento Corrigido
+
+```typescript
+const result = {
+  rows_read: 0,
+  rows_upserted: 0,
+  rows_skipped: 0,    // Total + cabecalho + vazias
+  rows_failed: 0,     // Erros reais
+  errors: [],
+  skip_breakdown: {
+    empty: 0,
+    total_row: 0,
+    header_row: 0,
+    zero_value: 0,
+  },
+};
+
+for (const row of rows) {
+  result.rows_read++;
+  
+  // 1. Verifica se e linha ignoravel
+  const skipCheck = isSkippableRow(rowObj, description);
+  if (skipCheck.skip) {
+    result.rows_skipped++;
+    result.skip_breakdown[skipCheck.reason]++;
+    continue;  // NAO e erro!
+  }
+  
+  // 2. Extrai valor
+  const { value, type } = extractAmount(rowObj, mapping);
+  
+  // 3. Linha vazia ou sem valor
+  if (value === null || value === 0) {
+    result.rows_skipped++;
+    result.skip_breakdown.zero_value++;
+    continue;  // Tambem nao e erro!
+  }
+  
+  // 4. Valida data (com fallback)
+  const date = parseDate(dateRaw) || new Date().toISOString().split("T")[0];
+  
+  // 5. Importa
+  // ... upsert logic ...
+  result.rows_upserted++;
+}
+```
 
 ---
 
-### Parte D: Frontend (Lovable)
+## Arquivos a Modificar
 
-#### D1. Página Google Sheets (Aprimorada)
-Adicionar seções:
+### 1. `supabase/functions/google-sheets-sync/index.ts`
 
-**Status de Sincronização:**
-- Card mostrando última sync, próxima sync agendada
-- Indicador de status (sync em andamento, sucesso, erro)
-- Botão "Sincronizar Agora"
+Refatoracao completa:
+- Substituir `parseCurrency` por `parseBRL`
+- Adicionar `isSkippableRow`
+- Adicionar `extractAmount` com suporte a credito/debito
+- Melhorar contadores: `rows_skipped` vs `rows_failed`
+- Logs mais detalhados por categoria de skip
 
-**Histórico de Sincronizações:**
-- Tabela com últimas 10 syncs
-- Colunas: Data/Hora, Status, Linhas processadas, Erros
-- Expandir para ver detalhes de erros
+### 2. `supabase/functions/sheets-preview-mapping/index.ts`
 
-**Erros de Importação:**
-- Lista de linhas que falharam
-- Motivo do erro (data inválida, valor não numérico, etc.)
-- Link para linha na planilha original
+Sincronizar a mesma logica de parsing para preview coerente.
 
-**Toggle Auto-Sync:**
-- Switch para ativar/desativar sync automático
-- Seletor de frequência (5, 10, 30, 60 min)
+### 3. `src/pages/CashFlowPage.tsx`
 
-#### D2. Dashboard (Consumir dados reais)
-O Dashboard já consome `useTransactions()`. Precisamos apenas:
-- Criar hook `useFinancialTransactions()` que lê da nova tabela
-- Ou: manter compatibilidade inserindo também na tabela `transactions` existente
+Substituir dados mockados por `useTransactions`:
+- Agregar transacoes por mes
+- Calcular inflow (type="income"), outflow (type="expense"), balance
+- Graficos com dados reais
 
-**Decisão recomendada:** Usar a tabela `transactions` existente, adicionando campo `source` para identificar origem (manual/sheets).
+### 4. `src/hooks/useCashFlow.ts` (NOVO)
 
-#### D3. Página Cash Flow (Dados reais)
-Atualmente usa dados mockados. Refatorar para:
-- Usar `useTransactions()` com agregação por mês
-- Calcular inflow/outflow/balance a partir de transações reais
-
-#### D4. Página Insights (IA real)
-Refatorar para:
-- Botão "Gerar Insights"
-- Chamar `/functions/v1/ai-generate-insights`
-- Exibir insights estruturados com evidências
-- Indicar período analisado e número de transações
+Hook dedicado para agregacao de fluxo de caixa:
+```typescript
+export function useCashFlow(period: "month" | "week" | "day") {
+  const { transactions } = useTransactions();
+  
+  const cashFlowData = useMemo(() => {
+    // Agregar por periodo
+    // Calcular entradas, saidas, saldo acumulado
+  }, [transactions, period]);
+  
+  return { cashFlowData, isLoading };
+}
+```
 
 ---
 
-### Parte E: Observabilidade e Confiabilidade
+## Resultados Esperados
 
-#### E1. Logs Estruturados
-Cada edge function deve logar:
-- Request ID único
-- User ID
-- Ação executada
-- Resultado (sucesso/erro)
-- Métricas (tempo de execução, linhas processadas)
+### Antes
+```
+rows_read: 198
+rows_upserted: 26
+rows_failed: 172  <- PROBLEMA
+```
 
-Usar tabela `google_integration_logs` já existente.
-
-#### E2. Alertas na UI
-- Toast para erros de sync
-- Badge de alerta no menu se houver syncs falhando
-- Email (futuro) para erros críticos
-
-#### E3. Modo Dry Run
-Antes de ativar sync, permitir "Preview":
-- Mostrar quantas linhas serão importadas
-- Mostrar preview dos dados normalizados
-- Confirmar antes de executar
-
----
-
-## Sequência de Implementação
-
-### Fase 1: Banco de Dados
-1. Migration: adicionar campos à tabela `transactions` (source, external_row_key)
-2. Migration: atualizar `google_sheet_sync_logs` (mode, google_revision, retry_count)
-3. Criar índices para performance
-4. RLS policies
-
-### Fase 2: Edge Functions
-1. Refatorar `google-sheets-sync` para ser idempotente
-2. Criar `sheets-sync-status`
-3. Criar `sheets-preview-mapping`
-4. Criar `sheets-webhook` (para push)
-5. Criar `sheets-cron-sync` (para polling)
-6. Criar `ai-generate-insights`
-
-### Fase 3: Frontend
-1. Aprimorar GoogleSheetsPage com status e histórico
-2. Refatorar CashFlowPage para dados reais
-3. Refatorar InsightsPage para IA real
-4. Adicionar toggle de auto-sync
-
-### Fase 4: Auto-Sync
-1. Documentar setup do Apps Script para webhook
-2. Configurar pg_cron para polling
+### Depois
+```
+rows_read: 198
+rows_upserted: 175     <- Transacoes reais
+rows_skipped: 20       <- Totais + cabecalhos + vazias
+rows_failed: 3         <- Erros genuinos (se houver)
+skip_breakdown: {
+  empty: 5,
+  total_row: 8,
+  header_row: 4,
+  zero_value: 3
+}
+```
 
 ---
 
-## Checklist de Testes
+## Consistencia Entre Menus
 
-1. **Idempotência**: Rodar sync 3x seguidas → mesmo número de registros
-2. **Atualização**: Mudar valor numa célula → registro atualizado (não duplicado)
-3. **Erros parciais**: Linha com data inválida → outras linhas importam, erro logado
-4. **Preview**: Ver preview antes de sync → dados corretos
-5. **Status**: Verificar histórico de syncs → métricas corretas
-6. **Auto-sync**: Editar planilha → sync dispara automaticamente
-7. **Dashboard**: KPIs refletem dados importados
-8. **Cash Flow**: Gráfico mostra dados reais por mês
-9. **Insights**: IA gera insights baseados em dados reais
+### Receitas (`IncomePage`)
+Ja funciona: `useTransactions({ type: "income" })`
 
----
+### Despesas (`ExpensesPage`)
+Ja funciona: `useTransactions({ type: "expense" })`
 
-## Limitações e Alternativas
+### Dashboard (`OverviewPage`)
+Ja funciona via `KPIGrid` que usa `useTransactions`
 
-### Webhook via Apps Script
-- **Limitação**: Requer configuração manual pelo usuário na planilha
-- **Alternativa**: Documentar passo-a-passo com screenshots
-- **Fallback**: Polling garante consistência mesmo sem webhook
-
-### Cron no Supabase
-- **Limitação**: Precisa habilitar extensões pg_cron e pg_net
-- **Alternativa**: Usar serviço externo (cron-job.org) para chamar a edge function
+### Fluxo de Caixa (`CashFlowPage`)
+PRECISA CORRIGIR: Substituir dados mock por `useCashFlow`
 
 ---
 
-## Arquivos a Criar/Modificar
+## Testes de Validacao
 
-### Novos Arquivos:
-- `supabase/migrations/XXXXXX_financial_sync_schema.sql`
-- `supabase/functions/sheets-sync-status/index.ts`
-- `supabase/functions/sheets-preview-mapping/index.ts`
-- `supabase/functions/sheets-webhook/index.ts`
-- `supabase/functions/sheets-cron-sync/index.ts`
-- `supabase/functions/ai-generate-insights/index.ts`
-- `src/hooks/useSyncStatus.ts`
-- `src/components/sheets/SyncHistoryTable.tsx`
-- `src/components/sheets/SyncErrorList.tsx`
+### Teste 1: Parsing de Valores
+```typescript
+// Todos devem parsear corretamente:
+parseBRL("R$ 1.234,56") === 1234.56
+parseBRL("1.234,56") === 1234.56
+parseBRL("-1.234,56") === -1234.56
+parseBRL("(1.234,56)") === -1234.56
+parseBRL("R$ - 1.234,56") === -1234.56
+parseBRL("") === null
+parseBRL("TOTAL") === null
+```
 
-### Arquivos a Modificar:
-- `supabase/functions/google-sheets-sync/index.ts` (refatorar para idempotência)
-- `supabase/config.toml` (adicionar novas functions)
-- `src/pages/GoogleSheetsPage.tsx` (adicionar status e histórico)
-- `src/pages/CashFlowPage.tsx` (usar dados reais)
-- `src/pages/InsightsPage.tsx` (integrar IA)
-- `src/hooks/useGoogleSheets.ts` (adicionar mutations para novas APIs)
+### Teste 2: Linhas Ignoraveis
+```typescript
+isSkippableRow({}, "TOTAL GERAL").skip === true
+isSkippableRow({}, "Subtotal").skip === true
+isSkippableRow({Data:"Data",Valor:"Valor"}, "Data").skip === true
+```
+
+### Teste 3: Idempotencia
+- Executar sync 3x seguidas
+- Verificar que `rows_upserted` permanece estavel
+- Verificar que nao ha duplicatas no banco
+
+### Teste 4: UI Consistente
+- Receitas mostra apenas `type=income`
+- Despesas mostra apenas `type=expense`
+- Dashboard mostra KPIs corretos
+- Fluxo de Caixa mostra grafico com dados reais
 
 ---
 
-## Resumo Técnico
+## Sequencia de Implementacao
 
-| Componente | Tecnologia | Responsabilidade |
-|------------|------------|------------------|
-| Banco | PostgreSQL + RLS | Armazenamento seguro e idempotente |
-| Edge Functions | Deno/Supabase | Sync, status, preview, webhooks |
-| Auto-sync Push | Apps Script | Notificar edições em tempo real |
-| Auto-sync Poll | pg_cron | Garantir consistência a cada 10 min |
-| IA Insights | Lovable AI (Gemini) | Análise e recomendações |
-| Frontend | React + React Query | UI responsiva com cache |
+1. **Parser Robusto**: Criar funcao `parseBRL` com todos os formatos BR
+2. **Detector de Skip**: Implementar `isSkippableRow`
+3. **Edge Function**: Refatorar `google-sheets-sync`
+4. **Hook CashFlow**: Criar `useCashFlow`
+5. **CashFlowPage**: Integrar com dados reais
+6. **Testes**: Validar com amostra de 20 linhas
+7. **Deploy e Verificacao**: Confirmar 98%+ de importacao
