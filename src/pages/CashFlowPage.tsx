@@ -5,7 +5,9 @@ import {
   Calendar,
   ArrowDownLeft,
   ArrowUpRight,
-  RefreshCw
+  RefreshCw,
+  AlertCircle,
+  FileSpreadsheet
 } from "lucide-react";
 import { 
   AreaChart, 
@@ -23,31 +25,10 @@ import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { TrendBadge } from "@/components/ui/trend-badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-
-// Dados de exemplo - fluxo de caixa projetado
-const cashFlowData = [
-  { month: "Jan", inflow: 245000, outflow: 180000, balance: 65000 },
-  { month: "Fev", inflow: 312000, outflow: 195000, balance: 117000 },
-  { month: "Mar", inflow: 287000, outflow: 210000, balance: 77000 },
-  { month: "Abr", inflow: 356000, outflow: 198000, balance: 158000 },
-  { month: "Mai", inflow: 398000, outflow: 225000, balance: 173000 },
-  { month: "Jun", inflow: 425000, outflow: 240000, balance: 185000 },
-  { month: "Jul", inflow: 378000, outflow: 218000, balance: 160000 },
-  { month: "Ago", inflow: 445000, outflow: 255000, balance: 190000 },
-  { month: "Set", inflow: 412000, outflow: 235000, balance: 177000 },
-  { month: "Out", inflow: 489000, outflow: 268000, balance: 221000 },
-  { month: "Nov", inflow: 523000, outflow: 285000, balance: 238000 },
-  { month: "Dez", inflow: 567000, outflow: 310000, balance: 257000 },
-];
-
-const upcomingPayments = [
-  { id: 1, description: "Folha de Pagamento", amount: -185000, dueDate: "2024-01-25", type: "expense" },
-  { id: 2, description: "Fornecedor ABC", amount: -42000, dueDate: "2024-01-28", type: "expense" },
-  { id: 3, description: "Recebimento Cliente XYZ", amount: 89000, dueDate: "2024-01-30", type: "income" },
-  { id: 4, description: "Impostos Federais", amount: -28000, dueDate: "2024-02-05", type: "expense" },
-  { id: 5, description: "Assinaturas Mensais", amount: 156000, dueDate: "2024-02-10", type: "income" },
-];
+import { useCashFlow } from "@/hooks/useCashFlow";
+import { Link } from "react-router-dom";
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat("pt-BR", {
@@ -109,10 +90,87 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   return null;
 };
 
+function EmptyState() {
+  return (
+    <Card className="glass-premium border-border/50 shadow-premium-md rounded-2xl overflow-hidden">
+      <CardContent className="flex flex-col items-center justify-center py-16 px-8 text-center">
+        <div className="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-6">
+          <FileSpreadsheet className="w-8 h-8 text-muted-foreground" />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground mb-2">
+          Nenhuma transação encontrada
+        </h3>
+        <p className="text-muted-foreground mb-6 max-w-md">
+          Importe dados de uma planilha ou adicione transações manualmente para visualizar o fluxo de caixa.
+        </p>
+        <div className="flex gap-3">
+          <Button asChild variant="outline" className="gap-2 rounded-xl">
+            <Link to="/income">
+              <TrendingUp className="w-4 h-4" />
+              Adicionar Receita
+            </Link>
+          </Button>
+          <Button asChild className="gap-2 rounded-xl">
+            <Link to="/google-sheets">
+              <FileSpreadsheet className="w-4 h-4" />
+              Importar Planilha
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LoadingState() {
+  return (
+    <div className="space-y-6 md:space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <Card key={i} className="p-6">
+            <Skeleton className="h-6 w-32 mb-4" />
+            <Skeleton className="h-10 w-40" />
+          </Card>
+        ))}
+      </div>
+      <Card className="p-6">
+        <Skeleton className="h-[400px] w-full" />
+      </Card>
+    </div>
+  );
+}
+
 export function CashFlowPage() {
-  const totalInflow = cashFlowData.reduce((acc, curr) => acc + curr.inflow, 0);
-  const totalOutflow = cashFlowData.reduce((acc, curr) => acc + curr.outflow, 0);
-  const netCashFlow = totalInflow - totalOutflow;
+  const { cashFlowData, upcomingPayments, totals, isLoading, hasData } = useCashFlow(12);
+
+  if (isLoading) {
+    return <LoadingState />;
+  }
+
+  if (!hasData) {
+    return (
+      <div className="space-y-6 md:space-y-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground tracking-tight flex items-center gap-3">
+              <ArrowLeftRight className="w-8 h-8 text-primary animate-pulse-glow" />
+              Fluxo de Caixa
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Projeção de entradas e saídas financeiras.
+            </p>
+          </div>
+        </div>
+        <EmptyState />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 md:space-y-8">
@@ -124,17 +182,19 @@ export function CashFlowPage() {
             Fluxo de Caixa
           </h1>
           <p className="text-muted-foreground mt-1">
-            Projeção de entradas e saídas financeiras.
+            Análise de entradas e saídas financeiras.
           </p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" className="gap-2 rounded-xl border-border group transition-premium">
             <Calendar className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            <span>Próximos 12 meses</span>
+            <span>Últimos 12 meses</span>
           </Button>
-          <Button className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium">
-            <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
-            <span>Atualizar Projeção</span>
+          <Button asChild className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium">
+            <Link to="/google-sheets">
+              <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
+              <span>Atualizar Dados</span>
+            </Link>
           </Button>
         </div>
       </div>
@@ -149,7 +209,7 @@ export function CashFlowPage() {
             <div>
               <p className="text-sm text-muted-foreground font-medium">Total de Entradas</p>
               <AnimatedValue
-                value={totalInflow}
+                value={totals.totalInflow}
                 prefix="R$ "
                 className="text-2xl md:text-3xl tracking-tight"
                 color="success"
@@ -169,7 +229,7 @@ export function CashFlowPage() {
             <div>
               <p className="text-sm text-muted-foreground font-medium">Total de Saídas</p>
               <AnimatedValue
-                value={totalOutflow}
+                value={totals.totalOutflow}
                 prefix="R$ "
                 className="text-2xl md:text-3xl tracking-tight"
                 color="danger"
@@ -187,12 +247,12 @@ export function CashFlowPage() {
               <ArrowLeftRight className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Saldo Projetado</p>
+              <p className="text-sm text-muted-foreground font-medium">Saldo Líquido</p>
               <AnimatedValue
-                value={netCashFlow}
+                value={totals.netCashFlow}
                 prefix="R$ "
                 className="text-2xl md:text-3xl tracking-tight"
-                color="primary"
+                color={totals.netCashFlow >= 0 ? "primary" : "danger"}
                 glow
                 format="currency"
                 duration={1800}
@@ -208,10 +268,10 @@ export function CashFlowPage() {
         <CardHeader className="relative z-10">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-lg font-semibold text-foreground">Projeção de Fluxo de Caixa</CardTitle>
-              <CardDescription className="text-muted-foreground">Entradas, saídas e saldo mensal projetado</CardDescription>
+              <CardTitle className="text-lg font-semibold text-foreground">Fluxo de Caixa Mensal</CardTitle>
+              <CardDescription className="text-muted-foreground">Entradas, saídas e saldo mensal</CardDescription>
             </div>
-            <TrendBadge value={15.2} size="sm" animated />
+            <TrendBadge value={totals.trend} size="sm" animated />
           </div>
         </CardHeader>
         <CardContent className="relative z-10">
@@ -242,7 +302,7 @@ export function CashFlowPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="4 4" stroke="hsl(var(--border))" vertical={false} strokeOpacity={0.5} />
                 <XAxis 
-                  dataKey="month" 
+                  dataKey="monthLabel" 
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
@@ -303,70 +363,72 @@ export function CashFlowPage() {
       </Card>
 
       {/* Pagamentos Próximos */}
-      <Card className="glass-premium border-border/50 shadow-premium-md rounded-2xl overflow-hidden relative">
-        <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
-        <CardHeader className="relative z-10">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-lg font-semibold text-foreground">Próximos Vencimentos</CardTitle>
-              <CardDescription className="text-muted-foreground">Contas a pagar e a receber</CardDescription>
+      {upcomingPayments.length > 0 && (
+        <Card className="glass-premium border-border/50 shadow-premium-md rounded-2xl overflow-hidden relative">
+          <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+          <CardHeader className="relative z-10">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-semibold text-foreground">Próximos Vencimentos</CardTitle>
+                <CardDescription className="text-muted-foreground">Contas a pagar e a receber</CardDescription>
+              </div>
+              <StatusIndicator status="success" size="sm" />
             </div>
-            <StatusIndicator status="success" size="sm" />
-          </div>
-        </CardHeader>
-        <CardContent className="relative z-10">
-          <div className="space-y-2 stagger-list">
-            {upcomingPayments.map((payment, index) => (
-              <div 
-                key={payment.id}
-                className={cn(
-                  "flex items-center justify-between py-4 px-4 rounded-xl",
-                  "border border-transparent hover:border-border/50",
-                  "hover:bg-muted/50 transition-all duration-300 group cursor-pointer"
-                )}
-                style={{ animationDelay: `${index * 50}ms` }}
-              >
-                <div className="flex items-center gap-4">
-                  <div 
+          </CardHeader>
+          <CardContent className="relative z-10">
+            <div className="space-y-2 stagger-list">
+              {upcomingPayments.map((payment, index) => (
+                <div 
+                  key={payment.id}
+                  className={cn(
+                    "flex items-center justify-between py-4 px-4 rounded-xl",
+                    "border border-transparent hover:border-border/50",
+                    "hover:bg-muted/50 transition-all duration-300 group cursor-pointer"
+                  )}
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className={cn(
+                        "w-11 h-11 rounded-xl flex items-center justify-center",
+                        "transition-all duration-300 group-hover:scale-110",
+                        payment.type === "income" 
+                          ? "bg-success/10 group-hover:bg-success/20" 
+                          : "bg-destructive/10 group-hover:bg-destructive/20"
+                      )}
+                    >
+                      {payment.type === "income" ? (
+                        <ArrowDownLeft className="w-5 h-5 text-success" />
+                      ) : (
+                        <ArrowUpRight className="w-5 h-5 text-destructive" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                        {payment.description}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Vencimento: {formatDate(payment.dueDate)}
+                      </p>
+                    </div>
+                  </div>
+                  <span 
                     className={cn(
-                      "w-11 h-11 rounded-xl flex items-center justify-center",
-                      "transition-all duration-300 group-hover:scale-110",
+                      "text-sm font-bold tabular-nums transition-all duration-300 group-hover:scale-105",
                       payment.type === "income" 
-                        ? "bg-success/10 group-hover:bg-success/20" 
-                        : "bg-destructive/10 group-hover:bg-destructive/20"
+                        ? "text-success" 
+                        : "text-destructive"
                     )}
                   >
-                    {payment.type === "income" ? (
-                      <ArrowDownLeft className="w-5 h-5 text-success" />
-                    ) : (
-                      <ArrowUpRight className="w-5 h-5 text-destructive" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                      {payment.description}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Vencimento: {formatDate(payment.dueDate)}
-                    </p>
-                  </div>
+                    {payment.type === "income" ? "+" : "-"}
+                    {formatCurrency(Math.abs(payment.amount))}
+                  </span>
                 </div>
-                <span 
-                  className={cn(
-                    "text-sm font-bold tabular-nums transition-all duration-300 group-hover:scale-105",
-                    payment.type === "income" 
-                      ? "text-success" 
-                      : "text-destructive"
-                  )}
-                >
-                  {payment.type === "income" ? "+" : "-"}
-                  {formatCurrency(Math.abs(payment.amount))}
-                </span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
