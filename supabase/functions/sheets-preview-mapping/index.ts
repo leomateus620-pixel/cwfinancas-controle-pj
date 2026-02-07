@@ -38,43 +38,90 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
   return { access_token: data.access_token, expires_at: expiresAt };
 }
 
-// Parse Brazilian currency format
-function parseCurrency(value: string | number): number {
-  if (typeof value === "number") return value;
-  if (!value) return 0;
+/**
+ * ROBUST Brazilian currency parser - handles ALL common formats
+ * Returns null for empty/invalid values (NOT 0!)
+ */
+function parseBRL(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return isNaN(value) ? null : value;
   
-  let cleaned = value.toString().replace(/[R$\s]/g, "").trim();
-  const hasBrazilianFormat = cleaned.includes(",") && (
-    cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".") || !cleaned.includes(".")
-  );
+  let str = String(value).trim();
+  if (!str) return null;
   
-  if (hasBrazilianFormat) {
-    cleaned = cleaned.replace(/\./g, "").replace(",", ".");
-  } else {
-    cleaned = cleaned.replace(/,/g, "");
-  }
+  // Remove currency symbols, letters, and whitespace
+  str = str.replace(/[R$¤€£¥a-zA-Z]/gi, "");
+  str = str.replace(/[\u00A0\u2007\u202F\u200B\uFEFF]/g, "");
+  str = str.replace(/\s+/g, "");
   
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
-}
-
-// Parse date from various formats
-function parseDate(value: string | number): string | null {
-  if (!value) return null;
+  if (!str || str === "-" || str === "+") return null;
   
-  if (typeof value === "number" || /^\d+$/.test(value.toString())) {
-    const serial = typeof value === "number" ? value : parseInt(value);
-    if (serial > 25000 && serial < 60000) {
-      const date = new Date((serial - 25569) * 86400 * 1000);
-      return date.toISOString().split("T")[0];
+  // Detect negative by parentheses
+  const isNegativeParens = str.startsWith("(") && str.endsWith(")");
+  if (isNegativeParens) str = str.slice(1, -1);
+  
+  // Detect negative by prefix or suffix dash
+  const isNegativePrefix = str.startsWith("-");
+  const isNegativeSuffix = str.endsWith("-");
+  str = str.replace(/^-+|-+$/g, "");
+  
+  if (!str) return null;
+  
+  const lastComma = str.lastIndexOf(",");
+  const lastDot = str.lastIndexOf(".");
+  const commaCount = (str.match(/,/g) || []).length;
+  
+  let normalized = str;
+  
+  if (lastComma > lastDot) {
+    normalized = str.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > lastComma) {
+    normalized = str.replace(/,/g, "");
+  } else if (lastComma >= 0 && lastDot === -1) {
+    if (commaCount === 1) {
+      const afterComma = str.split(",")[1];
+      if (afterComma && afterComma.length <= 2) {
+        normalized = str.replace(",", ".");
+      } else {
+        normalized = str.replace(",", "");
+      }
+    } else {
+      normalized = str.replace(/,/g, "");
     }
   }
   
-  const str = value.toString().trim();
+  const num = parseFloat(normalized);
+  if (isNaN(num)) return null;
   
-  const brMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const isNegative = isNegativeParens || isNegativePrefix || isNegativeSuffix;
+  return isNegative ? -num : num;
+}
+
+/**
+ * Parse date from various formats
+ */
+function parseDate(value: string | number | null | undefined): string | null {
+  if (!value) return null;
+  
+  if (typeof value === "number" || /^\d+$/.test(String(value))) {
+    const serial = typeof value === "number" ? value : parseInt(String(value));
+    if (serial > 25000 && serial < 60000) {
+      const date = new Date((serial - 25569) * 86400 * 1000);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().split("T")[0];
+      }
+    }
+  }
+  
+  const str = String(value).trim();
+  
+  const brMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (brMatch) {
-    return `${brMatch[3]}-${brMatch[2].padStart(2, "0")}-${brMatch[1].padStart(2, "0")}`;
+    const day = parseInt(brMatch[1]);
+    const month = parseInt(brMatch[2]);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      return `${brMatch[3]}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
   }
   
   const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -83,48 +130,103 @@ function parseDate(value: string | number): string | null {
   return null;
 }
 
-// Detect transaction type
+/**
+ * Check if row should be skipped
+ */
+function isSkippableRow(description: string): { skip: boolean; reason?: string } {
+  const descLower = (description || "").toLowerCase().trim();
+  
+  const totalKeywords = ["total", "subtotal", "saldo", "soma", "acumulado", "resumo"];
+  if (totalKeywords.some(k => descLower.includes(k))) {
+    return { skip: true, reason: "total_row" };
+  }
+  
+  return { skip: false };
+}
+
+/**
+ * Detect type from row data
+ */
 function detectType(row: Record<string, unknown>, mapping: Record<string, string>): "income" | "expense" {
   const typeCol = mapping.type;
   if (typeCol && row[typeCol]) {
     const typeValue = String(row[typeCol]).toLowerCase();
     if (typeValue.includes("entrada") || typeValue.includes("receita") || 
-        typeValue.includes("crédito") || typeValue === "c") {
+        typeValue.includes("credito") || typeValue.includes("crédito") || 
+        typeValue === "c" || typeValue === "r") {
       return "income";
     }
-    if (typeValue.includes("saída") || typeValue.includes("despesa") || 
+    if (typeValue.includes("saida") || typeValue.includes("saída") || 
+        typeValue.includes("despesa") || typeValue.includes("debito") ||
         typeValue.includes("débito") || typeValue === "d") {
       return "expense";
     }
   }
   
+  // Check credit/debit columns
+  if (mapping.credit || mapping.debit) {
+    const credit = parseBRL(row[mapping.credit] as string | number | null) || 0;
+    const debit = parseBRL(row[mapping.debit] as string | number | null) || 0;
+    if (credit > debit) return "income";
+    if (debit > credit) return "expense";
+  }
+  
+  // Check amount sign
   const amountCol = mapping.amount;
   if (amountCol && row[amountCol]) {
-    const amount = parseCurrency(row[amountCol] as string);
-    if (amount < 0) return "expense";
+    const amount = parseBRL(row[amountCol] as string | number | null);
+    if (amount !== null && amount < 0) return "expense";
   }
   
   return "income";
 }
 
-// Auto-detect column mapping from headers
+/**
+ * Extract amount supporting both single amount column and credit/debit
+ */
+function extractAmount(row: Record<string, unknown>, mapping: Record<string, string>): number | null {
+  // Try credit/debit first
+  if (mapping.credit || mapping.debit) {
+    const credit = parseBRL(row[mapping.credit] as string | number | null) || 0;
+    const debit = parseBRL(row[mapping.debit] as string | number | null) || 0;
+    if (credit > 0 || debit > 0) {
+      return Math.max(credit, debit);
+    }
+  }
+  
+  // Try amount column
+  if (mapping.amount) {
+    const amount = parseBRL(row[mapping.amount] as string | number | null);
+    if (amount !== null) return Math.abs(amount);
+  }
+  
+  return null;
+}
+
+/**
+ * Auto-detect column mapping from headers
+ */
 function autoDetectMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
-  const lowerHeaders = headers.map(h => h?.toLowerCase().trim() || "");
+  const normalizedHeaders = headers.map(h => 
+    (h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+  );
   
   const patterns: Record<string, string[]> = {
-    description: ["descrição", "descricao", "histórico", "historico", "lançamento", "lancamento", "obs", "observação", "memo"],
-    amount: ["valor", "montante", "quantia", "total", "r$", "vlr", "amount", "value"],
-    date: ["data", "dt", "date", "vencimento", "competência", "competencia", "emissão"],
-    type: ["tipo", "natureza", "d/c", "entrada/saída", "entrada/saida"],
-    category: ["categoria", "classificação", "classificacao", "grupo", "centro de custo", "category"],
-    client_vendor: ["cliente", "fornecedor", "razão social", "empresa", "parceiro", "nome"],
+    description: ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe"],
+    amount: ["valor", "montante", "quantia", "total", "vlr", "amount", "value", "r$"],
+    date: ["data", "dt", "date", "vencimento", "competencia", "emissao"],
+    type: ["tipo", "natureza", "d/c", "entrada/saida"],
+    category: ["categoria", "classificacao", "grupo", "centro de custo", "category"],
+    client_vendor: ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "nome"],
+    credit: ["credito", "entrada", "receita", "recebido"],
+    debit: ["debito", "saida", "despesa", "pago"],
   };
   
   for (const [field, keywords] of Object.entries(patterns)) {
-    for (let i = 0; i < lowerHeaders.length; i++) {
-      const header = lowerHeaders[i];
-      if (keywords.some(k => header.includes(k))) {
+    for (let i = 0; i < normalizedHeaders.length; i++) {
+      const header = normalizedHeaders[i];
+      if (keywords.some(k => header.includes(k) || header === k)) {
         mapping[field] = headers[i];
         break;
       }
@@ -227,50 +329,52 @@ Deno.serve(async (req) => {
     const confidence = requiredFields.filter(f => mappedFields.includes(f)).length / requiredFields.length;
 
     // Generate preview rows with normalized data
-    const previewRows = rows.slice(0, 10).map((row, index) => {
+    const previewRows = rows.slice(0, 15).map((row, index) => {
       const rowObj: Record<string, unknown> = {};
       headers.forEach((h, i) => {
         rowObj[h] = row[i] || "";
       });
 
-      // Normalize data using mapping
       const description = mapping.description ? String(rowObj[mapping.description] || "").trim() : "";
-      const amountRaw = mapping.amount ? rowObj[mapping.amount] : 0;
       const dateRaw = mapping.date ? rowObj[mapping.date] : null;
       const category = mapping.category ? String(rowObj[mapping.category] || "").trim() : "Geral";
+      
+      const amount = extractAmount(rowObj, mapping);
       const type = detectType(rowObj, mapping);
-
-      const amount = parseCurrency(amountRaw as string);
-      const date = parseDate(dateRaw as string | number);
+      const date = parseDate(dateRaw as string | number | null);
+      const skipCheck = isSkippableRow(description);
 
       return {
         row_number: index + 2,
         original: rowObj,
         normalized: {
           description: description || "(sem descrição)",
-          amount: Math.abs(amount),
-          amount_formatted: new Intl.NumberFormat("pt-BR", {
-            style: "currency",
-            currency: "BRL",
-          }).format(Math.abs(amount)),
+          amount: amount !== null ? amount : null,
+          amount_formatted: amount !== null 
+            ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(amount)
+            : "(valor inválido)",
           date: date,
           date_formatted: date 
-            ? new Date(date).toLocaleDateString("pt-BR") 
+            ? new Date(date + "T12:00:00").toLocaleDateString("pt-BR") 
             : "(data inválida)",
           type: type === "income" ? "Receita" : "Despesa",
           category: category || "Geral",
         },
         validation: {
           has_description: !!description,
-          has_valid_amount: amount !== 0,
+          has_valid_amount: amount !== null && amount > 0,
           has_valid_date: !!date,
-          is_valid: !!description && amount !== 0 && !!date,
+          is_skippable: skipCheck.skip,
+          skip_reason: skipCheck.reason,
+          is_valid: !!description && amount !== null && amount > 0,
         },
       };
     });
 
     // Calculate stats
-    const validRows = previewRows.filter(r => r.validation.is_valid).length;
+    const validRows = previewRows.filter(r => r.validation.is_valid && !r.validation.is_skippable).length;
+    const skippableRows = previewRows.filter(r => r.validation.is_skippable).length;
+    const invalidRows = previewRows.filter(r => !r.validation.is_valid && !r.validation.is_skippable).length;
     const totalPreview = previewRows.length;
 
     return new Response(
@@ -281,13 +385,15 @@ Deno.serve(async (req) => {
         detected_mapping: detectedMapping,
         current_mapping: mapping,
         mapping_confidence: Math.round(confidence * 100),
+        has_credit_debit: !!(detectedMapping.credit || detectedMapping.debit),
         preview_rows: previewRows,
         total_rows: rows.length,
         preview_stats: {
           total: totalPreview,
           valid: validRows,
-          invalid: totalPreview - validRows,
-          validation_rate: Math.round((validRows / totalPreview) * 100),
+          skippable: skippableRows,
+          invalid: invalidRows,
+          estimated_import_rate: Math.round(((validRows + skippableRows) / totalPreview) * 100),
         },
         field_suggestions: {
           description: {
@@ -313,6 +419,16 @@ Deno.serve(async (req) => {
           category: {
             current: mapping.category || null,
             suggested: detectedMapping.category || null,
+            options: headers,
+          },
+          credit: {
+            current: mapping.credit || null,
+            suggested: detectedMapping.credit || null,
+            options: headers,
+          },
+          debit: {
+            current: mapping.debit || null,
+            suggested: detectedMapping.debit || null,
             options: headers,
           },
         },
