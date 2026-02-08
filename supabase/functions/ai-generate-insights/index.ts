@@ -18,6 +18,7 @@ interface InsightsRequest {
     categories?: string[];
     types?: ("income" | "expense")[];
   };
+  force_refresh?: boolean;
 }
 
 interface TransactionData {
@@ -27,6 +28,7 @@ interface TransactionData {
   category: string;
   type: string;
   amount: number;
+  client_vendor: string | null;
 }
 
 interface CategorySummary {
@@ -34,6 +36,8 @@ interface CategorySummary {
   total: number;
   count: number;
   percentage: number;
+  type: string;
+  avg_per_transaction: number;
 }
 
 interface MonthlySummary {
@@ -41,6 +45,267 @@ interface MonthlySummary {
   receitas: number;
   despesas: number;
   saldo: number;
+  transaction_count: number;
+}
+
+interface Outlier {
+  id: string;
+  description: string;
+  amount: number;
+  category: string;
+  date: string;
+  deviation: number;
+}
+
+interface Recurrence {
+  description_pattern: string;
+  avg_amount: number;
+  frequency: number;
+  months_present: number;
+}
+
+interface Concentration {
+  name: string;
+  total: number;
+  percentage: number;
+  type: "client" | "vendor";
+}
+
+// Format currency for display
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+}
+
+// Calculate outliers (transactions > 2x category average)
+function findOutliers(transactions: TransactionData[], categoryStats: Map<string, { total: number; count: number }>): Outlier[] {
+  const outliers: Outlier[] = [];
+  
+  for (const tx of transactions) {
+    const stats = categoryStats.get(`${tx.category}:${tx.type}`);
+    if (!stats || stats.count < 3) continue;
+    
+    const avg = stats.total / stats.count;
+    if (tx.amount > avg * 2) {
+      outliers.push({
+        id: tx.id,
+        description: tx.description,
+        amount: tx.amount,
+        category: tx.category,
+        date: tx.date,
+        deviation: tx.amount / avg,
+      });
+    }
+  }
+  
+  return outliers.sort((a, b) => b.deviation - a.deviation).slice(0, 5);
+}
+
+// Find recurring patterns
+function findRecurrences(transactions: TransactionData[]): Recurrence[] {
+  const patterns = new Map<string, { amounts: number[]; months: Set<string> }>();
+  
+  for (const tx of transactions) {
+    // Normalize description for pattern matching
+    const pattern = tx.description
+      .toLowerCase()
+      .replace(/\d+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .substring(0, 30);
+    
+    if (pattern.length < 5) continue;
+    
+    const month = tx.date.substring(0, 7);
+    const existing = patterns.get(pattern) || { amounts: [], months: new Set() };
+    existing.amounts.push(tx.amount);
+    existing.months.add(month);
+    patterns.set(pattern, existing);
+  }
+  
+  const recurrences: Recurrence[] = [];
+  for (const [pattern, data] of patterns) {
+    if (data.amounts.length >= 3 && data.months.size >= 2) {
+      const avg = data.amounts.reduce((a, b) => a + b, 0) / data.amounts.length;
+      recurrences.push({
+        description_pattern: pattern,
+        avg_amount: avg,
+        frequency: data.amounts.length,
+        months_present: data.months.size,
+      });
+    }
+  }
+  
+  return recurrences.sort((a, b) => b.frequency - a.frequency).slice(0, 5);
+}
+
+// Find concentration (dependency on single client/vendor)
+function findConcentration(transactions: TransactionData[]): Concentration[] {
+  const totals = {
+    income: new Map<string, number>(),
+    expense: new Map<string, number>(),
+  };
+  
+  let totalIncome = 0;
+  let totalExpense = 0;
+  
+  for (const tx of transactions) {
+    const name = tx.client_vendor || tx.description.substring(0, 30);
+    if (tx.type === "income") {
+      totalIncome += tx.amount;
+      totals.income.set(name, (totals.income.get(name) || 0) + tx.amount);
+    } else {
+      totalExpense += tx.amount;
+      totals.expense.set(name, (totals.expense.get(name) || 0) + tx.amount);
+    }
+  }
+  
+  const concentrations: Concentration[] = [];
+  
+  // Top income sources
+  for (const [name, total] of totals.income) {
+    const pct = totalIncome > 0 ? (total / totalIncome) * 100 : 0;
+    if (pct >= 20) {
+      concentrations.push({ name, total, percentage: pct, type: "client" });
+    }
+  }
+  
+  // Top expense destinations
+  for (const [name, total] of totals.expense) {
+    const pct = totalExpense > 0 ? (total / totalExpense) * 100 : 0;
+    if (pct >= 20) {
+      concentrations.push({ name, total, percentage: pct, type: "vendor" });
+    }
+  }
+  
+  return concentrations.sort((a, b) => b.percentage - a.percentage).slice(0, 5);
+}
+
+// Build structured prompt for AI
+function buildPrompt(
+  kpis: { totalReceitas: number; totalDespesas: number; saldo: number; margem: number; receitaTrend: number; despesaTrend: number },
+  monthlySummary: MonthlySummary[],
+  categorySummary: CategorySummary[],
+  outliers: Outlier[],
+  recurrences: Recurrence[],
+  concentrations: Concentration[],
+  dataQuality: { coverage_pct: number; needs_review_count: number },
+  period: string,
+): string {
+  const topExpenseCategories = categorySummary
+    .filter(c => c.type === "expense")
+    .slice(0, 5)
+    .map(c => `${c.category}: ${formatCurrency(c.total)} (${c.percentage.toFixed(1)}%, ${c.count} tx)`)
+    .join(", ");
+
+  const topIncomeCategories = categorySummary
+    .filter(c => c.type === "income")
+    .slice(0, 5)
+    .map(c => `${c.category}: ${formatCurrency(c.total)} (${c.percentage.toFixed(1)}%, ${c.count} tx)`)
+    .join(", ");
+
+  const outlierText = outliers.length > 0
+    ? outliers.map(o => `${o.description}: ${formatCurrency(o.amount)} em ${o.category} (${o.deviation.toFixed(1)}x a média)`).join("; ")
+    : "Nenhum outlier significativo";
+
+  const recurrenceText = recurrences.length > 0
+    ? recurrences.map(r => `"${r.description_pattern}": ${formatCurrency(r.avg_amount)} médio, ${r.frequency}x em ${r.months_present} meses`).join("; ")
+    : "Nenhuma recorrência identificada";
+
+  const concentrationText = concentrations.length > 0
+    ? concentrations.map(c => `${c.name} (${c.type === "client" ? "cliente" : "fornecedor"}): ${c.percentage.toFixed(1)}% do ${c.type === "client" ? "faturamento" : "gasto"}`).join("; ")
+    : "Distribuição equilibrada";
+
+  const gapMonths = monthlySummary.filter(m => m.saldo < 0).map(m => m.month);
+  const gapText = gapMonths.length > 0 ? `Meses com saldo negativo: ${gapMonths.join(", ")}` : "Nenhum mês com saldo negativo";
+
+  return `Você é um analista financeiro sênior especializado em empresas brasileiras.
+
+DADOS DO PERÍODO: ${period}
+
+=== KPIs PRINCIPAIS ===
+- Receita Total: ${formatCurrency(kpis.totalReceitas)}
+- Despesas Totais: ${formatCurrency(kpis.totalDespesas)}
+- Resultado (Lucro/Prejuízo): ${formatCurrency(kpis.saldo)}
+- Margem: ${kpis.margem.toFixed(1)}%
+- Tendência Receita: ${kpis.receitaTrend >= 0 ? "+" : ""}${kpis.receitaTrend.toFixed(1)}%
+- Tendência Despesa: ${kpis.despesaTrend >= 0 ? "+" : ""}${kpis.despesaTrend.toFixed(1)}%
+
+=== CATEGORIAS DE DESPESA (Top 5) ===
+${topExpenseCategories || "Não identificadas"}
+
+=== FONTES DE RECEITA (Top 5) ===
+${topIncomeCategories || "Não identificadas"}
+
+=== EVOLUÇÃO MENSAL ===
+${monthlySummary.slice(-6).map(m => 
+  `${m.month}: Receitas ${formatCurrency(m.receitas)}, Despesas ${formatCurrency(m.despesas)}, Saldo ${formatCurrency(m.saldo)}`
+).join("\n")}
+
+=== OUTLIERS (gastos > 2x média da categoria) ===
+${outlierText}
+
+=== RECORRÊNCIAS IDENTIFICADAS ===
+${recurrenceText}
+
+=== CONCENTRAÇÃO (dependência) ===
+${concentrationText}
+
+=== GAPS DE CAIXA ===
+${gapText}
+
+=== QUALIDADE DOS DADOS ===
+- Cobertura: ${dataQuality.coverage_pct.toFixed(1)}%
+- Itens para revisão: ${dataQuality.needs_review_count}
+
+TAREFA: Gere insights estruturados seguindo EXATAMENTE o formato JSON abaixo.
+
+REGRAS ABSOLUTAS:
+1. Use APENAS os números fornecidos acima
+2. NUNCA invente valores, percentuais ou tendências
+3. Cite sempre a evidência numérica exata
+4. Se cobertura < 95%, declare no summary e reduza assertividade
+5. Cada insight deve ter evidência verificável nos dados
+
+FORMATO DE RESPOSTA (JSON):
+{
+  "summary": "Resumo executivo de 2-3 frases baseado nos KPIs",
+  "highlights": [
+    {
+      "title": "Título do destaque",
+      "evidence": "Evidência numérica exata dos dados",
+      "impact": "Impacto no negócio",
+      "recommendation": "Ação recomendada"
+    }
+  ],
+  "risks": [
+    {
+      "title": "Título do risco",
+      "evidence": "Evidência numérica",
+      "severity": "low|medium|high",
+      "mitigation": "Como mitigar"
+    }
+  ],
+  "opportunities": [
+    {
+      "title": "Título da oportunidade",
+      "evidence": "Evidência numérica",
+      "potential": "Potencial estimado",
+      "next_steps": "Próximos passos"
+    }
+  ],
+  "anomalies": [
+    {
+      "title": "Título da anomalia",
+      "evidence": "Evidência numérica",
+      "why_unusual": "Por que é incomum",
+      "check": "O que verificar"
+    }
+  ],
+  "questions": [
+    "Pergunta investigativa 1",
+    "Pergunta investigativa 2"
+  ]
+}`;
 }
 
 Deno.serve(async (req) => {
@@ -84,16 +349,48 @@ Deno.serve(async (req) => {
       // Allow empty body
     }
 
-    const { connection_id, date_from, date_to, filters } = body;
+    const { connection_id, date_from, date_to, filters, force_refresh } = body;
 
-    // Default to last 12 months if no dates provided
+    // Default to last 12 months
     const endDate = date_to || new Date().toISOString().split("T")[0];
     const startDate = date_from || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const period = `${startDate} a ${endDate}`;
+
+    // Check cache first (unless force_refresh)
+    if (!force_refresh) {
+      const { data: cachedInsight } = await supabase
+        .from("ai_insights")
+        .select("*")
+        .eq("user_id", userId)
+        .gte("date_from", startDate)
+        .lte("date_to", endDate)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cachedInsight) {
+        const cacheAge = Date.now() - new Date(cachedInsight.created_at).getTime();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        
+        if (cacheAge < twentyFourHours) {
+          return new Response(
+            JSON.stringify({
+              id: cachedInsight.id,
+              kpis: cachedInsight.kpis,
+              insights: cachedInsight.insights,
+              created_at: cachedInsight.created_at,
+              from_cache: true,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+    }
 
     // Build query
     let query = supabase
       .from("transactions")
-      .select("id, date, description, category, type, amount")
+      .select("id, date, description, category, type, amount, client_vendor")
       .eq("user_id", userId)
       .gte("date", startDate)
       .lte("date", endDate)
@@ -119,17 +416,32 @@ Deno.serve(async (req) => {
     }
 
     if (!transactions || transactions.length === 0) {
+      const emptyResponse = {
+        summary: "Não há dados suficientes para gerar insights.",
+        highlights: [],
+        risks: [],
+        opportunities: [],
+        anomalies: [],
+        questions: [],
+        data_quality: {
+          coverage_pct: 0,
+          needs_review_count: 0,
+          notes: "Sem transações no período selecionado",
+        },
+        metadata: {
+          period,
+          transactions_analyzed: 0,
+          generated_at: new Date().toISOString(),
+          model: "none",
+        },
+      };
+
       return new Response(
         JSON.stringify({
-          summary: "Não há dados suficientes para gerar insights.",
-          insights: [],
-          risks: [],
-          opportunities: [],
-          metadata: {
-            period: `${startDate} a ${endDate}`,
-            transactions_analyzed: 0,
-            generated_at: new Date().toISOString(),
-          },
+          id: null,
+          kpis: { total_receitas: 0, total_despesas: 0, saldo: 0, margem: 0, receita_trend: 0, despesa_trend: 0 },
+          insights: emptyResponse,
+          created_at: new Date().toISOString(),
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -167,20 +479,22 @@ Deno.serve(async (req) => {
           count: value.count,
           percentage: total > 0 ? (value.total / total) * 100 : 0,
           type: value.type,
+          avg_per_transaction: value.count > 0 ? value.total / value.count : 0,
         };
       })
       .sort((a, b) => b.total - a.total);
 
     // Group by month
-    const monthlyMap = new Map<string, { receitas: number; despesas: number }>();
+    const monthlyMap = new Map<string, { receitas: number; despesas: number; count: number }>();
     transactions.forEach(t => {
-      const month = t.date.substring(0, 7); // YYYY-MM
-      const existing = monthlyMap.get(month) || { receitas: 0, despesas: 0 };
+      const month = t.date.substring(0, 7);
+      const existing = monthlyMap.get(month) || { receitas: 0, despesas: 0, count: 0 };
       if (t.type === "income") {
         existing.receitas += Number(t.amount);
       } else {
         existing.despesas += Number(t.amount);
       }
+      existing.count++;
       monthlyMap.set(month, existing);
     });
 
@@ -190,6 +504,7 @@ Deno.serve(async (req) => {
         receitas: data.receitas,
         despesas: data.despesas,
         saldo: data.receitas - data.despesas,
+        transaction_count: data.count,
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
@@ -213,62 +528,45 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Format currency for prompt
-    const formatCurrency = (value: number) => 
-      new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+    // Find outliers, recurrences, concentrations
+    const outliers = findOutliers(transactions as TransactionData[], categoryMap);
+    const recurrences = findRecurrences(transactions as TransactionData[]);
+    const concentrations = findConcentration(transactions as TransactionData[]);
 
-    // Top categories for expenses and income
-    const topExpenseCategories = categorySummary
-      .filter(c => c.type === "expense")
-      .slice(0, 5)
-      .map(c => `${c.category}: ${formatCurrency(c.total)} (${c.percentage.toFixed(1)}%)`)
-      .join(", ");
+    // Get data quality metrics
+    const { count: flagCount } = await supabase
+      .from("transaction_flags")
+      .select("*", { count: "exact", head: true })
+      .eq("needs_review", true);
 
-    const topIncomeCategories = categorySummary
-      .filter(c => c.type === "income")
-      .slice(0, 5)
-      .map(c => `${c.category}: ${formatCurrency(c.total)} (${c.percentage.toFixed(1)}%)`)
-      .join(", ");
+    const dataQuality = {
+      coverage_pct: transactions.length > 0 
+        ? ((transactions.length - (flagCount || 0)) / transactions.length) * 100 
+        : 100,
+      needs_review_count: flagCount || 0,
+    };
 
-    // Build prompt with real data
-    const prompt = `Você é um analista financeiro especializado em empresas brasileiras. Analise os seguintes dados financeiros e forneça insights acionáveis em português brasileiro.
+    const kpis = {
+      totalReceitas,
+      totalDespesas,
+      saldo,
+      margem,
+      receitaTrend,
+      despesaTrend,
+    };
 
-DADOS DO PERÍODO: ${startDate} a ${endDate}
-- Total de transações analisadas: ${transactions.length}
-- Receita Total: ${formatCurrency(totalReceitas)}
-- Despesas Totais: ${formatCurrency(totalDespesas)}
-- Saldo (Lucro/Prejuízo): ${formatCurrency(saldo)}
-- Margem de Lucro: ${margem.toFixed(1)}%
+    // Build prompt and call AI
+    const prompt = buildPrompt(
+      kpis,
+      monthlySummary,
+      categorySummary,
+      outliers,
+      recurrences,
+      concentrations,
+      dataQuality,
+      period,
+    );
 
-TENDÊNCIAS:
-- Variação de Receita (últimos 3 meses vs anteriores): ${receitaTrend >= 0 ? "+" : ""}${receitaTrend.toFixed(1)}%
-- Variação de Despesas (últimos 3 meses vs anteriores): ${despesaTrend >= 0 ? "+" : ""}${despesaTrend.toFixed(1)}%
-
-PRINCIPAIS CATEGORIAS DE DESPESA:
-${topExpenseCategories || "Não identificadas"}
-
-PRINCIPAIS FONTES DE RECEITA:
-${topIncomeCategories || "Não identificadas"}
-
-EVOLUÇÃO MENSAL (últimos meses):
-${monthlySummary.slice(-6).map(m => 
-  `${m.month}: Receitas ${formatCurrency(m.receitas)}, Despesas ${formatCurrency(m.despesas)}, Saldo ${formatCurrency(m.saldo)}`
-).join("\n")}
-
-Com base EXCLUSIVAMENTE nesses dados, forneça:
-1. Um resumo executivo (2-3 frases)
-2. 3-5 insights específicos com evidências numéricas
-3. Riscos identificados (se houver)
-4. Oportunidades de melhoria
-5. Perguntas importantes para investigar
-
-IMPORTANTE:
-- Use APENAS os números fornecidos como evidência
-- Não invente dados ou percentuais
-- Seja específico e acionável
-- Foque em impacto para o negócio`;
-
-    // Call Lovable AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -280,12 +578,12 @@ IMPORTANTE:
         messages: [
           { 
             role: "system", 
-            content: "Você é um analista financeiro experiente. Responda em português brasileiro de forma clara e objetiva. Sempre cite os números reais como evidência dos insights." 
+            content: "Você é um analista financeiro experiente. Responda APENAS com JSON válido, sem markdown ou texto adicional. Siga exatamente o schema fornecido." 
           },
           { role: "user", content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: 2000,
+        temperature: 0.5,
+        max_tokens: 3000,
       }),
     });
 
@@ -302,7 +600,7 @@ IMPORTANTE:
       
       if (aiResponse.status === 402) {
         return new Response(
-          JSON.stringify({ error: "Créditos de IA insuficientes. Adicione créditos ao workspace." }),
+          JSON.stringify({ error: "Créditos de IA insuficientes." }),
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
@@ -311,33 +609,90 @@ IMPORTANTE:
     }
 
     const aiData = await aiResponse.json();
-    const aiContent = aiData.choices?.[0]?.message?.content || "";
+    let aiContent = aiData.choices?.[0]?.message?.content || "";
+    
+    // Clean markdown if present
+    aiContent = aiContent.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    
+    let parsedInsights;
+    try {
+      parsedInsights = JSON.parse(aiContent);
+    } catch {
+      console.error("Failed to parse AI response:", aiContent);
+      parsedInsights = {
+        summary: "Análise parcial disponível. Verifique os KPIs abaixo.",
+        highlights: [],
+        risks: [],
+        opportunities: [],
+        anomalies: [],
+        questions: [],
+      };
+    }
 
-    // Parse AI response into structured format
-    // For now, return raw content with metadata
+    // Build final structured response
+    const structuredInsights = {
+      summary: parsedInsights.summary || "Sem resumo disponível",
+      highlights: parsedInsights.highlights || [],
+      risks: parsedInsights.risks || [],
+      opportunities: parsedInsights.opportunities || [],
+      anomalies: parsedInsights.anomalies || [],
+      questions: parsedInsights.questions || [],
+      data_quality: {
+        coverage_pct: dataQuality.coverage_pct,
+        needs_review_count: dataQuality.needs_review_count,
+        notes: dataQuality.needs_review_count > 0 
+          ? `${dataQuality.needs_review_count} transações precisam de revisão` 
+          : "Todos os dados validados",
+      },
+      metadata: {
+        period,
+        transactions_analyzed: transactions.length,
+        generated_at: new Date().toISOString(),
+        model: "google/gemini-3-flash-preview",
+      },
+    };
+
+    const kpisResponse = {
+      total_receitas: totalReceitas,
+      total_despesas: totalDespesas,
+      saldo,
+      margem,
+      receita_trend: receitaTrend,
+      despesa_trend: despesaTrend,
+    };
+
+    // Save to cache
+    const { data: savedInsight, error: saveError } = await supabase
+      .from("ai_insights")
+      .insert({
+        user_id: userId,
+        connected_sheet_id: connection_id || null,
+        date_from: startDate,
+        date_to: endDate,
+        filters: filters || {},
+        kpis: kpisResponse,
+        insights: structuredInsights,
+        data_quality: structuredInsights.data_quality,
+        model_version: "google/gemini-3-flash-preview",
+      })
+      .select()
+      .single();
+
+    if (saveError) {
+      console.error("Error saving insights:", saveError);
+    }
+
     return new Response(
       JSON.stringify({
-        summary: aiContent,
-        raw_analysis: aiContent,
-        kpis: {
-          total_receitas: totalReceitas,
-          total_despesas: totalDespesas,
-          saldo: saldo,
-          margem: margem,
-          receita_trend: receitaTrend,
-          despesa_trend: despesaTrend,
-        },
-        category_breakdown: categorySummary.slice(0, 10),
-        monthly_trend: monthlySummary,
-        metadata: {
-          period: `${startDate} a ${endDate}`,
-          transactions_analyzed: transactions.length,
-          generated_at: new Date().toISOString(),
-          model: "google/gemini-3-flash-preview",
-        },
+        id: savedInsight?.id || null,
+        kpis: kpisResponse,
+        insights: structuredInsights,
+        created_at: new Date().toISOString(),
+        from_cache: false,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+
   } catch (error: unknown) {
     console.error("Error in ai-generate-insights:", error);
     const errorMessage = error instanceof Error ? error.message : "Unknown error";

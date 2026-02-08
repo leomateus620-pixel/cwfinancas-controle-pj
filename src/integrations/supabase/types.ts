@@ -14,6 +14,112 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_insights: {
+        Row: {
+          connected_sheet_id: string | null
+          created_at: string
+          data_quality: Json
+          date_from: string
+          date_to: string
+          filters: Json | null
+          id: string
+          insights: Json
+          kpis: Json
+          model_version: string
+          prompt_hash: string | null
+          user_id: string
+        }
+        Insert: {
+          connected_sheet_id?: string | null
+          created_at?: string
+          data_quality: Json
+          date_from: string
+          date_to: string
+          filters?: Json | null
+          id?: string
+          insights: Json
+          kpis: Json
+          model_version: string
+          prompt_hash?: string | null
+          user_id: string
+        }
+        Update: {
+          connected_sheet_id?: string | null
+          created_at?: string
+          data_quality?: Json
+          date_from?: string
+          date_to?: string
+          filters?: Json | null
+          id?: string
+          insights?: Json
+          kpis?: Json
+          model_version?: string
+          prompt_hash?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_insights_connected_sheet_id_fkey"
+            columns: ["connected_sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_sheet_profiles: {
+        Row: {
+          ai_suggestions: Json | null
+          column_mapping: Json
+          confidence: number
+          connected_sheet_id: string | null
+          created_at: string
+          header_signature: string
+          id: string
+          parsing_rules: Json
+          skip_patterns: Json | null
+          source_tab: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_suggestions?: Json | null
+          column_mapping?: Json
+          confidence?: number
+          connected_sheet_id?: string | null
+          created_at?: string
+          header_signature: string
+          id?: string
+          parsing_rules?: Json
+          skip_patterns?: Json | null
+          source_tab: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_suggestions?: Json | null
+          column_mapping?: Json
+          confidence?: number
+          connected_sheet_id?: string | null
+          created_at?: string
+          header_signature?: string
+          id?: string
+          parsing_rules?: Json
+          skip_patterns?: Json | null
+          source_tab?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_sheet_profiles_connected_sheet_id_fkey"
+            columns: ["connected_sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       balance_sheet_items: {
         Row: {
           amount: number
@@ -359,6 +465,53 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      transaction_flags: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          id: string
+          needs_review: boolean
+          notes: string | null
+          reasons: string[]
+          reviewed_at: string | null
+          reviewed_by: string | null
+          transaction_id: string
+          updated_at: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          needs_review?: boolean
+          notes?: string | null
+          reasons?: string[]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          transaction_id: string
+          updated_at?: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          needs_review?: boolean
+          notes?: string | null
+          reasons?: string[]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          transaction_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transaction_flags_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: true
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       transactions: {
         Row: {

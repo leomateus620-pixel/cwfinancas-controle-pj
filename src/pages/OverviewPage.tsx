@@ -3,6 +3,7 @@ import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { ExpenseChart } from "@/components/dashboard/ExpenseChart";
 import { ProfitDistributionChart } from "@/components/dashboard/ProfitDistributionChart";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
+import { DataQualityCard } from "@/components/dashboard/DataQualityCard";
 import { Calendar, Wallet, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CorporateCard } from "@/components/corporate/CorporateCard";
@@ -70,9 +71,10 @@ export function OverviewPage() {
       </div>
 
       {/* Seção Inferior */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ProfitDistributionChart />
         <RecentTransactions />
+        <DataQualityCard />
       </div>
     </div>
   );
