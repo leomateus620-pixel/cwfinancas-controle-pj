@@ -25,6 +25,7 @@ import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { SpreadsheetSelectorModal } from "@/components/modals/SpreadsheetSelectorModal";
 import { SyncHistoryTable } from "@/components/sheets/SyncHistoryTable";
 import { SyncErrorList } from "@/components/sheets/SyncErrorList";
+import { ProfileStatusCard } from "@/components/sheets/ProfileStatusCard";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorBoundary";
 import { cn } from "@/lib/utils";
@@ -512,6 +513,19 @@ function GoogleSheetsPageContent() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Profile Status Cards for each connection */}
+      {(connections ?? []).length > 0 && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {(connections ?? []).map((connection) => (
+            <ProfileStatusCard 
+              key={`profile-${connection.id}`}
+              connectionId={connection.id}
+              tabName={connection.sheet_name || undefined}
+            />
+          ))}
+        </div>
       )}
 
       {/* Sync History Section - only show when there are connections */}

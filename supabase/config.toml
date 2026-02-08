@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.google-read-sheet-preview]
 verify_jwt = false
+
+[functions.ai-profile-sheet]
+verify_jwt = false
+
+[functions.ai-generate-insights]
+verify_jwt = false
