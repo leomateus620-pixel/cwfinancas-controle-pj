@@ -44,36 +44,31 @@ export function KPICard({
   return (
     <div 
       className={cn(
-        "group relative bg-card/95 glass-premium rounded-2xl p-6 border border-border/50",
-        "shadow-premium-md hover:shadow-premium-lg transition-premium",
-        "animate-corporate-enter hover:-translate-y-1",
-        valueColor === "primary" && "hover-glow-primary",
-        valueColor === "success" && "hover-glow-success",
-        valueColor === "danger" && "hover-glow-danger",
+        "group relative bg-card rounded-xl p-5 border border-border",
+        "shadow-corporate-sm hover:shadow-corporate-md transition-corporate",
+        "hover:-translate-y-0.5",
         className
       )}
     >
-      {/* Gradient overlay on hover */}
+      {/* Subtle gradient overlay on hover */}
       <div className={cn(
-        "absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none",
-        valueColor === "primary" && "bg-gradient-to-br from-primary/5 via-transparent to-transparent",
-        valueColor === "success" && "bg-gradient-to-br from-success/5 via-transparent to-transparent",
-        valueColor === "danger" && "bg-gradient-to-br from-destructive/5 via-transparent to-transparent"
+        "absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none",
+        valueColor === "primary" && "bg-gradient-to-br from-primary/3 via-transparent to-transparent",
+        valueColor === "success" && "bg-gradient-to-br from-success/3 via-transparent to-transparent",
+        valueColor === "danger" && "bg-gradient-to-br from-destructive/3 via-transparent to-transparent"
       )} />
       
       <div className="relative z-10">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className={cn(
-            "p-3 rounded-xl transition-all duration-300 group-hover:scale-110",
+            "p-2.5 rounded-lg transition-all duration-200 group-hover:scale-105",
             valueColor === "primary" && "bg-primary/10 text-primary",
             valueColor === "success" && "bg-success/10 text-success",
             valueColor === "danger" && "bg-destructive/10 text-destructive",
-            valueColor === "default" && "bg-muted text-foreground"
+            valueColor === "default" && "bg-muted text-muted-foreground"
           )}>
-            <div className="group-hover:animate-float">
-              {icon}
-            </div>
+            {icon}
           </div>
           {change !== undefined && (
             <TrendBadge 
@@ -85,22 +80,21 @@ export function KPICard({
         </div>
 
         {/* Value */}
-        <div className="mb-3">
+        <div className="mb-2">
           {isNumericValue ? (
             <AnimatedValue
               value={value as number}
               prefix={prefix}
               suffix={suffix}
               decimals={decimals}
-              className="text-3xl md:text-4xl tracking-tight"
+              className="text-2xl md:text-3xl tracking-tight"
               color={valueColor}
-              glow
               format="currency"
-              duration={1800}
+              duration={1500}
             />
           ) : (
             <span className={cn(
-              "text-3xl md:text-4xl font-bold tracking-tight animate-count-emphasis",
+              "text-2xl md:text-3xl font-bold tracking-tight",
               getValueColorClass()
             )}>
               {value}
@@ -110,27 +104,10 @@ export function KPICard({
 
         {/* Title and change label */}
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground font-medium">{title}</span>
+          <span className="text-sm text-muted-foreground">{title}</span>
           {changeLabel && (
             <span className="text-xs text-muted-foreground">{changeLabel}</span>
           )}
-        </div>
-
-        {/* Progress bar indicator */}
-        <div className="mt-4 h-1 bg-muted/50 rounded-full overflow-hidden">
-          <div 
-            className={cn(
-              "h-full rounded-full transition-all duration-1000 ease-out",
-              valueColor === "primary" && "bg-primary",
-              valueColor === "success" && "bg-success",
-              valueColor === "danger" && "bg-destructive",
-              valueColor === "default" && "bg-foreground/30"
-            )}
-            style={{ 
-              width: `${Math.min((change || 0) * 4 + 50, 100)}%`,
-              animation: 'progress-fill 1.5s ease-out forwards'
-            }}
-          />
         </div>
       </div>
     </div>

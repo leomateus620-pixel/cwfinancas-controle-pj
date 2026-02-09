@@ -11,9 +11,9 @@ export function CorporateCard({ children, className, hover = true }: CorporateCa
   return (
     <div 
       className={cn(
-        "bg-card/95 backdrop-blur-md border border-border rounded-2xl p-6",
-        "shadow-corporate-md animate-corporate-enter",
-        hover && "hover:shadow-corporate-lg hover:-translate-y-0.5 transition-corporate",
+        "bg-card border border-border rounded-xl p-6",
+        "shadow-corporate-sm",
+        hover && "hover:shadow-corporate-md hover:-translate-y-0.5 transition-corporate",
         className
       )}
     >

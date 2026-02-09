@@ -106,6 +106,9 @@ export default {
         "premium-md": "var(--shadow-md)",
         "premium-lg": "var(--shadow-lg)",
         "premium-xl": "var(--shadow-xl)",
+        "glow-primary": "var(--shadow-glow-primary)",
+        "glow-success": "var(--shadow-glow-success)",
+        "glow-danger": "var(--shadow-glow-danger)",
       },
       keyframes: {
         "accordion-down": {
@@ -121,7 +124,7 @@ export default {
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "fade-in-scale": {
-          from: { opacity: "0", transform: "scale(0.92)" },
+          from: { opacity: "0", transform: "scale(0.95)" },
           to: { opacity: "1", transform: "scale(1)" },
         },
         "slide-in-right": {
@@ -178,17 +181,17 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
-        "fade-in-scale": "fade-in-scale 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
-        "slide-in-right": "slide-in-right 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
-        "corporate-enter": "corporate-enter 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
-        "page-slide": "page-slide 0.5s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "fade-in": "fade-in 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "fade-in-scale": "fade-in-scale 0.3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "slide-in-right": "slide-in-right 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "corporate-enter": "corporate-enter 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "page-slide": "page-slide 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
         shimmer: "shimmer 2.5s linear infinite",
         pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
         "pulse-glow": "pulse-glow 2.5s ease-in-out infinite",
         float: "float 4s ease-in-out infinite",
         "scale-bounce": "scale-bounce 0.4s ease-out",
-        "slide-up-fade": "slide-up-fade 0.4s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
+        "slide-up-fade": "slide-up-fade 0.3s cubic-bezier(0.25, 0.1, 0.25, 1) forwards",
         "trend-bounce": "trend-bounce 1s ease-in-out infinite",
         "glow-pulse": "glow-pulse 2s ease-in-out infinite",
         "count-emphasis": "count-emphasis 0.6s ease-out",
