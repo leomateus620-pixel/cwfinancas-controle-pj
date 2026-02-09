@@ -1,650 +1,882 @@
 
-# AI Finance Analyst: Sistema Híbrido de Validação e Insights
+# Design System Completo: CW Finanças - Controle PJ
 
-## Visão Geral da Arquitetura
+## Visao Geral
 
-O sistema implementará uma abordagem híbrida onde:
-- **Pipeline determinístico** processa 100% das linhas (parsing, validação, normalização)
-- **IA como camada de entendimento** entra apenas em 3 pontos específicos:
-  1. Profiling de planilha (detectar mapeamento de colunas por cabeçalho)
-  2. Sugestão de regras de limpeza (identificar padrões de total/cabeçalho)
-  3. Geração de insights financeiros (análise de agregações)
+Reformulacao completa do design da dashboard "CW Finanças Controle PJ" para um visual **premium fintech B2B**, clean e moderno, com identidade extraida diretamente da LOGO.
 
-```text
-┌────────────────────────────────────────────────────────────────────────────┐
-│                        FLUXO DE DADOS                                      │
-│                                                                            │
-│  Google Sheets ──► [Profile Cache?] ──► Pipeline Deterministico ──► DB    │
-│       │                  │                      │                          │
-│       │                  │ (cache hit)          │                          │
-│       ▼                  ▼                      ▼                          │
-│  [AI Profile]       Usa regras            [Transações]                     │
-│   (1 chamada)       existentes             normalizadas                    │
-│       │                                         │                          │
-│       ▼                                         ▼                          │
-│  ai_sheet_profiles                     [AI Insights]                       │
-│   (cache)                               (1 chamada por período)            │
-│                                                 │                          │
-│                                                 ▼                          │
-│                                          ai_insights                       │
-└────────────────────────────────────────────────────────────────────────────┘
+---
+
+## A) DESIGN SYSTEM
+
+### A1. Paleta de Cores (Baseada na Logo CW Finanças)
+
+A logo utiliza tons de azul corporativo. A paleta sera construida com:
+
+**Primary (Azul Institucional)**
+```css
+--primary-50: 213 100% 97%;   /* #F0F6FF - hover suave */
+--primary-100: 213 95% 93%;   /* #DCE9FE */
+--primary-200: 215 94% 85%;   /* #BDDAFE */
+--primary-300: 217 93% 75%;   /* #8FC1FC */
+--primary-400: 218 90% 62%;   /* #5A9CF8 */
+--primary-500: 221 85% 53%;   /* #2D7EF3 - cor principal */
+--primary-600: 223 82% 45%;   /* #1E63D6 */
+--primary-700: 225 78% 38%;   /* #1850B0 */
+--primary-800: 226 70% 32%;   /* #1A4190 */
+--primary-900: 227 65% 26%;   /* #173574 */
+```
+
+**Secondary (Slate Profissional)**
+```css
+--secondary-50: 210 40% 98%;   /* #F8FAFC */
+--secondary-100: 214 32% 91%;  /* #E2E8F0 */
+--secondary-200: 213 27% 84%;  /* #CBD5E1 */
+--secondary-500: 215 20% 65%;  /* #94A3B8 */
+--secondary-800: 217 33% 17%;  /* #1E293B */
+--secondary-900: 222 47% 11%;  /* #0F172A */
+```
+
+**Accent (Teal Complementar)**
+```css
+--accent-400: 172 66% 50%;     /* #2DD4BF - teal vibrante */
+--accent-500: 173 80% 40%;     /* #14B8A6 */
+```
+
+**Semantic Colors**
+```css
+--success: 160 84% 39%;        /* #0D9866 - verde profissional */
+--warning: 38 92% 50%;         /* #F59E0B - laranja atencao */
+--danger: 0 72% 51%;           /* #DC2626 - vermelho erro */
+--info: 199 89% 48%;           /* #0EA5E9 - azul informativo */
+```
+
+**Neutrals (Cinzas Frios)**
+```css
+--gray-50: 210 40% 98%;
+--gray-100: 214 32% 91%;
+--gray-200: 213 27% 84%;
+--gray-300: 212 20% 77%;
+--gray-400: 215 16% 57%;
+--gray-500: 215 14% 44%;
+--gray-600: 215 19% 35%;
+--gray-700: 217 33% 24%;
+--gray-800: 217 33% 17%;
+--gray-900: 222 47% 11%;
+```
+
+**Chart Colors (Paleta Coerente)**
+```css
+--chart-1: 221 85% 53%;        /* Primary blue */
+--chart-2: 160 84% 39%;        /* Success green */
+--chart-3: 173 80% 40%;        /* Teal */
+--chart-4: 262 83% 58%;        /* Purple */
+--chart-5: 0 72% 51%;          /* Red para despesas */
 ```
 
 ---
 
-## Parte A: Modelo de Dados (Migrations)
+### A2. Tipografia
 
-### A1. Tabela `ai_sheet_profiles` (Cache de Perfil da Planilha)
+**Familia Principal:** Inter (ja em uso - manter)
+**Familia Alternativa:** JetBrains Mono (para numeros financeiros - opcional)
 
-```sql
-CREATE TABLE public.ai_sheet_profiles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  connected_sheet_id uuid REFERENCES google_sheet_connections(id) ON DELETE CASCADE,
-  source_tab text NOT NULL,
-  header_signature text NOT NULL,  -- hash(cabeçalhos + qtd colunas)
-  column_mapping jsonb NOT NULL DEFAULT '{}',
-  parsing_rules jsonb NOT NULL DEFAULT '{}',
-  skip_patterns jsonb DEFAULT '[]',  -- patterns para detectar linhas ignoráveis
-  confidence numeric(3,2) NOT NULL DEFAULT 0.5,
-  ai_suggestions jsonb,  -- sugestões originais da IA para auditoria
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  
-  CONSTRAINT unique_profile_per_header 
-    UNIQUE(user_id, connected_sheet_id, source_tab, header_signature)
-);
+**Escala Tipografica (modular scale 1.250)**
+```css
+/* Display - Titulos principais */
+--text-display: 2.25rem;     /* 36px - Dashboard titles */
+--leading-display: 2.5rem;
+--tracking-display: -0.025em;
 
-CREATE INDEX idx_ai_sheet_profiles_lookup 
-  ON ai_sheet_profiles(user_id, connected_sheet_id, source_tab);
+/* Heading 1 */
+--text-h1: 1.875rem;         /* 30px */
+--leading-h1: 2.25rem;
+--tracking-h1: -0.02em;
 
-ALTER TABLE ai_sheet_profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage their profiles" ON ai_sheet_profiles
-  FOR ALL USING (auth.uid() = user_id);
+/* Heading 2 */
+--text-h2: 1.5rem;           /* 24px */
+--leading-h2: 2rem;
+--tracking-h2: -0.015em;
+
+/* Heading 3 */
+--text-h3: 1.25rem;          /* 20px - Card titles */
+--leading-h3: 1.75rem;
+--tracking-h3: -0.01em;
+
+/* Body Large */
+--text-body-lg: 1.125rem;    /* 18px */
+--leading-body-lg: 1.75rem;
+
+/* Body */
+--text-body: 1rem;           /* 16px - Texto base */
+--leading-body: 1.5rem;
+
+/* Body Small */
+--text-body-sm: 0.875rem;    /* 14px - Labels, table cells */
+--leading-body-sm: 1.25rem;
+
+/* Caption */
+--text-caption: 0.75rem;     /* 12px - Timestamps, hints */
+--leading-caption: 1rem;
+
+/* Numbers (Tabular) */
+--text-kpi-large: 3rem;      /* 48px - Valores grandes */
+--text-kpi-medium: 2.25rem;  /* 36px - Valores medios */
+--text-kpi-small: 1.5rem;    /* 24px - Valores menores */
 ```
 
-### A2. Tabela `ai_insights` (Insights Gerados)
+**Pesos**
+- Regular (400): Corpo de texto
+- Medium (500): Labels, navegacao
+- Semibold (600): Titulos de cards
+- Bold (700): KPIs, valores monetarios
 
-```sql
-CREATE TABLE public.ai_insights (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  connected_sheet_id uuid REFERENCES google_sheet_connections(id) ON DELETE SET NULL,
-  date_from date NOT NULL,
-  date_to date NOT NULL,
-  filters jsonb DEFAULT '{}',
-  kpis jsonb NOT NULL,  -- números que embasam os insights
-  insights jsonb NOT NULL,  -- estrutura completa de insights
-  data_quality jsonb NOT NULL,  -- cobertura, needs_review, notas
-  model_version text NOT NULL,
-  prompt_hash text,  -- para detectar se precisa regenerar
-  created_at timestamptz NOT NULL DEFAULT now(),
-  
-  CONSTRAINT unique_insight_period 
-    UNIQUE(user_id, connected_sheet_id, date_from, date_to, COALESCE(filters::text, '{}'))
-);
+---
 
-CREATE INDEX idx_ai_insights_lookup 
-  ON ai_insights(user_id, date_from, date_to);
+### A3. Espacamento (Sistema 4/8px)
 
-ALTER TABLE ai_insights ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can view their insights" ON ai_insights
-  FOR ALL USING (auth.uid() = user_id);
-```
-
-### A3. Tabela `transaction_flags` (Qualidade por Linha)
-
-```sql
-CREATE TABLE public.transaction_flags (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  transaction_id uuid NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-  needs_review boolean NOT NULL DEFAULT false,
-  reasons text[] NOT NULL DEFAULT '{}',
-  confidence numeric(3,2) DEFAULT 1.0,
-  reviewed_at timestamptz,
-  reviewed_by uuid REFERENCES auth.users(id),
-  notes text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  
-  CONSTRAINT unique_flag_per_transaction UNIQUE(transaction_id)
-);
-
-CREATE INDEX idx_transaction_flags_review 
-  ON transaction_flags(transaction_id) WHERE needs_review = true;
-
-ALTER TABLE transaction_flags ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage flags for their transactions" ON transaction_flags
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM transactions t 
-      WHERE t.id = transaction_flags.transaction_id 
-      AND t.user_id = auth.uid()
-    )
-  );
-```
-
-### A4. Trigger para updated_at
-
-```sql
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER update_ai_sheet_profiles_updated_at
-  BEFORE UPDATE ON ai_sheet_profiles
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_transaction_flags_updated_at
-  BEFORE UPDATE ON transaction_flags
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```css
+--space-0: 0;
+--space-1: 0.25rem;   /* 4px */
+--space-2: 0.5rem;    /* 8px */
+--space-3: 0.75rem;   /* 12px */
+--space-4: 1rem;      /* 16px */
+--space-5: 1.25rem;   /* 20px */
+--space-6: 1.5rem;    /* 24px */
+--space-8: 2rem;      /* 32px */
+--space-10: 2.5rem;   /* 40px */
+--space-12: 3rem;     /* 48px */
+--space-16: 4rem;     /* 64px */
 ```
 
 ---
 
-## Parte B: Edge Functions
+### A4. Border Radius (2 niveis)
 
-### B1. `/functions/v1/ai-profile-sheet` (Profiling com Cache)
-
-**Objetivo**: Gerar/recuperar perfil de mapeamento para uma aba.
-
-**Fluxo**:
-1. Calcular `header_signature` = hash(cabeçalhos + quantidade)
-2. Verificar cache: `ai_sheet_profiles` com mesma assinatura e `confidence >= 0.85`
-3. Se cache válido → retornar imediatamente (SEM chamar IA)
-4. Se não → chamar IA UMA vez com amostra (50-100 linhas) para:
-   - Detectar mapeamento de colunas
-   - Sugerir regras de parsing (formatos de data/moeda)
-   - Identificar padrões de linhas ignoráveis
-5. Salvar em `ai_sheet_profiles`
-6. Retornar perfil
-
-**Entrada**:
-```json
-{
-  "connectionId": "uuid",
-  "tabName": "Planilha1",
-  "forceRefresh": false
-}
-```
-
-**Saída**:
-```json
-{
-  "profile_id": "uuid",
-  "header_signature": "abc123",
-  "column_mapping": {
-    "date": "Data",
-    "description": "Histórico",
-    "amount": "Valor",
-    "category": "Categoria",
-    "credit": "Crédito",
-    "debit": "Débito"
-  },
-  "parsing_rules": {
-    "date_format": "DD/MM/YYYY",
-    "currency": "BRL",
-    "negative_formats": ["()", "-R$"],
-    "decimal_separator": ","
-  },
-  "skip_patterns": [
-    {"type": "keyword", "value": "total"},
-    {"type": "keyword", "value": "saldo"},
-    {"type": "row_pattern", "description": "Linha com apenas números sem data"}
-  ],
-  "confidence": 0.92,
-  "from_cache": true
-}
-```
-
-### B2. `/functions/v1/sheets-sync-zero-error` (Sync Aprimorado)
-
-**Diferenças do sync atual**:
-1. Consulta `ai_sheet_profiles` antes de processar
-2. Usa `parsing_rules` do perfil se disponível
-3. Cria `transaction_flags` para linhas ambíguas
-4. Nunca falha por linha individual - marca `needs_review`
-
-**Fluxo**:
-```text
-1. Buscar perfil (ai_sheet_profiles) se existir
-2. Para cada linha:
-   a. Aplicar skip_patterns → skip (não erro)
-   b. Parsear com parsing_rules → valor + tipo
-   c. Se ambíguo:
-      - Usar fallback determinístico
-      - Marcar needs_review = true
-      - Registrar reason
-   d. UPSERT em transactions
-   e. Se needs_review → INSERT/UPDATE em transaction_flags
-3. Retornar métricas detalhadas
-```
-
-**Saída atualizada**:
-```json
-{
-  "success": true,
-  "rows_read": 198,
-  "rows_imported": 175,
-  "rows_skipped": 20,
-  "rows_failed": 0,
-  "rows_needs_review": 3,
-  "skip_breakdown": {
-    "empty": 5,
-    "total_row": 8,
-    "header_row": 4,
-    "zero_value": 3
-  },
-  "review_breakdown": {
-    "date_missing": 2,
-    "category_empty": 1
-  },
-  "used_profile": true,
-  "profile_confidence": 0.92
-}
-```
-
-### B3. `/functions/v1/ai-generate-finance-insights` (Insights Estruturados)
-
-**Diferenças do atual**:
-1. Calcula KPIs mais ricos (outliers, concentração, recorrências)
-2. Inclui `data_quality` obrigatório
-3. Retorna JSON estruturado (não texto livre)
-4. Salva em `ai_insights` para cache
-5. Uma única chamada de IA por período
-
-**Fluxo**:
-```text
-1. Verificar cache: ai_insights com mesmo período/filtros
-2. Se cache recente (< 24h) → retornar
-3. Buscar transações do Supabase (NÃO do Sheets)
-4. Calcular features:
-   - KPIs básicos (receita, despesa, saldo, margem)
-   - Tendências (mensal, variação)
-   - Top categorias
-   - Outliers (gastos > 2x média da categoria)
-   - Concentração (% maior cliente/fornecedor)
-   - Recorrências (pagamentos mensais fixos)
-   - Gaps de caixa (meses com saldo negativo)
-5. Calcular data_quality:
-   - coverage_pct = linhas válidas / total
-   - needs_review_count = count de transaction_flags
-6. Chamar IA UMA vez com features estruturadas
-7. Parsear resposta em formato obrigatório
-8. Salvar em ai_insights
-9. Retornar
-```
-
-**Saída obrigatória**:
-```json
-{
-  "summary": "Resumo executivo de 2-3 frases...",
-  "highlights": [
-    {
-      "title": "Crescimento Consistente de Receita",
-      "evidence": "Receita cresceu de R$ 45.000 (Jan) para R$ 58.000 (Dez), +29%",
-      "impact": "Positivo - maior capacidade de investimento",
-      "recommendation": "Investigar quais clientes/produtos geraram este crescimento"
-    }
-  ],
-  "risks": [
-    {
-      "title": "Concentração em Cliente Único",
-      "evidence": "Cliente ABC representa 42% da receita total",
-      "severity": "medium",
-      "mitigation": "Diversificar carteira para reduzir dependência"
-    }
-  ],
-  "opportunities": [
-    {
-      "title": "Redução de Custos Operacionais",
-      "evidence": "Categoria 'Serviços' tem gastos 35% acima de Jan",
-      "potential": "Economia potencial de R$ 5.000/mês",
-      "next_steps": "Revisar contratos de fornecedores de serviços"
-    }
-  ],
-  "anomalies": [
-    {
-      "title": "Gasto Atípico em Dezembro",
-      "evidence": "R$ 12.000 em 'Equipamentos', 4x a média mensal",
-      "why_unusual": "Maior gasto da categoria no período analisado",
-      "check": "Verificar se foi investimento planejado ou exceção"
-    }
-  ],
-  "questions": [
-    "Por que a categoria 'Marketing' caiu 60% em Nov?",
-    "O aumento de receita em Set é recorrente ou sazonal?"
-  ],
-  "data_quality": {
-    "coverage_pct": 98.5,
-    "needs_review_count": 3,
-    "notes": "3 transações com data ausente foram importadas com data atual"
-  },
-  "metadata": {
-    "period": "2024-01-01 a 2024-12-31",
-    "transactions_analyzed": 342,
-    "generated_at": "2024-12-15T10:30:00Z",
-    "model": "google/gemini-3-flash-preview"
-  }
-}
+```css
+--radius-sm: 0.375rem;  /* 6px - Inputs, tags */
+--radius-md: 0.5rem;    /* 8px - Buttons */
+--radius-lg: 0.75rem;   /* 12px - Cards padrao */
+--radius-xl: 1rem;      /* 16px - Modals, cards especiais */
+--radius-2xl: 1.5rem;   /* 24px - Hero cards */
+--radius-full: 9999px;  /* Pills, badges */
 ```
 
 ---
 
-## Parte C: Frontend
+### A5. Sombras (3 niveis Premium)
 
-### C1. Componentes de UI
+```css
+/* Elevation 1 - Cards em repouso */
+--shadow-sm: 
+  0 1px 2px 0 rgba(15, 23, 42, 0.03),
+  0 1px 3px 0 rgba(15, 23, 42, 0.05);
 
-**1. `ProfileStatusCard`** - Status do perfil da planilha
-```tsx
-// Exibe na GoogleSheetsPage
-<Card>
-  <CardHeader>
-    <CardTitle>Perfil da Planilha</CardTitle>
-    <Badge variant={profile.confidence > 0.8 ? "success" : "warning"}>
-      Confiança: {Math.round(profile.confidence * 100)}%
-    </Badge>
-  </CardHeader>
-  <CardContent>
-    <p>Colunas detectadas: {Object.keys(profile.column_mapping).length}</p>
-    <p>Regras de parsing: {profile.parsing_rules.date_format}</p>
-    <Button onClick={handleRevalidate}>Revalidar Mapeamento</Button>
-  </CardContent>
-</Card>
-```
+/* Elevation 2 - Cards hover, dropdowns */
+--shadow-md: 
+  0 4px 6px -1px rgba(15, 23, 42, 0.05),
+  0 2px 4px -2px rgba(15, 23, 42, 0.03),
+  0 0 0 1px rgba(15, 23, 42, 0.02);
 
-**2. `DataQualityCard`** - Indicador de qualidade no Dashboard
-```tsx
-<Card>
-  <CardHeader>
-    <CardTitle>Qualidade dos Dados</CardTitle>
-  </CardHeader>
-  <CardContent>
-    <div className="flex items-center gap-4">
-      <CircularProgress value={dataQuality.coverage_pct} />
-      <div>
-        <p className="text-lg font-semibold">
-          {dataQuality.coverage_pct.toFixed(1)}% cobertura
-        </p>
-        {dataQuality.needs_review_count > 0 && (
-          <p className="text-sm text-muted-foreground">
-            {dataQuality.needs_review_count} itens para revisar
-          </p>
-        )}
-      </div>
-    </div>
-  </CardContent>
-</Card>
-```
+/* Elevation 3 - Modals, popovers */
+--shadow-lg: 
+  0 10px 25px -3px rgba(15, 23, 42, 0.08),
+  0 4px 10px -4px rgba(15, 23, 42, 0.04);
 
-**3. `AIInsightsPanel`** - Painel de insights na InsightsPage
-```tsx
-<div className="space-y-4">
-  {/* Summary Card */}
-  <Card className="bg-gradient-to-br from-primary/5">
-    <CardContent>
-      <p className="text-lg">{insights.summary}</p>
-    </CardContent>
-  </Card>
-  
-  {/* Highlights */}
-  <section>
-    <h3>Destaques</h3>
-    {insights.highlights.map(h => (
-      <InsightCard 
-        icon={TrendingUp} 
-        title={h.title}
-        evidence={h.evidence}
-        impact={h.impact}
-        recommendation={h.recommendation}
-      />
-    ))}
-  </section>
-  
-  {/* Risks */}
-  <section>
-    <h3>Riscos</h3>
-    {insights.risks.map(r => (
-      <RiskCard 
-        title={r.title}
-        evidence={r.evidence}
-        severity={r.severity}
-        mitigation={r.mitigation}
-      />
-    ))}
-  </section>
-  
-  {/* Similar for opportunities, anomalies, questions */}
-</div>
-```
-
-**4. `TransactionReviewList`** - Lista de transações para revisar
-```tsx
-<Card>
-  <CardHeader>
-    <CardTitle>Itens para Revisão</CardTitle>
-  </CardHeader>
-  <CardContent>
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Data</TableHead>
-          <TableHead>Descrição</TableHead>
-          <TableHead>Valor</TableHead>
-          <TableHead>Problema</TableHead>
-          <TableHead>Ações</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {flaggedTransactions.map(t => (
-          <TableRow key={t.id}>
-            <TableCell>{t.date || "(sem data)"}</TableCell>
-            <TableCell>{t.description}</TableCell>
-            <TableCell>{formatCurrency(t.amount)}</TableCell>
-            <TableCell>
-              {t.flags.reasons.map(r => (
-                <Badge key={r} variant="outline">{r}</Badge>
-              ))}
-            </TableCell>
-            <TableCell>
-              <Button size="sm" onClick={() => handleEdit(t)}>Corrigir</Button>
-              <Button size="sm" variant="ghost" onClick={() => handleDismiss(t)}>OK</Button>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  </CardContent>
-</Card>
-```
-
-### C2. Hooks
-
-**`useSheetProfile`** - Gerenciar perfil da planilha
-```typescript
-export function useSheetProfile(connectionId: string) {
-  const { data: profile, isLoading, refetch } = useQuery({
-    queryKey: ["sheet-profile", connectionId],
-    queryFn: async () => {
-      const { data } = await supabase.functions.invoke("ai-profile-sheet", {
-        body: { connectionId }
-      });
-      return data;
-    }
-  });
-  
-  const revalidate = useMutation({
-    mutationFn: async () => {
-      const { data } = await supabase.functions.invoke("ai-profile-sheet", {
-        body: { connectionId, forceRefresh: true }
-      });
-      return data;
-    },
-    onSuccess: () => refetch()
-  });
-  
-  return { profile, isLoading, revalidate };
-}
-```
-
-**`useFinanceInsights`** - Buscar/gerar insights
-```typescript
-export function useFinanceInsights(params: InsightsParams) {
-  const [insights, setInsights] = useState<AIInsights | null>(null);
-  
-  const generate = useMutation({
-    mutationFn: async () => {
-      const { data } = await supabase.functions.invoke("ai-generate-finance-insights", {
-        body: params
-      });
-      return data;
-    },
-    onSuccess: setInsights
-  });
-  
-  return { insights, isLoading: generate.isPending, generate };
-}
-```
-
-**`useFlaggedTransactions`** - Transações para revisão
-```typescript
-export function useFlaggedTransactions() {
-  return useQuery({
-    queryKey: ["flagged-transactions"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("transactions")
-        .select(`
-          *,
-          transaction_flags!inner(
-            needs_review,
-            reasons,
-            confidence
-          )
-        `)
-        .eq("transaction_flags.needs_review", true)
-        .order("date", { ascending: false });
-      return data;
-    }
-  });
-}
+/* Glow - Para destaques de marca */
+--shadow-glow-primary: 0 0 24px -4px rgba(45, 126, 243, 0.25);
+--shadow-glow-success: 0 0 24px -4px rgba(13, 152, 102, 0.25);
 ```
 
 ---
 
-## Parte D: Regras de Eficiência e Segurança
+### A6. Grid e Layout
 
-### D1. Limite de Chamadas de IA
-
-| Contexto | Máximo de Chamadas |
-|----------|-------------------|
-| Profiling de planilha | 1 por header_signature |
-| Sync de dados | 0 (usa profile se existir) |
-| Geração de insights | 1 por período solicitado |
-| Total por sync completo | 0-1 (só se profile não existir) |
-
-### D2. Cache Strategy
-
-```text
-ai_sheet_profiles:
-- Chave: (user_id, connected_sheet_id, source_tab, header_signature)
-- TTL: Infinito (invalidado apenas por forceRefresh ou mudança de header)
-- Hit condition: confidence >= 0.85
-
-ai_insights:
-- Chave: (user_id, connected_sheet_id, date_from, date_to, filters)
-- TTL: 24 horas
-- Invalidado quando novas transações são importadas
-```
-
-### D3. Nunca Inventar Dados
-
-```typescript
-// No prompt para IA de insights:
-const systemPrompt = `
-Você é um analista financeiro experiente.
-
-REGRAS ABSOLUTAS:
-1. Use APENAS os números fornecidos nos KPIs e features
-2. NUNCA invente valores, percentuais ou tendências
-3. Se uma métrica não foi fornecida, NÃO mencione
-4. Sempre cite a evidência numérica exata
-5. Se a cobertura de dados < 95%, declare no resumo
-6. Se needs_review_count > 5%, reduza assertividade
-
-Formato de resposta: JSON estruturado conforme schema.
-`;
-```
-
-### D4. Fallbacks Determinísticos
-
-```typescript
-// Quando IA falha ou confidence < 0.7:
-function deterministicFallback(row: RowData, headers: string[]) {
-  // Usa mapeamento por sinônimos hardcoded
-  const mapping = autoDetectMapping(headers);
-  
-  // Parsing robusto sem IA
-  const amount = parseBRL(row[mapping.amount]);
-  const date = parseDate(row[mapping.date]) || today();
-  
-  // Marca para revisão se ambíguo
-  const needsReview = !date || !row[mapping.description];
-  
-  return { amount, date, type, needsReview, reasons: [...] };
-}
+```css
+--grid-columns: 12;
+--container-max: 1440px;
+--sidebar-width: 260px;
+--sidebar-collapsed: 72px;
+--header-height: 64px;
+--content-padding: 24px;  /* Mobile: 16px */
 ```
 
 ---
 
-## Parte E: Arquivos a Criar/Modificar
+### A7. Componentes Base
 
-### Novos Arquivos
-- `supabase/migrations/XXXXXX_ai_finance_tables.sql`
-- `supabase/functions/ai-profile-sheet/index.ts`
-- `supabase/functions/sheets-sync-zero-error/index.ts` (pode ser refactor do existente)
-- `src/hooks/useSheetProfile.ts`
-- `src/hooks/useFinanceInsights.ts`
-- `src/hooks/useFlaggedTransactions.ts`
-- `src/components/sheets/ProfileStatusCard.tsx`
-- `src/components/dashboard/DataQualityCard.tsx`
-- `src/components/insights/AIInsightsPanel.tsx`
-- `src/components/insights/InsightCard.tsx`
-- `src/components/insights/RiskCard.tsx`
-- `src/components/transactions/TransactionReviewList.tsx`
+**Sidebar**
+- Fundo: `--secondary-900` (dark) ou `white` (light)
+- Logo destacada no topo com padding 20px
+- Grupos de navegacao com labels uppercase 11px
+- Item ativo: bg primary/10 + barra lateral 3px
+- Hover: bg muted + transicao 200ms
+- Icones 20px, texto 14px medium
 
-### Arquivos a Modificar
-- `supabase/functions/ai-generate-insights/index.ts` → Refatorar para estrutura obrigatória
-- `supabase/functions/google-sheets-sync/index.ts` → Integrar com ai_sheet_profiles
-- `supabase/config.toml` → Adicionar novas functions
-- `src/pages/GoogleSheetsPage.tsx` → Adicionar ProfileStatusCard
-- `src/pages/InsightsPage.tsx` → Substituir mock por AIInsightsPanel real
-- `src/pages/OverviewPage.tsx` → Adicionar DataQualityCard
+**Topbar**
+- Altura: 64px
+- Fundo: white/95 + backdrop-blur 12px
+- Sombra: shadow-sm
+- Elementos: Search (240px), acoes icones 40px
+
+**Cards**
+- Padding: 24px (desktop), 16px (mobile)
+- Border: 1px solid gray-100
+- Radius: radius-lg (12px)
+- Background: white
+- Hover: translateY(-2px) + shadow-md
+
+**Tabelas**
+- Header: bg gray-50, text gray-500 uppercase 11px
+- Rows: 56px height, hover bg gray-50
+- Valores monetarios: alinhados a direita, tabular-nums
+- Status badges: radius-full, padding 4px 10px
+
+**Chips/Tags**
+- Padding: 4px 10px
+- Font: 12px medium
+- Border-radius: full
+- Variantes: filled, outlined, ghost
+
+**Botoes**
+```
+Primary: bg primary-500, text white, hover primary-600
+Secondary: bg white, border gray-200, hover bg gray-50
+Ghost: bg transparent, hover bg gray-100
+Destructive: bg danger, text white
+Sizes: sm (32px), md (40px), lg (48px)
+```
+
+**Inputs**
+- Height: 40px (md), 36px (sm), 48px (lg)
+- Border: 1px gray-200
+- Focus: ring 2px primary-200 + border primary-500
+- Error: border danger, ring danger-100
+- Placeholder: gray-400
+
+**Dropdown/Select**
+- Trigger: igual input
+- Menu: bg white, shadow-lg, radius-lg
+- Items: 36px height, hover bg gray-50
+- Selected: bg primary-50, text primary-600
+
+**Date Picker**
+- Calendario com grid 7 colunas
+- Hoje: ring primary-500
+- Selecionado: bg primary-500, text white
+- Range: bg primary-50 entre datas
+
+**Modals**
+- Overlay: black/50 + backdrop-blur 4px
+- Container: max-width 520px, radius-xl, padding 24px
+- Header: 56px, border-bottom
+- Footer: border-top, gap 12px
+
+**Toast**
+- Position: bottom-right
+- Width: 360px
+- Variantes: success (green), error (red), info (blue)
+- Duracao: 5s
+- Animacao: slide-in-right 300ms
+
+**Skeleton Loading**
+- Base: gray-100
+- Shimmer: gradiente linear movendo 2s
+- Border-radius: mesmo do componente alvo
 
 ---
 
-## Checklist de Validação
+### A8. Estados de Componentes
 
-1. **Eficiência**: Sync de 200 linhas NÃO chama IA (usa profile existente)
-2. **Cache**: Segunda sync com mesmo header → cache hit
-3. **Zero Erro Visível**: Linhas de total/cabeçalho → skipped (não failed)
-4. **Needs Review**: Data ausente → importa com flag, não falha
-5. **Insights Rastreáveis**: Cada insight cita números reais do período
-6. **Data Quality**: UI mostra cobertura e itens para revisão
-7. **Idempotência**: 3 syncs seguidos → mesmo número de transações
+```
+Hover: 
+- Opacity +10% (cores solidas)
+- translateY(-2px) (cards)
+- Underline (links)
+
+Focus:
+- Ring 2px offset 2px primary-200
+- Border primary-500
+- Remove outline nativo
+
+Pressed/Active:
+- Scale 0.98
+- Bg primary-600 (botoes)
+
+Disabled:
+- Opacity 0.5
+- Cursor not-allowed
+- Sem hover effects
+
+Selected:
+- Bg primary-50
+- Border primary-300
+- Text primary-600
+
+Error:
+- Border danger
+- Text danger
+- Icon alert-circle
+
+Success:
+- Border success
+- Text success
+- Icon check-circle
+```
 
 ---
 
-## Resumo Técnico
+### A9. Icones
 
-| Componente | Chamadas IA | Cache | Fallback |
-|------------|-------------|-------|----------|
-| Profile Sheet | 1x por header | Infinito | Sinônimos hardcoded |
-| Sync Data | 0 | Usa profile | Determinístico |
-| Insights | 1x por período | 24h | KPIs sem análise textual |
+**Biblioteca:** Lucide React (ja em uso - manter)
 
-**Objetivo final**: Sistema que processa 100% das linhas válidas, marca para revisão os ambíguos, NUNCA falha silenciosamente, e gera insights acionáveis com rastreabilidade total.
+**Mapeamento por secao:**
+
+Menu Principal:
+- Dashboard: `LayoutDashboard`
+- Receitas: `TrendingUp`
+- Despesas: `TrendingDown`
+- Fluxo de Caixa: `ArrowLeftRight`
+- Balanco Patrimonial: `Scale`
+- Previsoes: `LineChart`
+
+Ferramentas:
+- Notas Fiscais: `FileText`
+- Google Sheets: `Sheet`
+- Upload de Dados: `Upload`
+- Insights IA: `Sparkles`
+- Configuracoes: `Settings`
+
+Acoes Comuns:
+- Exportar: `Download`
+- Filtrar: `Filter`
+- Calendario: `Calendar`
+- Sincronizar: `RefreshCw`
+- Upload: `Upload`
+- IA/Insights: `Sparkles`
+- Adicionar: `Plus`
+- Editar: `Pencil`
+- Deletar: `Trash2`
+- Buscar: `Search`
+- Notificacoes: `Bell`
+- Usuario: `User`
+- Sair: `LogOut`
+- Externo: `ExternalLink`
+- Sucesso: `CheckCircle`
+- Erro: `AlertCircle`
+- Info: `Info`
+- Fechar: `X`
+
+Tamanhos padrao:
+- Menu: 20px
+- Botoes: 16px
+- Badges: 14px
+- Inline: 16px
+
+---
+
+## B) TELAS (High-Fidelity Specs)
+
+### B1. Dashboard (Visao Geral)
+
+**Layout:**
+```
++--------------------------------------------------+
+|  TOPBAR (busca, acoes, perfil)                   |
++--------+-----------------------------------------+
+|        |  Header: "Dashboard Financeiro" + badge |
+|        |  Date range picker                      |
+| SIDE   +-----------------------------------------+
+| BAR    |  HERO CARD: Saldo Total da Empresa      |
+|        |  R$ 253.412 | +12,5% | Glow effect      |
+|        +-----------------------------------------+
+|        |  KPI GRID (4 cards):                    |
+|        |  [Receita] [Lucro] [Despesas] [Margem]  |
+|        +-----------------------------------------+
+|        |  CHARTS ROW (2 colunas):                |
+|        |  [Tendencia Receita] [Despesas Cat.]    |
+|        +-----------------------------------------+
+|        |  BOTTOM ROW (3 colunas):                |
+|        |  [Profit Dist] [Transacoes] [Quality]   |
++--------+-----------------------------------------+
+```
+
+**Hero Card (Saldo Total):**
+- Background: gradiente sutil primary-50 -> white
+- Icone Wallet 32px em container 64px com bg primary/10
+- Valor: 48px bold, animacao count-up
+- Badge: "+12,5% vs mes anterior"
+- Hover: glow effect primary
+
+**KPI Cards:**
+- 4 colunas em desktop, 2 em tablet, 1 em mobile
+- Altura uniforme ~180px
+- Icone + valor grande + label + trend badge
+- Cores semanticas: primary (receita), success (lucro), default (despesas), success/warning (margem)
+
+**Charts:**
+- Area chart para tendencia (receita vs despesas)
+- Pie/Donut para distribuicao de categorias
+- Altura: 350px
+- Tooltips glassmorphism
+
+**Transacoes Recentes:**
+- Lista 5 ultimas transacoes
+- Row: icone + descricao + categoria tag + valor
+- Hover: bg gray-50
+- Empty state com ilustracao
+
+**Data Quality Card:**
+- Indicador circular de cobertura (%)
+- Lista de items para revisao
+- CTA para página de revisão
+
+---
+
+### B2. Fluxo de Caixa
+
+**Layout:**
+```
++--------------------------------------------------+
+|  Header: "Fluxo de Caixa" + Date picker + Refresh|
++--------------------------------------------------+
+|  KPI ROW (3 cards):                              |
+|  [Total Entradas] [Total Saidas] [Saldo Liquido] |
++--------------------------------------------------+
+|  MAIN CHART (full width):                        |
+|  Area chart entradas/saidas com tooltips premium |
+|  Altura: 400px                                   |
++--------------------------------------------------+
+|  PROJECTION SECTION:                             |
+|  Cenarios: Conservador | Base | Otimista         |
+|  Projecao 12 meses em linha com confidence band  |
++--------------------------------------------------+
+|  UPCOMING PAYMENTS:                              |
+|  Lista de proximos vencimentos                   |
++--------------------------------------------------+
+```
+
+**Chart Principal:**
+- Area chart com 2 series (entradas verde, saidas vermelho)
+- Grid horizontal sutil
+- Labels Y formatados: R$ XXk / R$ XXmi
+- Crosshair no hover
+- Active dot com glow
+- Animacao draw-line 1.5s
+
+**Projecao:**
+- Toggle entre cenarios
+- Linha pontilhada para dados projetados
+- Confidence band (area semi-transparente)
+- Tooltip indicando "projetado"
+
+---
+
+### B3. Integracao Google Sheets
+
+**Empty State:**
+- Container centralizado max-width 480px
+- Ilustracao/icone grande (80px) animado float
+- Titulo: "Conecte sua Conta Google"
+- Descricao clara em 2-3 linhas
+- CTA primario: "Conectar ao Google"
+- Secao "Como Funciona" com steps numerados
+
+**Estado Conectado:**
+- Header com status "Conectado" badge verde
+- Lista de planilhas conectadas em cards
+- Cada card:
+  - Nome da planilha + link externo
+  - Aba selecionada
+  - Status da sync (sucesso/erro/syncing)
+  - Ultima sync timestamp
+  - Linhas importadas
+  - Botoes: Sync agora, Desconectar
+- Toggle auto-sync
+- Historico de sincronizacoes (tabela)
+- Erros detalhados (lista expansivel)
+
+**Profile Status Card:**
+- Indicador de confianca (0-100%)
+- Colunas detectadas
+- Regras de parsing
+- Botao "Revalidar"
+
+---
+
+### B4. Notas Fiscais / Upload de Dados
+
+**Upload Area:**
+- Dropzone com borda tracejada
+- Icone upload 48px
+- Texto: "Arraste arquivos ou clique para selecionar"
+- Formatos aceitos em caption
+- Progress bar durante upload
+- Feedback visual: animacao checkmark ao completar
+
+**Tabela de Arquivos:**
+- Colunas: Nome, Tipo, Data upload, Status, Acoes
+- Status badges: processando, sucesso, erro
+- Linha expansivel para detalhes de erro
+- Bulk actions no header
+
+---
+
+### B5. Insights IA
+
+**Layout:**
+```
++--------------------------------------------------+
+|  Header: "Insights com IA" + Sparkles icon       |
++--------------------------------------------------+
+|  GENERATE CTA (se nao houver insights):          |
+|  Card premium com gradiente, CTA central         |
++--------------------------------------------------+
+|  SUMMARY CARD:                                   |
+|  Resumo executivo 2-3 frases                     |
++--------------------------------------------------+
+|  SECTIONS (accordion ou tabs):                   |
+|  [Destaques] [Riscos] [Oportunidades] [Perguntas]|
++--------------------------------------------------+
+```
+
+**Insight Card:**
+- Icone semantico (TrendingUp/AlertTriangle/Lightbulb)
+- Titulo bold
+- Evidencia (numeros citados)
+- Impacto
+- Recomendacao em destaque
+- Cor de fundo sutil por tipo
+
+**Risk Card:**
+- Badge de severidade (high/medium/low)
+- Cores: high=red, medium=orange, low=yellow
+- Mitigacao como action item
+
+**Data Quality Warning:**
+- Banner amarelo se cobertura < 95%
+- Texto claro sobre limitacoes
+
+---
+
+### B6. Configuracoes
+
+**Layout:**
+- Sections em cards separados
+- Max-width 720px centralizado
+- Grupos: Perfil, Notificacoes, Aparencia, Dados, Seguranca
+
+**Cada Section:**
+- Titulo com icone
+- Descricao curta
+- Form fields ou toggles
+- Save button quando aplicavel
+
+---
+
+## C) GRAFICOS (Padroes Premium)
+
+### C1. Estilo Geral
+
+**Grid:**
+- Apenas linhas horizontais
+- Cor: gray-100
+- Stroke-dasharray: 4 4
+- Opacidade: 0.5
+
+**Labels:**
+- Cor: gray-500
+- Font: 12px medium
+- Eixo Y: formatacao BR (R$ 10k, R$ 1mi)
+- Eixo X: meses abreviados (Jan, Fev, Mar)
+
+**Tooltips:**
+- Background: white/95 + backdrop-blur
+- Border: 1px gray-100
+- Shadow: shadow-lg
+- Padding: 16px
+- Border-radius: 12px
+- Animacao: fade-in + scale 200ms
+
+**Active Dots:**
+- Tamanho: 6-8px
+- Stroke: 3px white
+- Box-shadow: glow da cor do grafico
+
+### C2. Tipos de Graficos
+
+**Area Chart (Tendencias):**
+- Gradient fill: cor principal 40% -> 0%
+- Stroke: 3px
+- Glow filter sutil
+- Animacao draw: 1.5s ease-out
+
+**Bar Chart (Comparativos):**
+- Border-radius top: 4px
+- Gap: 8px entre barras
+- Hover: opacity 0.8 + tooltip
+
+**Donut Chart (Distribuicao):**
+- Inner radius: 60%
+- Padding angle: 2-3 graus
+- Legend abaixo centralizada
+- Hover: slice expande 4px
+
+**Line Chart (Projecoes):**
+- Stroke: 2px solid (realizado), 2px dashed (projetado)
+- Confidence band: area 10% opacidade
+
+### C3. Cores por Serie
+
+```
+Serie 1 (Receita/Entradas): chart-1 (primary blue)
+Serie 2 (Despesas/Saidas): chart-5 (red)
+Serie 3 (Lucro): chart-2 (success green)
+Serie 4 (Projecao): chart-3 (teal)
+Categorias: rotacao chart-1 a chart-5
+```
+
+### C4. Formatacao de Numeros
+
+```javascript
+// Valores grandes
+formatCurrency(1500000) -> "R$ 1,5mi"
+formatCurrency(45000) -> "R$ 45k"
+formatCurrency(1234.56) -> "R$ 1.234,56"
+
+// Percentuais
+formatPercent(0.1234) -> "12,34%"
+formatPercent(0.5) -> "50%"
+
+// Compacto em tooltips
+formatCompact(1234567) -> "R$ 1,23mi"
+```
+
+---
+
+## D) ANIMACOES
+
+### D1. Microinteracoes
+
+**Cards:**
+- Hover: translateY(-2px) + shadow upgrade
+- Duracao: 200ms
+- Timing: ease-out
+- Motivo: feedback de clicabilidade
+
+**Botoes:**
+- Hover: opacity change + scale 1.02
+- Active: scale 0.98
+- Duracao: 150ms
+- Motivo: feedback tatil
+
+**Tooltips:**
+- Enter: fade-in + translateY(4px -> 0)
+- Duracao: 200ms
+- Delay: 100ms
+- Motivo: prevenir flicker
+
+**Dropdown/Modal:**
+- Enter: scale 0.95 -> 1 + fade
+- Exit: reverse
+- Duracao: 200ms
+- Timing: ease-out
+- Motivo: continuidade espacial
+
+### D2. Transicoes de Pagina
+
+**Page Enter:**
+- translateX(24px -> 0) + fade
+- Duracao: 400ms
+- Timing: cubic-bezier(0.25, 0.1, 0.25, 1)
+- Motivo: direcionalidade
+
+**Stagger Children:**
+- Delay incremental: 60ms por item
+- Max 8 items com delay
+- Motivo: hierarquia visual
+
+### D3. Loading States
+
+**Skeleton:**
+- Shimmer sweep: 2.5s linear infinite
+- Gradiente: transparent -> primary/8 -> transparent
+- Motivo: indicar carregamento ativo
+
+**Spinners:**
+- Rotate: 360deg / 0.8s linear
+- Opacity pulse: 1 -> 0.5 -> 1 / 2s
+- Motivo: processo em andamento
+
+### D4. Data Animations
+
+**Count-up Numbers:**
+- Duracao: 1.5s
+- Easing: ease-out-expo
+- Emphasis: scale 1.02 ao final
+- Motivo: impacto visual em KPIs
+
+**Chart Draw:**
+- Stroke-dashoffset animation
+- Duracao: 1.5s staggered por serie
+- Motivo: narrativa visual
+
+**Progress Bars:**
+- Width 0 -> target
+- Duracao: 1s ease-out
+- Motivo: progresso perceptivel
+
+---
+
+## E) ICONES (Lucide React)
+
+### E1. Mapeamento Completo
+
+**Navegacao:**
+```
+Dashboard         -> LayoutDashboard
+Receitas          -> TrendingUp
+Despesas          -> TrendingDown
+Fluxo de Caixa    -> ArrowLeftRight
+Balanco           -> Scale
+Previsoes         -> LineChart
+Notas Fiscais     -> FileText
+Google Sheets     -> Sheet (ou FileSpreadsheet)
+Upload            -> Upload
+Insights IA       -> Sparkles
+Configuracoes     -> Settings
+```
+
+**Acoes:**
+```
+Adicionar         -> Plus
+Editar            -> Pencil
+Deletar           -> Trash2
+Exportar          -> Download
+Importar          -> Upload
+Filtrar           -> Filter
+Buscar            -> Search
+Calendario        -> Calendar
+Sincronizar       -> RefreshCw
+Atualizar         -> RefreshCw
+Ver detalhes      -> Eye
+Link externo      -> ExternalLink
+Fechar            -> X
+Voltar            -> ArrowLeft
+Avancar           -> ArrowRight
+Expandir          -> ChevronDown
+Recolher          -> ChevronUp
+```
+
+**Status:**
+```
+Sucesso           -> CheckCircle
+Erro              -> AlertCircle
+Aviso             -> AlertTriangle
+Info              -> Info
+Carregando        -> Loader2
+Pendente          -> Clock
+Ativo             -> Circle (filled)
+Inativo           -> Circle (outline)
+```
+
+**Financeiro:**
+```
+Dinheiro          -> DollarSign
+Carteira          -> Wallet
+Banco             -> Building2
+Entrada           -> ArrowDownLeft
+Saida             -> ArrowUpRight
+Lucro             -> TrendingUp
+Prejuizo          -> TrendingDown
+Margem            -> PiggyBank
+```
+
+**Usuario:**
+```
+Perfil            -> User
+Notificacoes      -> Bell
+Sair              -> LogOut
+Equipe            -> Users
+Seguranca         -> Shield
+Aparencia         -> Palette
+Dados             -> Database
+```
+
+### E2. Regras de Uso
+
+- Stroke width: 2px (padrao Lucide)
+- Cores: inherit (herda do texto pai)
+- Tamanhos consistentes por contexto
+- Nunca usar icones customizados fora da biblioteca
+- Sempre usar o nome exato do Lucide
+
+---
+
+## F) CHECKLIST DE CONSISTENCIA
+
+### F1. Verificacoes Visuais
+
+- [ ] Todas as cores usam tokens CSS (nao hex direto)
+- [ ] Tipografia segue escala definida
+- [ ] Espacamentos multiplos de 4px
+- [ ] Border-radius consistente por tipo de componente
+- [ ] Sombras usam os 3 niveis definidos
+- [ ] Icones todos de Lucide, tamanhos padronizados
+
+### F2. Verificacoes de Interacao
+
+- [ ] Todos botoes tem estados hover/focus/active/disabled
+- [ ] Inputs tem focus ring visivel (acessibilidade)
+- [ ] Links tem underline no hover
+- [ ] Cards clicaveis tem cursor pointer + hover effect
+- [ ] Transicoes <= 300ms para feedback imediato
+
+### F3. Verificacoes de Acessibilidade
+
+- [ ] Contraste texto/fundo >= 4.5:1 (AA)
+- [ ] Contraste elementos UI >= 3:1
+- [ ] Focus visible em todos elementos interativos
+- [ ] Tamanho minimo touch target: 44x44px
+- [ ] Alt text em imagens
+- [ ] Roles ARIA onde necessario
+
+### F4. Verificacoes de Responsividade
+
+- [ ] Layout adapta em breakpoints: 640, 768, 1024, 1280px
+- [ ] Sidebar colapsa em mobile
+- [ ] Tabelas com scroll horizontal em mobile
+- [ ] KPIs empilham em 1 coluna em mobile
+- [ ] Touch-friendly em dispositivos moveis
+
+### F5. Verificacoes de Marca
+
+- [ ] Logo presente no sidebar (40x40px, arredondada)
+- [ ] Primary blue usado em CTAs principais
+- [ ] Gradientes sutis em hero sections
+- [ ] Empty states com ilustracoes/icones da marca
+- [ ] Loading states mantem identidade visual
+
+---
+
+## Arquivos a Modificar
+
+1. `src/index.css` - Atualizar tokens CSS completos
+2. `tailwind.config.ts` - Sincronizar tokens com Tailwind
+3. `src/components/layout/AppSidebar.tsx` - Refinar navegacao
+4. `src/components/layout/DashboardHeader.tsx` - Polir topbar
+5. `src/pages/*.tsx` - Aplicar novos padroes em cada tela
+6. `src/components/dashboard/*.tsx` - Refinar KPIs e charts
+7. `src/components/ui/*.tsx` - Garantir consistencia nos primitivos
+
+---
+
+## Resultado Esperado
+
+Um dashboard financeiro **premium, clean e profissional** que:
+- Transmite confianca e credibilidade
+- Prioriza legibilidade dos numeros
+- Usa cores com proposito (semantica)
+- Anima com sutileza (sem exageros)
+- E consistente em todas as telas
+- Funciona perfeitamente em todos os dispositivos
