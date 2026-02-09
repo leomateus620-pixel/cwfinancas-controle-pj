@@ -4,9 +4,7 @@ import {
   TrendingDown, 
   ArrowLeftRight,
   Scale,
-  FileCheck,
-  Calculator,
-  FolderOpen,
+  FileText,
   Upload, 
   Settings,
   Sparkles,
@@ -41,7 +39,7 @@ const mainNavItems = [
 ];
 
 const toolsNavItems = [
-  { title: "Notas Fiscais", url: "/invoices", icon: FileCheck },
+  { title: "Notas Fiscais", url: "/invoices", icon: FileText },
   { title: "Google Sheets", url: "/google-sheets", icon: FileSpreadsheet },
   { title: "Upload de Dados", url: "/upload", icon: Upload },
   { title: "Insights IA", url: "/insights", icon: Sparkles },
@@ -63,25 +61,29 @@ export function AppSidebar() {
       className="border-r border-border bg-sidebar"
       collapsible="icon"
     >
-      <SidebarHeader className="p-4 border-b border-border">
+      {/* Header with Logo */}
+      <SidebarHeader className="p-5 border-b border-border">
         <div className="flex items-center gap-3">
-          <img 
-            src={logoImg} 
-            alt="CW Finanças" 
-            className="w-10 h-10 rounded-xl object-contain shadow-corporate-md"
-          />
+          <div className="relative">
+            <img 
+              src={logoImg} 
+              alt="CW Finanças" 
+              className="w-10 h-10 rounded-xl object-contain shadow-corporate-md"
+            />
+          </div>
           {!collapsed && (
             <div className="flex flex-col">
               <span className="font-bold text-foreground tracking-tight text-lg">CW Finanças</span>
-              <span className="text-xs text-muted-foreground">Controle PJ</span>
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Controle PJ</span>
             </div>
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-3 py-4">
+      <SidebarContent className="px-3 py-5">
+        {/* Main Navigation */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -97,16 +99,16 @@ export function AppSidebar() {
                       to={item.url} 
                       end={item.url === "/"}
                       className={`
-                        flex items-center gap-3 px-3 py-2.5 rounded-xl transition-corporate relative
-                        hover:bg-accent text-muted-foreground hover:text-foreground
+                        flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
+                        text-muted-foreground hover:text-foreground hover:bg-accent
                         ${isActive(item.url) ? 'bg-accent text-primary font-medium' : ''}
                       `}
                       activeClassName="bg-accent text-primary font-medium"
                     >
                       {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-full" />
                       )}
-                      <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.url) ? 'text-primary' : ''}`} />
+                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-primary' : ''}`} />
                       {!collapsed && <span className="text-sm">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
@@ -116,8 +118,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Tools Navigation */}
         <SidebarGroup className="mt-6">
-          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
             Ferramentas
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -132,16 +135,16 @@ export function AppSidebar() {
                     <NavLink 
                       to={item.url} 
                       className={`
-                        flex items-center gap-3 px-3 py-2.5 rounded-xl transition-corporate relative
-                        hover:bg-accent text-muted-foreground hover:text-foreground
+                        flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
+                        text-muted-foreground hover:text-foreground hover:bg-accent
                         ${isActive(item.url) ? 'bg-accent text-primary font-medium' : ''}
                       `}
                       activeClassName="bg-accent text-primary font-medium"
                     >
                       {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-full" />
                       )}
-                      <item.icon className={`w-5 h-5 shrink-0 ${isActive(item.url) ? 'text-primary' : ''}`} />
+                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-primary' : ''}`} />
                       {!collapsed && <span className="text-sm">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
@@ -152,6 +155,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
+      {/* Footer */}
       <SidebarFooter className="p-3 border-t border-border">
         <SidebarMenu>
           <SidebarMenuItem>
@@ -163,16 +167,16 @@ export function AppSidebar() {
               <NavLink 
                 to="/settings" 
                 className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-xl transition-corporate relative
-                  hover:bg-accent text-muted-foreground hover:text-foreground
+                  flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
+                  text-muted-foreground hover:text-foreground hover:bg-accent
                   ${isActive("/settings") ? 'bg-accent text-primary font-medium' : ''}
                 `}
                 activeClassName="bg-accent text-primary font-medium"
               >
                 {isActive("/settings") && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-full" />
                 )}
-                <Settings className={`w-5 h-5 shrink-0 ${isActive("/settings") ? 'text-primary' : ''}`} />
+                <Settings className={`w-5 h-5 shrink-0 transition-colors ${isActive("/settings") ? 'text-primary' : ''}`} />
                 {!collapsed && <span className="text-sm">Configurações</span>}
               </NavLink>
             </SidebarMenuButton>

@@ -1,6 +1,5 @@
 import { CheckCircle, AlertCircle, FileWarning } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,7 +12,7 @@ export function DataQualityCard() {
 
   if (isLoading) {
     return (
-      <Card className="glass-premium border-border/50 shadow-premium-sm">
+      <Card className="border-border shadow-corporate-sm rounded-xl">
         <CardHeader className="pb-3">
           <Skeleton className="h-5 w-40" />
         </CardHeader>
@@ -30,9 +29,9 @@ export function DataQualityCard() {
   const needsAttention = coveragePercent < 95;
 
   return (
-    <Card className="glass-premium border-border/50 shadow-premium-sm">
+    <Card className="border-border shadow-corporate-sm hover:shadow-corporate-md transition-corporate rounded-xl">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-medium flex items-center gap-2">
+        <CardTitle className="text-base font-semibold flex items-center gap-2">
           {isExcellent ? (
             <CheckCircle className="w-4 h-4 text-success" />
           ) : needsAttention ? (
@@ -46,8 +45,8 @@ export function DataQualityCard() {
       <CardContent className="space-y-4">
         {/* Coverage Circle */}
         <div className="flex items-center gap-4">
-          <div className="relative w-16 h-16">
-            <svg className="w-16 h-16 -rotate-90" viewBox="0 0 36 36">
+          <div className="relative w-14 h-14">
+            <svg className="w-14 h-14 -rotate-90" viewBox="0 0 36 36">
               <circle
                 cx="18"
                 cy="18"
@@ -73,16 +72,16 @@ export function DataQualityCard() {
                 strokeLinecap="round"
               />
             </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold">
+            <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold">
               {coveragePercent}%
             </span>
           </div>
 
           <div className="flex-1">
-            <p className="text-lg font-semibold text-foreground">
+            <p className="text-sm font-semibold text-foreground">
               {isExcellent ? "Excelente" : isGood ? "Boa" : "Atenção necessária"}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               {totalCount} transações analisadas
             </p>
           </div>
@@ -92,10 +91,11 @@ export function DataQualityCard() {
         {needsReviewCount > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Para revisão</span>
+              <span className="text-muted-foreground text-xs">Para revisão</span>
               <Badge
                 variant="outline"
                 className={cn(
+                  "text-xs",
                   needsReviewCount > 5
                     ? "border-warning/50 text-warning"
                     : "border-muted-foreground/50"
@@ -105,18 +105,17 @@ export function DataQualityCard() {
               </Badge>
             </div>
 
-            {/* Reasons breakdown */}
             {Object.keys(reasonsBreakdown).length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {Object.entries(reasonsBreakdown).map(([reason, count]) => (
-                  <Badge key={reason} variant="secondary" className="text-xs">
+                  <Badge key={reason} variant="secondary" className="text-[10px]">
                     {reason.replace(/_/g, " ").toLowerCase()}: {count}
                   </Badge>
                 ))}
               </div>
             )}
 
-            <Button variant="outline" size="sm" className="w-full" asChild>
+            <Button variant="outline" size="sm" className="w-full h-8 text-xs" asChild>
               <Link to="/expenses?filter=review">
                 Revisar Itens
               </Link>
@@ -125,7 +124,7 @@ export function DataQualityCard() {
         )}
 
         {needsReviewCount === 0 && (
-          <p className="text-sm text-muted-foreground text-center py-2">
+          <p className="text-xs text-muted-foreground text-center py-2">
             ✓ Todos os dados estão validados
           </p>
         )}

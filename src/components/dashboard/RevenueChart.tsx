@@ -12,7 +12,6 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { TrendBadge } from "@/components/ui/trend-badge";
 import { useTransactions } from "@/hooks/useTransactions";
-import { Loader2 } from "lucide-react";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
 
 const formatCurrency = (value: number) => {
@@ -42,20 +41,17 @@ const dataKeyLabels: Record<string, string> = {
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     return (
-      <div className="glass-premium rounded-xl p-4 shadow-premium-lg border border-border/50 animate-slide-up-fade">
-        <p className="text-sm font-semibold text-foreground mb-3">{label}</p>
-        <div className="space-y-2">
+      <div className="bg-card border border-border rounded-lg p-3 shadow-corporate-lg">
+        <p className="text-sm font-medium text-foreground mb-2">{label}</p>
+        <div className="space-y-1.5">
           {payload.map((entry, index) => (
-            <div key={index} className="flex items-center gap-3">
+            <div key={index} className="flex items-center gap-2">
               <div 
-                className="w-3 h-3 rounded-full shadow-sm" 
-                style={{ 
-                  backgroundColor: entry.color,
-                  boxShadow: `0 0 8px ${entry.color}40`
-                }}
+                className="w-2.5 h-2.5 rounded-full" 
+                style={{ backgroundColor: entry.color }}
               />
-              <span className="text-muted-foreground text-sm">{dataKeyLabels[entry.dataKey] || entry.dataKey}:</span>
-              <span className="font-bold text-foreground">
+              <span className="text-muted-foreground text-xs">{dataKeyLabels[entry.dataKey] || entry.dataKey}:</span>
+              <span className="font-semibold text-sm text-foreground">
                 {formatCurrency(entry.value)}
               </span>
             </div>
@@ -69,14 +65,14 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 
 const renderLegend = () => {
   return (
-    <div className="flex items-center justify-center gap-6 mt-4">
+    <div className="flex items-center justify-center gap-5 mt-4">
       <div className="flex items-center gap-2">
-        <div className="w-3 h-3 rounded-full bg-chart-1 shadow-sm" style={{ boxShadow: '0 0 8px hsl(var(--chart-1) / 0.4)' }} />
-        <span className="text-sm text-muted-foreground font-medium">Receita</span>
+        <div className="w-2.5 h-2.5 rounded-full bg-chart-1" />
+        <span className="text-xs text-muted-foreground">Receita</span>
       </div>
       <div className="flex items-center gap-2">
-        <div className="w-3 h-3 rounded-full bg-chart-5" style={{ boxShadow: '0 0 8px hsl(var(--chart-5) / 0.4)' }} />
-        <span className="text-sm text-muted-foreground font-medium">Despesas</span>
+        <div className="w-2.5 h-2.5 rounded-full bg-chart-5" />
+        <span className="text-xs text-muted-foreground">Despesas</span>
       </div>
     </div>
   );
@@ -87,7 +83,6 @@ const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set
 export function RevenueChart() {
   const { transactions, isLoading } = useTransactions();
 
-  // Agrupar transações por mês
   const revenueData = useMemo(() => {
     if (!transactions.length) return [];
 
@@ -108,7 +103,6 @@ export function RevenueChart() {
       }
     });
 
-    // Ordenar por data e formatar
     return Object.entries(monthlyData)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, values]) => {
@@ -119,10 +113,9 @@ export function RevenueChart() {
           despesas: values.despesas,
         };
       })
-      .slice(-12); // Últimos 12 meses
+      .slice(-12);
   }, [transactions]);
 
-  // Calcular tendência
   const trend = useMemo(() => {
     if (revenueData.length < 2) return 0;
     const lastMonth = revenueData[revenueData.length - 1]?.receita || 0;
@@ -133,64 +126,49 @@ export function RevenueChart() {
 
   if (isLoading) {
     return (
-      <Card className="glass-premium border-border/50 shadow-premium-md rounded-2xl overflow-hidden">
+      <Card className="border-border shadow-corporate-sm rounded-xl overflow-hidden">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold text-foreground">Tendência de Receita</CardTitle>
+          <CardTitle className="text-base font-semibold text-foreground">Tendência de Receita</CardTitle>
         </CardHeader>
         <CardContent>
-          <ChartSkeleton type="area" height="h-[300px] md:h-[350px]" />
+          <ChartSkeleton type="area" height="h-[280px]" />
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="glass-premium border-border/50 shadow-premium-md hover:shadow-premium-lg transition-premium animate-corporate-enter rounded-2xl overflow-hidden">
-      {/* Gradient mesh background */}
-      <div className="absolute inset-0 gradient-mesh opacity-50 pointer-events-none" />
-      
-      <CardHeader className="relative z-10">
+    <Card className="border-border shadow-corporate-sm hover:shadow-corporate-md transition-corporate rounded-xl overflow-hidden">
+      <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <div>
-            <CardTitle className="text-lg font-semibold text-foreground">Tendência de Receita</CardTitle>
-            <CardDescription className="text-muted-foreground">Receita mensal vs despesas ao longo do tempo</CardDescription>
+            <CardTitle className="text-base font-semibold text-foreground">Tendência de Receita</CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">Receita vs despesas ao longo do tempo</CardDescription>
           </div>
           {revenueData.length > 0 && <TrendBadge value={trend} size="sm" />}
         </div>
       </CardHeader>
-      <CardContent className="relative z-10">
+      <CardContent>
         {revenueData.length === 0 ? (
-          <div className="h-[300px] md:h-[350px] flex items-center justify-center text-muted-foreground">
+          <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
             <p>Sem dados de receita disponíveis</p>
           </div>
         ) : (
-          <div className="h-[300px] md:h-[350px]">
+          <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart 
                 data={revenueData}
                 margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
               >
                 <defs>
-                  {/* Revenue gradient - More vibrant */}
-                  <linearGradient id="revenueGradientPremium" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity={0.4}/>
-                    <stop offset="50%" stopColor="hsl(var(--chart-1))" stopOpacity={0.15}/>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--chart-1))" stopOpacity={0.3}/>
                     <stop offset="100%" stopColor="hsl(var(--chart-1))" stopOpacity={0}/>
                   </linearGradient>
-                  {/* Expenses gradient */}
-                  <linearGradient id="expensesGradientPremium" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--chart-5))" stopOpacity={0.25}/>
-                    <stop offset="50%" stopColor="hsl(var(--chart-5))" stopOpacity={0.08}/>
+                  <linearGradient id="expensesGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--chart-5))" stopOpacity={0.2}/>
                     <stop offset="100%" stopColor="hsl(var(--chart-5))" stopOpacity={0}/>
                   </linearGradient>
-                  {/* Line glow filter */}
-                  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                    <feMerge>
-                      <feMergeNode in="coloredBlur"/>
-                      <feMergeNode in="SourceGraphic"/>
-                    </feMerge>
-                  </filter>
                 </defs>
                 <CartesianGrid 
                   strokeDasharray="4 4" 
@@ -202,15 +180,15 @@ export function RevenueChart() {
                   dataKey="month" 
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
-                  dy={10}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                  dy={8}
                 />
                 <YAxis 
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
                   tickFormatter={formatCurrency}
-                  dx={-10}
+                  dx={-8}
                 />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend content={renderLegend} />
@@ -218,20 +196,16 @@ export function RevenueChart() {
                   type="monotone"
                   dataKey="receita"
                   stroke="hsl(var(--chart-1))"
-                  strokeWidth={3}
-                  fill="url(#revenueGradientPremium)"
-                  filter="url(#glow)"
+                  strokeWidth={2}
+                  fill="url(#revenueGradient)"
                   dot={false}
                   activeDot={{
-                    r: 6,
+                    r: 5,
                     fill: "hsl(var(--chart-1))",
                     stroke: "hsl(var(--background))",
-                    strokeWidth: 3,
-                    style: { filter: "drop-shadow(0 0 6px hsl(var(--chart-1)))" }
+                    strokeWidth: 2,
                   }}
-                  isAnimationActive={true}
-                  animationBegin={0}
-                  animationDuration={1500}
+                  animationDuration={1200}
                   animationEasing="ease-out"
                 />
                 <Area
@@ -239,17 +213,16 @@ export function RevenueChart() {
                   dataKey="despesas"
                   stroke="hsl(var(--chart-5))"
                   strokeWidth={2}
-                  fill="url(#expensesGradientPremium)"
+                  fill="url(#expensesGradient)"
                   dot={false}
                   activeDot={{
-                    r: 5,
+                    r: 4,
                     fill: "hsl(var(--chart-5))",
                     stroke: "hsl(var(--background))",
                     strokeWidth: 2,
                   }}
-                  isAnimationActive={true}
-                  animationBegin={200}
-                  animationDuration={1500}
+                  animationBegin={150}
+                  animationDuration={1200}
                   animationEasing="ease-out"
                 />
               </AreaChart>
