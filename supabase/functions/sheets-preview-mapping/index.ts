@@ -49,6 +49,12 @@ function parseBRL(value: string | number | null | undefined): number | null {
   let str = String(value).trim();
   if (!str) return null;
   
+  // CRITICAL: Reject date patterns BEFORE any parsing
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
+  if (/^\d{1,2}[\/\-][a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{2,4}$/i.test(str)) return null;
+  if (/^[a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{4}$/i.test(str)) return null;
+  
   // Remove currency symbols, letters, and whitespace
   str = str.replace(/[R$¤€£¥a-zA-Z]/gi, "");
   str = str.replace(/[\u00A0\u2007\u202F\u200B\uFEFF]/g, "");
@@ -148,56 +154,103 @@ function isSkippableRow(description: string): { skip: boolean; reason?: string }
  * Detect type from row data
  */
 function detectType(row: Record<string, unknown>, mapping: Record<string, string>): "income" | "expense" {
+  const nRow = normalizeRowKeys(row);
   const typeCol = mapping.type;
-  if (typeCol && row[typeCol]) {
-    const typeValue = String(row[typeCol]).toLowerCase();
-    if (typeValue.includes("entrada") || typeValue.includes("receita") || 
-        typeValue.includes("credito") || typeValue.includes("crédito") || 
-        typeValue === "c" || typeValue === "r") {
-      return "income";
-    }
-    if (typeValue.includes("saida") || typeValue.includes("saída") || 
-        typeValue.includes("despesa") || typeValue.includes("debito") ||
-        typeValue.includes("débito") || typeValue === "d") {
-      return "expense";
+  if (typeCol) {
+    const typeRaw = nRow[typeCol] ?? nRow[typeCol.trim()];
+    if (typeRaw) {
+      const typeValue = String(typeRaw).toLowerCase();
+      if (typeValue.includes("entrada") || typeValue.includes("receita") || 
+          typeValue.includes("credito") || typeValue.includes("crédito") || 
+          typeValue === "c" || typeValue === "r") {
+        return "income";
+      }
+      if (typeValue.includes("saida") || typeValue.includes("saída") || 
+          typeValue.includes("despesa") || typeValue.includes("debito") ||
+          typeValue.includes("débito") || typeValue === "d") {
+        return "expense";
+      }
     }
   }
   
-  // Check credit/debit columns
+  // Check credit/debit columns (with date guard)
   if (mapping.credit || mapping.debit) {
-    const credit = parseBRL(row[mapping.credit] as string | number | null) || 0;
-    const debit = parseBRL(row[mapping.debit] as string | number | null) || 0;
-    if (credit > debit) return "income";
-    if (debit > credit) return "expense";
+    const creditRaw = mapping.credit ? (nRow[mapping.credit] ?? nRow[mapping.credit.trim()]) : null;
+    const debitRaw = mapping.debit ? (nRow[mapping.debit] ?? nRow[mapping.debit.trim()]) : null;
+    if (!looksLikeDate(creditRaw) && !looksLikeDate(debitRaw)) {
+      const credit = parseBRL(creditRaw as string | number | null) || 0;
+      const debit = parseBRL(debitRaw as string | number | null) || 0;
+      if (credit > debit) return "income";
+      if (debit > credit) return "expense";
+    }
   }
   
   // Check amount sign
   const amountCol = mapping.amount;
-  if (amountCol && row[amountCol]) {
-    const amount = parseBRL(row[amountCol] as string | number | null);
-    if (amount !== null && amount < 0) return "expense";
+  if (amountCol) {
+    const amountRaw = nRow[amountCol] ?? nRow[amountCol.trim()];
+    if (amountRaw && !looksLikeDate(amountRaw)) {
+      const amount = parseBRL(amountRaw as string | number | null);
+      if (amount !== null && amount < 0) return "expense";
+    }
   }
   
   return "income";
 }
 
 /**
+ * Check if a string looks like a date
+ */
+function looksLikeDate(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  const str = String(value).trim();
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return true;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return true;
+  return false;
+}
+
+/**
+ * Normalize row object keys by trimming whitespace
+ */
+function normalizeRowKeys(rowObj: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rowObj)) {
+    normalized[key] = value;
+    const trimmed = key.trim();
+    if (trimmed !== key) normalized[trimmed] = value;
+  }
+  return normalized;
+}
+
+/**
  * Extract amount supporting both single amount column and credit/debit
+ * FIXED: prioritize amount over credit/debit, reject date values
  */
 function extractAmount(row: Record<string, unknown>, mapping: Record<string, string>): number | null {
-  // Try credit/debit first
-  if (mapping.credit || mapping.debit) {
-    const credit = parseBRL(row[mapping.credit] as string | number | null) || 0;
-    const debit = parseBRL(row[mapping.debit] as string | number | null) || 0;
-    if (credit > 0 || debit > 0) {
-      return Math.max(credit, debit);
+  const nRow = normalizeRowKeys(row);
+  
+  // PRIORITY 1: Try amount column FIRST
+  if (mapping.amount) {
+    const raw = nRow[mapping.amount] ?? nRow[mapping.amount.trim()];
+    if (raw !== null && raw !== undefined && !looksLikeDate(raw)) {
+      const amount = parseBRL(raw as string | number | null);
+      if (amount !== null) return Math.abs(amount);
     }
   }
   
-  // Try amount column
-  if (mapping.amount) {
-    const amount = parseBRL(row[mapping.amount] as string | number | null);
-    if (amount !== null) return Math.abs(amount);
+  // PRIORITY 2: Try credit/debit (only if amount didn't work)
+  if (mapping.credit || mapping.debit) {
+    const creditRaw = mapping.credit ? (nRow[mapping.credit] ?? nRow[mapping.credit.trim()]) : null;
+    const debitRaw = mapping.debit ? (nRow[mapping.debit] ?? nRow[mapping.debit.trim()]) : null;
+    
+    // GUARD: reject date values
+    if (looksLikeDate(creditRaw) || looksLikeDate(debitRaw)) return null;
+    
+    const credit = parseBRL(creditRaw as string | number | null) || 0;
+    const debit = parseBRL(debitRaw as string | number | null) || 0;
+    if (credit > 0 || debit > 0) {
+      return Math.max(credit, debit);
+    }
   }
   
   return null;
@@ -208,26 +261,41 @@ function extractAmount(row: Record<string, unknown>, mapping: Record<string, str
  */
 function autoDetectMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
+  const usedColumnIndices = new Set<number>();
+  
   const normalizedHeaders = headers.map(h => 
     (h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   );
   
-  const patterns: Record<string, string[]> = {
-    description: ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe"],
-    amount: ["valor", "montante", "quantia", "total", "vlr", "amount", "value", "r$"],
-    date: ["data", "dt", "date", "vencimento", "competencia", "emissao"],
-    type: ["tipo", "natureza", "d/c", "entrada/saida"],
-    category: ["categoria", "classificacao", "grupo", "centro de custo", "category"],
-    client_vendor: ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "nome"],
-    credit: ["credito", "entrada", "receita", "recebido"],
-    debit: ["debito", "saida", "despesa", "pago"],
-  };
+  // Order matters: map high-priority fields first to prevent conflicts
+  const orderedPatterns: Array<[string, string[]]> = [
+    ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao"]],
+    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe"]],
+    ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value"]],
+    ["type", ["tipo", "natureza", "d/c", "entrada/saida"]],
+    ["category", ["categoria", "classificacao", "grupo", "centro de custo", "category"]],
+    ["client_vendor", ["cliente", "fornecedor", "razao social", "empresa", "parceiro"]],
+    ["credit", ["credito", "entrada", "receita", "credit", "recebido", "recebimento"]],
+    ["debit", ["debito", "saida", "despesa", "debit", "pago", "pagamento"]],
+  ];
   
-  for (const [field, keywords] of Object.entries(patterns)) {
+  for (const [field, keywords] of orderedPatterns) {
     for (let i = 0; i < normalizedHeaders.length; i++) {
+      if (usedColumnIndices.has(i)) continue;
       const header = normalizedHeaders[i];
-      if (keywords.some(k => header.includes(k) || header === k)) {
+      if (!header) continue;
+      
+      const matched = keywords.some(k => {
+        if (header === k) return true;
+        const regex = new RegExp(`\\b${k}\\b`);
+        if (regex.test(header)) return true;
+        if (header.startsWith(k) && k.length >= 3) return true;
+        return false;
+      });
+      
+      if (matched) {
         mapping[field] = headers[i];
+        usedColumnIndices.add(i);
         break;
       }
     }

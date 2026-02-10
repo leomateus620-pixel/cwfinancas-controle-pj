@@ -88,6 +88,14 @@ function parseBRL(value: string | number | null | undefined): number | null {
   // Return null for empty strings
   if (!str) return null;
   
+  // CRITICAL: Reject date patterns BEFORE any parsing
+  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, YYYY-MM-DD
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
+  // Also reject partial dates like "1-dez-2026", "Jan/2026"
+  if (/^\d{1,2}[\/\-][a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{2,4}$/i.test(str)) return null;
+  if (/^[a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{4}$/i.test(str)) return null;
+  
   // Remove currency symbols, letters, and various whitespace
   str = str.replace(/[R$¤€£¥a-zA-Z]/gi, "");
   
@@ -115,50 +123,35 @@ function parseBRL(value: string | number | null | undefined): number | null {
   if (!str) return null;
   
   // Determine format: BR (1.234,56) vs US (1,234.56)
-  // Find positions of last comma and last dot
   const lastComma = str.lastIndexOf(",");
   const lastDot = str.lastIndexOf(".");
-  
-  // Count occurrences
   const commaCount = (str.match(/,/g) || []).length;
   const dotCount = (str.match(/\./g) || []).length;
   
   let normalized = str;
   
   if (lastComma > lastDot) {
-    // Brazilian format: 1.234.567,89 - comma is decimal separator
     normalized = str.replace(/\./g, "").replace(",", ".");
   } else if (lastDot > lastComma) {
-    // US format: 1,234,567.89 - dot is decimal separator
     normalized = str.replace(/,/g, "");
   } else if (lastComma >= 0 && lastDot === -1) {
-    // Only commas present
     if (commaCount === 1) {
-      // Single comma - likely decimal separator (BR format without thousands)
-      // Check if it looks like decimal (1-2 digits after comma)
       const afterComma = str.split(",")[1];
       if (afterComma && afterComma.length <= 2) {
         normalized = str.replace(",", ".");
       } else {
-        // Multiple digits after comma - might be thousands separator
         normalized = str.replace(",", "");
       }
     } else {
-      // Multiple commas - thousands separators
       normalized = str.replace(/,/g, "");
     }
   } else if (lastDot >= 0 && lastComma === -1) {
-    // Only dots present
     if (dotCount === 1) {
-      // Single dot - could be decimal or thousands
       const afterDot = str.split(".")[1];
       if (afterDot && afterDot.length === 3 && str.split(".")[0].length <= 3) {
-        // Likely thousands separator (e.g., "1.234" = 1234)
         normalized = str.replace(".", "");
       }
-      // Otherwise keep as-is (decimal point)
     } else {
-      // Multiple dots - thousands separators
       normalized = str.replace(/\./g, "");
     }
   }
@@ -167,7 +160,6 @@ function parseBRL(value: string | number | null | undefined): number | null {
   
   if (isNaN(num)) return null;
   
-  // Apply negative sign
   const isNegative = isNegativeParens || isNegativePrefix || isNegativeSuffix;
   return isNegative ? -num : num;
 }
@@ -284,30 +276,79 @@ function parseDate(value: string | number | null | undefined): string | null {
 }
 
 /**
+ * Check if a string looks like a date
+ */
+function looksLikeDate(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  const str = String(value).trim();
+  if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return true;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return true;
+  if (/^\d{1,2}[\/\-][a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{2,4}$/i.test(str)) return true;
+  return false;
+}
+
+/**
+ * Normalize row object keys by trimming whitespace
+ */
+function normalizeRowKeys(rowObj: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rowObj)) {
+    normalized[key] = value;
+    const trimmed = key.trim();
+    if (trimmed !== key) {
+      normalized[trimmed] = value;
+    }
+  }
+  return normalized;
+}
+
+/**
  * Auto-detect column mapping with extended synonyms for PT-BR
+ * FIXED: prevents same column mapping to multiple fields, refined keywords
  */
 function autoDetectMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
+  const usedColumnIndices = new Set<number>();
+  
   const normalizedHeaders = headers.map(h => 
     (h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   );
   
-  const patterns: Record<string, string[]> = {
-    description: ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description"],
-    amount: ["valor", "montante", "quantia", "total", "vlr", "amount", "value", "r$"],
-    date: ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado"],
-    type: ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao"],
-    category: ["categoria", "classificacao", "grupo", "centro", "centro de custo", "category", "class"],
-    client_vendor: ["cliente", "fornecedor", "razao social", "razao", "empresa", "parceiro", "nome", "client", "vendor", "favorecido"],
-    credit: ["credito", "entrada", "receita", "c", "credit", "recebido", "recebimento"],
-    debit: ["debito", "saida", "despesa", "d", "debit", "pago", "pagamento"],
-  };
+  // Order matters: map high-priority fields first to prevent conflicts
+  const orderedPatterns: Array<[string, string[]]> = [
+    ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado"]],
+    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description"]],
+    ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value"]],
+    ["type", ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao"]],
+    ["category", ["categoria", "classificacao", "grupo", "centro de custo", "category", "class"]],
+    ["client_vendor", ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "favorecido"]],
+    ["credit", ["credito", "entrada", "receita", "credit", "recebido", "recebimento"]],
+    ["debit", ["debito", "saida", "despesa", "debit", "pago", "pagamento"]],
+  ];
   
-  for (const [field, keywords] of Object.entries(patterns)) {
+  for (const [field, keywords] of orderedPatterns) {
     for (let i = 0; i < normalizedHeaders.length; i++) {
+      // NEVER map same column to two different fields
+      if (usedColumnIndices.has(i)) continue;
+      
       const header = normalizedHeaders[i];
-      if (keywords.some(k => header.includes(k) || header === k)) {
+      if (!header) continue;
+      
+      // Use word-boundary matching to avoid "banco" matching "credito" etc.
+      const matched = keywords.some(k => {
+        // Exact match
+        if (header === k) return true;
+        // Word boundary: header contains keyword as a standalone word
+        const regex = new RegExp(`\\b${k}\\b`);
+        if (regex.test(header)) return true;
+        // Also allow if header starts with keyword
+        if (header.startsWith(k) && k.length >= 3) return true;
+        return false;
+      });
+      
+      if (matched) {
         mapping[field] = headers[i];
+        usedColumnIndices.add(i);
         break;
       }
     }
@@ -324,11 +365,51 @@ function extractAmount(
   rowObj: Record<string, unknown>,
   mapping: Record<string, string>
 ): { value: number | null; type: "income" | "expense" } {
+  // Normalize row keys to handle " Valor " -> "Valor"
+  const nRow = normalizeRowKeys(rowObj);
   
-  // First try credit/debit columns (more explicit)
+  // PRIORITY 1: Try single amount column FIRST (most reliable)
+  if (mapping.amount) {
+    const raw = nRow[mapping.amount] ?? nRow[mapping.amount.trim()];
+    if (raw !== null && raw !== undefined && !looksLikeDate(raw)) {
+      const parsed = parseBRL(raw as string | number | null);
+      if (parsed !== null) {
+        // Check if there's an explicit type column
+        const typeCol = mapping.type;
+        if (typeCol) {
+          const typeRaw = nRow[typeCol] ?? nRow[typeCol.trim()];
+          if (typeRaw) {
+            const typeValue = String(typeRaw).toLowerCase().trim();
+            if (typeValue.includes("entrada") || typeValue.includes("receita") || 
+                typeValue.includes("credito") || typeValue.includes("crédito") ||
+                typeValue === "c" || typeValue === "r" || typeValue === "+") {
+              return { value: Math.abs(parsed), type: "income" };
+            }
+            if (typeValue.includes("saida") || typeValue.includes("saída") || 
+                typeValue.includes("despesa") || typeValue.includes("debito") ||
+                typeValue.includes("débito") || typeValue === "d" || typeValue === "-") {
+              return { value: Math.abs(parsed), type: "expense" };
+            }
+          }
+        }
+        return {
+          value: Math.abs(parsed),
+          type: parsed >= 0 ? "income" : "expense"
+        };
+      }
+    }
+  }
+  
+  // PRIORITY 2: Try credit/debit columns (only if amount didn't work)
   if (mapping.credit || mapping.debit) {
-    const creditRaw = mapping.credit ? rowObj[mapping.credit] : null;
-    const debitRaw = mapping.debit ? rowObj[mapping.debit] : null;
+    const creditRaw = mapping.credit ? (nRow[mapping.credit] ?? nRow[mapping.credit.trim()]) : null;
+    const debitRaw = mapping.debit ? (nRow[mapping.debit] ?? nRow[mapping.debit.trim()]) : null;
+    
+    // GUARD: reject values that look like dates
+    if (looksLikeDate(creditRaw) || looksLikeDate(debitRaw)) {
+      // Date detected in credit/debit column - mapping is wrong, skip
+      return { value: null, type: "income" };
+    }
     
     const credit = parseBRL(creditRaw as string | number | null) || 0;
     const debit = parseBRL(debitRaw as string | number | null) || 0;
@@ -340,59 +421,15 @@ function extractAmount(
       return { value: debit, type: "expense" };
     }
     if (credit > 0 && debit > 0) {
-      // Both have values - net them
       const net = credit - debit;
       return { 
         value: Math.abs(net), 
         type: net >= 0 ? "income" : "expense" 
       };
     }
-    if (credit === 0 && debit === 0 && (creditRaw !== null || debitRaw !== null)) {
-      // Columns exist but values are zero/empty - may have value in amount column
-    }
   }
   
-  // Try single amount column
-  if (mapping.amount) {
-    const raw = rowObj[mapping.amount];
-    const parsed = parseBRL(raw as string | number | null);
-    
-    if (parsed !== null) {
-      // Check if there's an explicit type column
-      const typeCol = mapping.type;
-      if (typeCol && rowObj[typeCol]) {
-        const typeValue = String(rowObj[typeCol]).toLowerCase().trim();
-        if (typeValue.includes("entrada") || typeValue.includes("receita") || 
-            typeValue.includes("credito") || typeValue.includes("crédito") ||
-            typeValue === "c" || typeValue === "r" || typeValue === "+") {
-          return { value: Math.abs(parsed), type: "income" };
-        }
-        if (typeValue.includes("saida") || typeValue.includes("saída") || 
-            typeValue.includes("despesa") || typeValue.includes("debito") ||
-            typeValue.includes("débito") || typeValue === "d" || typeValue === "-") {
-          return { value: Math.abs(parsed), type: "expense" };
-        }
-      }
-      
-      // Use sign of the value
-      return {
-        value: Math.abs(parsed),
-        type: parsed >= 0 ? "income" : "expense"
-      };
-    }
-  }
-  
-  // Last resort: scan all columns for a numeric value
-  for (const key of Object.keys(rowObj)) {
-    const val = parseBRL(rowObj[key] as string | number | null);
-    if (val !== null && val !== 0) {
-      return {
-        value: Math.abs(val),
-        type: val >= 0 ? "income" : "expense"
-      };
-    }
-  }
-  
+  // NO "last resort scan" - it's dangerous and causes the date-as-value bug
   return { value: null, type: "income" };
 }
 
