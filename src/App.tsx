@@ -8,6 +8,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/error/ErrorBoundary";
 import { GlobalErrorHandler } from "@/components/error/GlobalErrorHandler";
+import HomePage from "@/pages/HomePage";
 import OverviewPage from "@/pages/OverviewPage";
 import IncomePage from "@/pages/IncomePage";
 import ExpensesPage from "@/pages/ExpensesPage";
@@ -57,7 +58,8 @@ const App = () => (
                   <DashboardLayout />
                 </ProtectedRoute>
               }>
-                <Route path="/" element={<OverviewPage />} />
+                <Route path="/" element={<HomePage />} />
+                <Route path="/overview" element={<OverviewPage />} />
                 <Route path="/income" element={<IncomePage />} />
                 <Route path="/expenses" element={<ExpensesPage />} />
                 <Route path="/cash-flow" element={<CashFlowPage />} />

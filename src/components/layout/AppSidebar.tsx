@@ -1,4 +1,5 @@
 import { 
+  Home,
   LayoutDashboard, 
   TrendingUp, 
   TrendingDown, 
@@ -30,7 +31,8 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNavItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Home", url: "/", icon: Home },
+  { title: "Dashboard", url: "/overview", icon: LayoutDashboard },
   { title: "Receitas", url: "/income", icon: TrendingUp },
   { title: "Despesas", url: "/expenses", icon: TrendingDown },
   { title: "Fluxo de Caixa", url: "/cash-flow", icon: ArrowLeftRight },
