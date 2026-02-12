@@ -13,7 +13,7 @@ import OverviewPage from "@/pages/OverviewPage";
 import IncomePage from "@/pages/IncomePage";
 import ExpensesPage from "@/pages/ExpensesPage";
 import CashFlowPage from "@/pages/CashFlowPage";
-import BalanceSheetPage from "@/pages/BalanceSheetPage";
+import DREPage from "@/pages/DREPage";
 import ForecastsPage from "@/pages/ForecastsPage";
 import InvoicesPage from "@/pages/InvoicesPage";
 import UploadPage from "@/pages/UploadPage";
@@ -63,7 +63,7 @@ const App = () => (
                 <Route path="/income" element={<IncomePage />} />
                 <Route path="/expenses" element={<ExpensesPage />} />
                 <Route path="/cash-flow" element={<CashFlowPage />} />
-                <Route path="/balance" element={<BalanceSheetPage />} />
+                <Route path="/dre" element={<DREPage />} />
                 <Route path="/forecasts" element={<ForecastsPage />} />
                 <Route path="/invoices" element={<InvoicesPage />} />
                 <Route path="/upload" element={<UploadPage />} />
