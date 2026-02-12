@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { useDateRange } from "@/contexts/DateRangeContext";
+import { format } from "date-fns";
 
 export interface Transaction {
   id: string;
@@ -29,8 +31,20 @@ export function useTransactions(filters?: {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Use global date range, allow local overrides
+  let globalRange: { from: Date; to: Date } | null = null;
+  try {
+    const dr = useDateRange();
+    globalRange = dr.range;
+  } catch {
+    // Outside DateRangeProvider (e.g., during tests)
+  }
+
+  const effectiveStartDate = filters?.startDate || (globalRange ? format(globalRange.from, "yyyy-MM-dd") : undefined);
+  const effectiveEndDate = filters?.endDate || (globalRange ? format(globalRange.to, "yyyy-MM-dd") : undefined);
+
   const { data: transactions, isLoading, error } = useQuery({
-    queryKey: ["transactions", user?.id, filters],
+    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate],
     queryFn: async () => {
       if (!user?.id) return [];
 
@@ -42,11 +56,11 @@ export function useTransactions(filters?: {
       if (filters?.type) {
         query = query.eq("type", filters.type);
       }
-      if (filters?.startDate) {
-        query = query.gte("date", filters.startDate);
+      if (effectiveStartDate) {
+        query = query.gte("date", effectiveStartDate);
       }
-      if (filters?.endDate) {
-        query = query.lte("date", filters.endDate);
+      if (effectiveEndDate) {
+        query = query.lte("date", effectiveEndDate);
       }
       if (filters?.category) {
         query = query.eq("category", filters.category);

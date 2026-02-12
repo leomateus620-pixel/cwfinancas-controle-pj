@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { DateRangeProvider } from "@/contexts/DateRangeContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/error/ErrorBoundary";
@@ -55,7 +56,9 @@ const App = () => (
               {/* Protected routes */}
               <Route element={
                 <ProtectedRoute>
-                  <DashboardLayout />
+                  <DateRangeProvider>
+                    <DashboardLayout />
+                  </DateRangeProvider>
                 </ProtectedRoute>
               }>
                 <Route path="/" element={<HomePage />} />

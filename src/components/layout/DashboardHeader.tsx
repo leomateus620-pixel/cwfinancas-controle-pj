@@ -1,4 +1,5 @@
 import { Search, Bell, Download, User, Menu } from "lucide-react";
+import { GlobalDateRangeFilter } from "./GlobalDateRangeFilter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -33,6 +34,9 @@ export function DashboardHeader() {
 
         {/* Right side - Actions */}
         <div className="flex items-center gap-2">
+          {/* Global Date Range Filter */}
+          <GlobalDateRangeFilter />
+          
           {/* Export Button */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
