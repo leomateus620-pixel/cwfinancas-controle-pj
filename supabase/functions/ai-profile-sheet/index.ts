@@ -324,17 +324,53 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Refresh token if expired
+    let accessToken = oauthToken.access_token;
+    const expiresAt = new Date(oauthToken.expires_at).getTime();
+    if (Date.now() >= expiresAt - 60000) {
+      const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID");
+      const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
+      const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: GOOGLE_CLIENT_ID || "",
+          client_secret: GOOGLE_CLIENT_SECRET || "",
+          refresh_token: oauthToken.refresh_token,
+          grant_type: "refresh_token",
+        }),
+      });
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json();
+        accessToken = refreshData.access_token;
+        const newExpiresAt = new Date(Date.now() + (refreshData.expires_in || 3600) * 1000).toISOString();
+        await supabase.from("google_oauth_tokens").update({
+          access_token: accessToken,
+          expires_at: newExpiresAt,
+          updated_at: new Date().toISOString(),
+        }).eq("user_id", userId);
+      } else {
+        console.error("Token refresh failed:", await refreshRes.text());
+        return new Response(
+          JSON.stringify({ error: "Google token expired. Please reconnect." }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Get sheet data (first 100 rows for profiling)
     const range = `'${sourceTab}'!A1:Z100`;
     const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}`;
     
     const sheetsResponse = await fetch(sheetsUrl, {
-      headers: { "Authorization": `Bearer ${oauthToken.access_token}` },
+      headers: { "Authorization": `Bearer ${accessToken}` },
     });
 
     if (!sheetsResponse.ok) {
+      const errBody = await sheetsResponse.text();
+      console.error("Google Sheets API error:", sheetsResponse.status, errBody);
       return new Response(
-        JSON.stringify({ error: "Failed to fetch sheet data" }),
+        JSON.stringify({ error: "Failed to fetch sheet data", details: errBody }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
