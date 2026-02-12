@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.ai-generate-insights]
 verify_jwt = false
+
+[functions.dre-sync]
+verify_jwt = false

@@ -4,7 +4,7 @@ import {
   TrendingUp, 
   TrendingDown, 
   ArrowLeftRight,
-  Scale,
+  BarChart3,
   FileText,
   Upload, 
   Settings,
@@ -37,7 +37,7 @@ const mainNavItems = [
   { title: "Receitas", url: "/income", icon: TrendingUp },
   { title: "Despesas", url: "/expenses", icon: TrendingDown },
   { title: "Fluxo de Caixa", url: "/cash-flow", icon: ArrowLeftRight },
-  { title: "Balanço Patrimonial", url: "/balance", icon: Scale },
+  { title: "DRE", url: "/dre", icon: BarChart3 },
   { title: "Previsões", url: "/forecasts", icon: LineChart },
 ];
 

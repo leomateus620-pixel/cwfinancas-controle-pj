@@ -156,6 +156,109 @@ export type Database = {
         }
         Relationships: []
       }
+      dre_mappings: {
+        Row: {
+          confidence: number
+          created_at: string
+          format_detected: string | null
+          header_signature: string | null
+          id: string
+          mapping: Json
+          sheet_id: string | null
+          tab_name: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          confidence?: number
+          created_at?: string
+          format_detected?: string | null
+          header_signature?: string | null
+          id?: string
+          mapping?: Json
+          sheet_id?: string | null
+          tab_name?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          format_detected?: string | null
+          header_signature?: string | null
+          id?: string
+          mapping?: Json
+          sheet_id?: string | null
+          tab_name?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dre_mappings_sheet_id_fkey"
+            columns: ["sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dre_values: {
+        Row: {
+          created_at: string
+          id: string
+          is_calculated: boolean
+          line_key: string
+          original_value: number | null
+          period_key: string
+          sheet_id: string | null
+          source_cell: string | null
+          source_label: string | null
+          source_tab: string | null
+          updated_at: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_calculated?: boolean
+          line_key: string
+          original_value?: number | null
+          period_key: string
+          sheet_id?: string | null
+          source_cell?: string | null
+          source_label?: string | null
+          source_tab?: string | null
+          updated_at?: string
+          user_id: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_calculated?: boolean
+          line_key?: string
+          original_value?: number | null
+          period_key?: string
+          sheet_id?: string | null
+          source_cell?: string | null
+          source_label?: string | null
+          source_tab?: string | null
+          updated_at?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dre_values_sheet_id_fkey"
+            columns: ["sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       financial_daily_aggregates: {
         Row: {
           created_at: string | null
