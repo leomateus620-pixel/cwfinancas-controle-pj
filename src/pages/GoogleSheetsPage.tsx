@@ -15,13 +15,16 @@ import {
   LogOut,
   History,
   BarChart3,
-  Settings2
+  Settings2,
+  Timer
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
 import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
+import { useSyncJobs } from "@/hooks/useSyncJobs";
 import { SpreadsheetSelectorModal } from "@/components/modals/SpreadsheetSelectorModal";
 import { SyncHistoryTable } from "@/components/sheets/SyncHistoryTable";
 import { SyncErrorList } from "@/components/sheets/SyncErrorList";
@@ -182,13 +185,15 @@ function GoogleSheetsPageContent() {
 
   const handleSync = (connection: { id: string; sheet_name: string | null; data_type: string; column_mapping: Record<string, string> }) => {
     if (connection.sheet_name === null && connection.data_type === "all_tabs") {
-      // Smart sync: use syncAllTabs for "all tabs" connections
       const monthRange = (connection.column_mapping as Record<string, unknown>)?.month_range as { from: string; to: string } | undefined;
       syncAllTabs.mutate({ connectionId: connection.id, monthRange });
     } else {
       syncData.mutate(connection.id);
     }
   };
+
+  // Job tracking for all connections
+  const { activeJob, lastJob, hasActiveJob, isJobStale } = useSyncJobs();
 
   const handleDelete = (connectionId: string) => {
     if (confirm("Tem certeza que deseja desconectar esta planilha?")) {
@@ -419,6 +424,9 @@ function GoogleSheetsPageContent() {
             const statusInfo = getStatusInfo(connection.sync_status);
             const StatusIcon = statusInfo.icon;
             const isSyncing = (syncData.isPending && syncData.variables === connection.id) || (syncAllTabs.isPending && syncAllTabs.variables?.connectionId === connection.id);
+            const jobForConnection = activeJob?.connection_id === connection.id ? activeJob : null;
+            const isJobRunning = !!jobForConnection;
+            const syncDisabled = isSyncing || isJobRunning;
 
             return (
               <Card 
@@ -459,13 +467,54 @@ function GoogleSheetsPageContent() {
                         ) : null}
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
-                            <StatusIndicator status={statusInfo.indicator} size="sm" pulse={connection.sync_status === "syncing"} />
-                            <span className={statusInfo.color}>{statusInfo.label}</span>
+                            <StatusIndicator status={statusInfo.indicator} size="sm" pulse={connection.sync_status === "syncing" || isJobRunning} />
+                            <span className={statusInfo.color}>
+                              {isJobRunning ? "Sincronizando..." : statusInfo.label}
+                            </span>
                           </span>
                           <span>
                             Última sync: {formatDate(connection.last_sync_at)}
                           </span>
                         </div>
+                        {/* Job progress indicator */}
+                        {isJobRunning && jobForConnection?.progress && (
+                          <div className="mt-3 space-y-1.5">
+                            <div className="flex items-center gap-2 text-xs text-primary">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>
+                                {jobForConnection.progress.current_tab || "Processando..."}
+                                {jobForConnection.progress.tabs_total ? ` (${jobForConnection.progress.tabs_done || 0}/${jobForConnection.progress.tabs_total} abas)` : ""}
+                              </span>
+                            </div>
+                            {(jobForConnection.progress.tabs_total || 0) > 0 && (
+                              <Progress 
+                                value={((jobForConnection.progress.tabs_done || 0) / (jobForConnection.progress.tabs_total || 1)) * 100} 
+                                className="h-1.5"
+                              />
+                            )}
+                            {(jobForConnection.progress.rows_imported || 0) > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                {jobForConnection.progress.rows_imported} linhas importadas
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        {/* Stale job warning */}
+                        {isJobStale && activeJob?.connection_id === connection.id && (
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-warning">
+                            <Timer className="w-3.5 h-3.5" />
+                            <span>Sync parece travada. Tente novamente.</span>
+                          </div>
+                        )}
+                        {/* Last job error */}
+                        {!isJobRunning && lastJob?.connection_id === connection.id && (lastJob.status === "failed" || lastJob.status === "timeout") && (
+                          <div className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            <span>
+                              {lastJob.status === "timeout" ? "Timeout na última sync" : lastJob.error_message || "Erro na última sync"}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 sm:self-start">
@@ -473,10 +522,10 @@ function GoogleSheetsPageContent() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleSync(connection)}
-                        disabled={isSyncing}
+                        disabled={syncDisabled}
                         className="gap-2 rounded-lg"
                       >
-                        {isSyncing ? (
+                        {syncDisabled ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
                           <RefreshCw className="w-4 h-4" />

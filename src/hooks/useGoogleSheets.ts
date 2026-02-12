@@ -311,14 +311,17 @@ export function useGoogleSheets() {
     },
   });
 
-  // Sync data
+  // Sync data (single tab)
   const syncData = useMutation({
     mutationFn: async (connectionId: string) => {
       const { data, error } = await supabase.functions.invoke("google-sheets-sync", {
         body: { connection_id: connectionId },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.warn("Sync request error:", error.message);
+        throw error;
+      }
       if (data.error) throw new Error(data.error);
       
       return data as SyncResult;
@@ -328,6 +331,7 @@ export function useGoogleSheets() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
       toast({
         title: "Sincronização concluída",
         description: `${data.rows_imported} linhas importadas de ${data.rows_processed} processadas.`,
@@ -335,23 +339,44 @@ export function useGoogleSheets() {
     },
     onError: (error) => {
       console.error("Sync error:", error);
-      toast({
-        title: "Erro na sincronização",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+      const msg = error instanceof Error ? error.message : "";
+      if (msg.includes("FunctionsFetchError") || msg.includes("Failed to send")) {
+        toast({
+          title: "Sincronização iniciada",
+          description: "A sincronização está em andamento. Acompanhe o progresso abaixo.",
+        });
+      } else {
+        toast({
+          title: "Erro na sincronização",
+          description: msg || "Erro desconhecido",
+          variant: "destructive",
+        });
+      }
     },
   });
 
-  // Sync all tabs (monthly transactions only)
+  // Sync all tabs (monthly transactions only) - fire-and-forget with job tracking
   const syncAllTabs = useMutation({
     mutationFn: async ({ connectionId, monthRange }: { connectionId: string; monthRange?: MonthRange }) => {
       const { data, error } = await supabase.functions.invoke("sheets-sync-all-tabs", {
         body: { connection_id: connectionId, month_range: monthRange },
       });
 
-      if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      // If we get a 409 (already_running), show specific message
+      if (error) {
+        const errorMsg = error.message || "";
+        if (errorMsg.includes("already_running") || errorMsg.includes("409")) {
+          throw new Error("already_running");
+        }
+        // Network errors (FunctionsFetchError) - the job may still be running on the server
+        console.warn("Sync request error (job may still be running):", errorMsg);
+        throw error;
+      }
+      if (data?.error === "already_running") {
+        throw new Error("already_running");
+      }
+      if (data?.error) throw new Error(data.error);
 
       return data as SyncAllTabsResult;
     },
@@ -359,18 +384,33 @@ export function useGoogleSheets() {
       queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["home-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
       toast({
         title: "Sincronização concluída",
         description: `${data.tabs_imported} aba(s) mensal(is), ${data.total_imported} linhas importadas.`,
       });
     },
     onError: (error) => {
-      console.error("Sync all tabs error:", error);
-      toast({
-        title: "Erro na sincronização",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
+      const msg = error instanceof Error ? error.message : "";
+      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+      if (msg === "already_running") {
+        toast({
+          title: "Sincronização já em andamento",
+          description: "Aguarde a sincronização atual terminar antes de iniciar outra.",
+        });
+      } else if (msg.includes("FunctionsFetchError") || msg.includes("Failed to send")) {
+        // Network error - job may still be processing server-side
+        toast({
+          title: "Sincronização iniciada",
+          description: "A sincronização está em andamento. Acompanhe o progresso abaixo.",
+        });
+      } else {
+        toast({
+          title: "Erro na sincronização",
+          description: msg || "Erro desconhecido",
+          variant: "destructive",
+        });
+      }
     },
   });
 
