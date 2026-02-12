@@ -11,63 +11,6 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-// ========== TYPES ==========
-
-interface DRESyncRequest {
-  connection_id: string;
-}
-
-interface DRELineMapping {
-  row_index: number;
-  label: string;
-  keywords_matched: string[];
-}
-
-type LineKey =
-  | "REVENUE_GROSS" | "TAXES" | "REVENUE_NET" | "COGS" | "GROSS_PROFIT"
-  | "OPEX_TOTAL" | "OPEX_ADMIN" | "OPEX_SALES" | "OPEX_PAYROLL" | "OPEX_FINANCE" | "OPEX_OTHER"
-  | "EBITDA" | "OPERATING_INCOME" | "FIN_RESULT" | "PRE_TAX_INCOME" | "IR_CSLL" | "NET_INCOME";
-
-// ========== KEYWORD MAPPINGS ==========
-
-const LINE_KEY_KEYWORDS: Record<LineKey, string[]> = {
-  REVENUE_GROSS: ["receita bruta", "faturamento", "receitas", "receita operacional bruta", "receita total", "revenue", "gross revenue"],
-  TAXES: ["impostos", "deducoes", "deduções", "iss", "icms", "pis", "cofins", "taxas sobre receita", "deducao", "deduçao", "impostos sobre receita", "tributos"],
-  REVENUE_NET: ["receita liquida", "receita líquida", "net revenue"],
-  COGS: ["custo", "cmv", "csp", "custo dos servicos", "custo dos serviços", "custo mercadoria", "cpv", "custo produto", "custo servico", "cogs"],
-  GROSS_PROFIT: ["lucro bruto", "resultado bruto", "gross profit"],
-  OPEX_ADMIN: ["administrativa", "administracao", "administração", "adm", "despesas administrativas", "despesa administrativa"],
-  OPEX_SALES: ["comercial", "marketing", "vendas", "trafego", "tráfego", "despesas comerciais", "despesa comercial", "publicidade"],
-  OPEX_PAYROLL: ["salario", "salário", "pessoal", "folha", "pro-labore", "pro labore", "prolabore", "pró-labore", "encargos", "remuneracao", "remuneração"],
-  OPEX_FINANCE: ["financeiro", "juros", "tarifas", "taxa bancaria", "taxa bancária", "despesas financeiras", "despesa financeira", "iof", "tarifa bancaria"],
-  OPEX_OTHER: ["outras", "diversas", "outras despesas", "outros", "demais despesas"],
-  OPEX_TOTAL: ["total despesas", "despesas operacionais", "total opex", "despesas totais", "total desp"],
-  EBITDA: ["ebitda", "lajida"],
-  OPERATING_INCOME: ["resultado operacional", "lucro operacional", "operating income"],
-  FIN_RESULT: ["resultado financeiro", "financial result", "receitas financeiras", "receita financeira"],
-  PRE_TAX_INCOME: ["resultado antes", "lair", "lucro antes", "pre tax"],
-  IR_CSLL: ["ir", "csll", "imposto de renda", "contribuicao social", "contribuição social", "ir/csll", "irpj"],
-  NET_INCOME: ["resultado liquido", "resultado líquido", "lucro liquido", "lucro líquido", "net income"],
-};
-
-// Subtotal keys (recalculated internally)
-const SUBTOTAL_KEYS: LineKey[] = ["REVENUE_NET", "GROSS_PROFIT", "OPEX_TOTAL", "EBITDA", "OPERATING_INCOME", "NET_INCOME"];
-
-// Month name detection for format detection
-const MONTH_PATTERNS = [
-  /^jan/i, /^fev/i, /^mar/i, /^abr/i, /^mai/i, /^jun/i,
-  /^jul/i, /^ago/i, /^set/i, /^out/i, /^nov/i, /^dez/i,
-  /^january/i, /^february/i, /^march/i, /^april/i, /^may/i, /^june/i,
-  /^july/i, /^august/i, /^september/i, /^october/i, /^november/i, /^december/i,
-];
-
-const MONTH_TO_NUM: Record<string, string> = {
-  jan: "01", fev: "02", mar: "03", abr: "04", mai: "05", jun: "06",
-  jul: "07", ago: "08", set: "09", out: "10", nov: "11", dez: "12",
-  january: "01", february: "02", march: "03", april: "04", may: "05", june: "06",
-  july: "07", august: "08", september: "09", october: "10", november: "11", december: "12",
-};
-
 // ========== HELPERS ==========
 
 function normalize(text: string): string {
@@ -79,10 +22,9 @@ function parseBRL(value: string | number | null | undefined): number | null {
   if (typeof value === "number") return isNaN(value) ? null : value;
   let str = String(value).trim();
   if (!str) return null;
-  // Reject dates
   if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
-  
+
   str = str.replace(/[R$¤€£¥a-zA-Z]/gi, "");
   str = str.replace(/[\u00A0\u2007\u202F\u200B\uFEFF]/g, "");
   str = str.replace(/\s+/g, "");
@@ -135,53 +77,6 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
   return { access_token: data.access_token, expires_at: expiresAt };
 }
 
-function detectDRETab(sheetTitles: string[]): string | null {
-  const dreKeywords = ["dre", "demonstracao", "demonstração", "resultado"];
-  for (const title of sheetTitles) {
-    const norm = normalize(title);
-    if (dreKeywords.some(k => norm.includes(k))) return title;
-  }
-  return null;
-}
-
-function isMonthHeader(val: string): boolean {
-  const norm = normalize(val);
-  return MONTH_PATTERNS.some(p => p.test(norm));
-}
-
-function extractPeriodKey(header: string): string {
-  const norm = normalize(header);
-  // "jan/2026" or "jan 2026" or "janeiro 2026"
-  const match = norm.match(/([a-z]+)[\s\/\-]*(\d{4})/);
-  if (match) {
-    const monthKey = Object.keys(MONTH_TO_NUM).find(m => norm.startsWith(m));
-    if (monthKey) return `${match[2]}-${MONTH_TO_NUM[monthKey]}`;
-  }
-  // "jan/26"
-  const match2 = norm.match(/([a-z]+)[\s\/\-]*(\d{2})$/);
-  if (match2) {
-    const monthKey = Object.keys(MONTH_TO_NUM).find(m => norm.startsWith(m));
-    if (monthKey) {
-      const year = parseInt(match2[2]) > 50 ? `19${match2[2]}` : `20${match2[2]}`;
-      return `${year}-${MONTH_TO_NUM[monthKey]}`;
-    }
-  }
-  // Fallback: use the header text cleaned
-  return norm.replace(/\s+/g, "_");
-}
-
-function matchLineKey(label: string): { key: LineKey; keywords: string[] } | null {
-  const norm = normalize(label);
-  for (const [key, keywords] of Object.entries(LINE_KEY_KEYWORDS)) {
-    const matched = keywords.filter(k => {
-      const kNorm = normalize(k);
-      return norm.includes(kNorm) || norm === kNorm;
-    });
-    if (matched.length > 0) return { key: key as LineKey, keywords: matched };
-  }
-  return null;
-}
-
 function colToLetter(col: number): string {
   let result = "";
   let c = col;
@@ -190,6 +85,105 @@ function colToLetter(col: number): string {
     c = Math.floor(c / 26) - 1;
   }
   return result;
+}
+
+// ========== MONTH DETECTION ==========
+
+const MONTH_ABBREVS: Record<string, string> = {
+  jan: "01", fev: "02", mar: "03", abr: "04", mai: "05", jun: "06",
+  jul: "07", ago: "08", set: "09", out: "10", nov: "11", dez: "12",
+  january: "01", february: "02", march: "03", april: "04", may: "05", june: "06",
+  july: "07", august: "08", september: "09", october: "10", november: "11", december: "12",
+};
+
+function parseMonthHeader(raw: string): { periodKey: string; label: string } | null {
+  const label = raw.trim();
+  if (!label) return null;
+  const norm = normalize(label);
+
+  // Check if it's "TOTAL"
+  if (norm === "total") return { periodKey: "TOTAL", label };
+
+  // Pattern: "abr./25", "abr/25", "abr./2025", "mai/2025"
+  const m1 = norm.match(/^([a-z]{3,})\.?\s*[\/\-]\s*(\d{2,4})$/);
+  if (m1) {
+    const monthNum = MONTH_ABBREVS[m1[1]];
+    if (monthNum) {
+      const year = m1[2].length === 2 ? (parseInt(m1[2]) > 50 ? `19${m1[2]}` : `20${m1[2]}`) : m1[2];
+      return { periodKey: `${year}-${monthNum}`, label };
+    }
+  }
+
+  // Pattern: "04/2025" or "04/25"
+  const m2 = norm.match(/^(\d{1,2})[\/\-](\d{2,4})$/);
+  if (m2) {
+    const month = m2[1].padStart(2, "0");
+    const year = m2[2].length === 2 ? (parseInt(m2[2]) > 50 ? `19${m2[2]}` : `20${m2[2]}`) : m2[2];
+    if (parseInt(month) >= 1 && parseInt(month) <= 12) {
+      return { periodKey: `${year}-${month}`, label };
+    }
+  }
+
+  // Excel serial date number (days since 1900-01-01)
+  const serial = parseFloat(norm);
+  if (!isNaN(serial) && serial > 40000 && serial < 60000) {
+    const date = new Date((serial - 25569) * 86400000);
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+    return { periodKey: `${y}-${m}`, label };
+  }
+
+  // ISO date "2025-04-01"
+  const m3 = norm.match(/^(\d{4})-(\d{2})-\d{2}$/);
+  if (m3) {
+    return { periodKey: `${m3[1]}-${m3[2]}`, label };
+  }
+
+  // Bare month abbreviation without year (skip, ambiguous)
+  return null;
+}
+
+function looksLikeMonthOrDate(val: string): boolean {
+  return parseMonthHeader(val) !== null;
+}
+
+// ========== SUBTOTAL DETECTION ==========
+
+const SUBTOTAL_KEYWORDS = [
+  "receita liquida", "resultado", "despesas totais", "lucro bruto",
+  "ebitda", "resultado mes", "resultado do mes", "total despesas",
+  "resultado operacional", "resultado liquido", "lucro liquido",
+  "total geral", "resultado final",
+];
+
+function isSubtotalLabel(label: string): boolean {
+  const norm = normalize(label);
+  return SUBTOTAL_KEYWORDS.some(kw => norm.includes(kw));
+}
+
+function isGroupLabel(label: string): boolean {
+  const trimmed = label.trim();
+  if (!trimmed) return false;
+  // All uppercase (at least 3 chars, ignoring spaces/special)
+  const letters = trimmed.replace(/[^a-zA-ZÀ-ÿ]/g, "");
+  if (letters.length >= 3 && letters === letters.toUpperCase()) return true;
+  return false;
+}
+
+// ========== DRE TAB DETECTION ==========
+
+function detectDRETab(sheetTitles: string[]): string | null {
+  // Exact match first
+  for (const title of sheetTitles) {
+    if (title.trim().toUpperCase() === "DRE") return title;
+  }
+  // Fuzzy match
+  const dreKeywords = ["dre", "demonstracao", "demonstração", "resultado"];
+  for (const title of sheetTitles) {
+    const norm = normalize(title);
+    if (dreKeywords.some(k => norm.includes(k))) return title;
+  }
+  return null;
 }
 
 // ========== MAIN ==========
@@ -202,20 +196,23 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const userId = userData.user.id;
-    const body: DRESyncRequest = await req.json();
+    const body = await req.json();
     const { connection_id } = body;
-
     if (!connection_id) throw new Error("connection_id is required");
 
     // 1. Get connection
@@ -225,7 +222,6 @@ Deno.serve(async (req) => {
       .eq("id", connection_id)
       .eq("user_id", userId)
       .single();
-
     if (connError || !connection) throw new Error("Connection not found");
 
     // 2. Refresh token if needed
@@ -240,7 +236,7 @@ Deno.serve(async (req) => {
       }).eq("id", connection_id);
     }
 
-    // 3. Get spreadsheet metadata (list of tabs)
+    // 3. Get spreadsheet metadata
     const metaRes = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=sheets.properties.title`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -253,8 +249,7 @@ Deno.serve(async (req) => {
     const dreTab = detectDRETab(sheetTitles);
     if (!dreTab) {
       return new Response(JSON.stringify({
-        success: false,
-        found: false,
+        success: false, found: false,
         message: "Aba DRE não encontrada na planilha. Crie uma aba chamada 'DRE' com os dados do demonstrativo.",
         available_tabs: sheetTitles,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -272,171 +267,271 @@ Deno.serve(async (req) => {
 
     if (rows.length < 2) {
       return new Response(JSON.stringify({
-        success: false,
-        found: true,
+        success: false, found: true,
         message: "Aba DRE encontrada mas está vazia ou com dados insuficientes.",
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // 6. Detect format
-    const headerRow = rows[0];
-    const nonLabelHeaders = headerRow.slice(1).filter(h => h && h.trim());
-    const monthColumns = nonLabelHeaders.filter(h => isMonthHeader(h));
-    const isColumnsByMonth = monthColumns.length >= 1;
-    const formatDetected = isColumnsByMonth ? "columns_by_month" : "block_summary";
+    // 6. Detect header row (first row with 3+ consecutive month-like values from col B onwards)
+    let headerRowIndex = -1;
+    let monthCols: Array<{ colIndex: number; periodKey: string; label: string }> = [];
+    let totalColIndex = -1;
 
-    console.log(`Format detected: ${formatDetected}, month columns: ${monthColumns.length}`);
+    for (let rowIdx = 0; rowIdx < Math.min(rows.length, 10); rowIdx++) {
+      const row = rows[rowIdx];
+      const candidates: Array<{ colIndex: number; periodKey: string; label: string }> = [];
+      let foundTotal = -1;
 
-    // 7. Map rows to line keys
-    const rowMappings: Map<number, { key: LineKey; label: string; keywords: string[] }> = new Map();
-    for (let i = 0; i < rows.length; i++) {
-      const label = rows[i][0];
-      if (!label || !label.trim()) continue;
-      const match = matchLineKey(label);
-      if (match) {
-        // Don't overwrite if already mapped (first match wins)
-        const alreadyMapped = Array.from(rowMappings.values()).some(m => m.key === match.key);
-        if (!alreadyMapped) {
-          rowMappings.set(i, { key: match.key, label: label.trim(), keywords: match.keywords });
+      for (let colIdx = 1; colIdx < row.length; colIdx++) {
+        const val = row[colIdx];
+        if (!val || !val.trim()) continue;
+
+        if (normalize(val) === "total") {
+          foundTotal = colIdx;
+          continue;
         }
+
+        const parsed = parseMonthHeader(val);
+        if (parsed && parsed.periodKey !== "TOTAL") {
+          candidates.push({ colIndex: colIdx, periodKey: parsed.periodKey, label: parsed.label });
+        }
+      }
+
+      if (candidates.length >= 2) {
+        headerRowIndex = rowIdx;
+        monthCols = candidates;
+        totalColIndex = foundTotal;
+        break;
       }
     }
 
-    console.log(`Mapped ${rowMappings.size} DRE lines`);
+    if (headerRowIndex === -1) {
+      return new Response(JSON.stringify({
+        success: false, found: true,
+        message: "Não foi possível detectar o header de meses na aba DRE. Verifique se existem colunas com meses (ex: abr./25, mai./25).",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
-    // 8. Build header signature for cache
-    const headerSignature = headerRow.join("|").substring(0, 200);
+    console.log(`Header found at row ${headerRowIndex + 1}, ${monthCols.length} month columns, total col: ${totalColIndex >= 0 ? colToLetter(totalColIndex) : 'none'}`);
 
-    // 9. Extract values per period
-    const dreRecords: Array<{
-      period_key: string;
-      line_key: LineKey;
-      value: number;
-      source_tab: string;
-      source_cell: string;
-      source_label: string;
-      is_calculated: boolean;
-      original_value: number | null;
-    }> = [];
+    // 7. Parse all data rows below header
+    interface ParsedLine {
+      label: string;
+      rowIndex: number;
+      isGroup: boolean;
+      isSubtotal: boolean;
+      groupLabel: string | null;
+      values: Map<number, number>; // colIndex -> value
+    }
 
-    if (isColumnsByMonth) {
-      // Format 1: columns by month
-      for (let colIdx = 1; colIdx < headerRow.length; colIdx++) {
-        const colHeader = headerRow[colIdx];
-        if (!colHeader || !colHeader.trim()) continue;
-        if (!isMonthHeader(colHeader)) continue;
-        
-        const periodKey = extractPeriodKey(colHeader);
-        const periodValues: Partial<Record<LineKey, number>> = {};
-        const periodOriginals: Partial<Record<LineKey, number | null>> = {};
+    const parsedLines: ParsedLine[] = [];
+    let currentGroup: string | null = null;
+    const allValueCols = [...monthCols.map(m => m.colIndex)];
+    if (totalColIndex >= 0) allValueCols.push(totalColIndex);
 
-        // Extract base values
-        for (const [rowIdx, mapping] of rowMappings.entries()) {
-          const cellValue = rows[rowIdx]?.[colIdx];
-          const parsed = parseBRL(cellValue);
-          if (parsed !== null) {
-            periodValues[mapping.key] = parsed;
-            const cellRef = `${dreTab}!${colToLetter(colIdx)}${rowIdx + 1}`;
-            dreRecords.push({
-              period_key: periodKey,
-              line_key: mapping.key,
-              value: parsed,
-              source_tab: dreTab,
-              source_cell: cellRef,
-              source_label: mapping.label,
-              is_calculated: false,
-              original_value: null,
-            });
-          }
-        }
+    for (let rowIdx = headerRowIndex + 1; rowIdx < rows.length; rowIdx++) {
+      const row = rows[rowIdx];
+      const label = row?.[0]?.trim() || "";
 
-        // Recalculate subtotals
-        addCalculatedSubtotals(periodValues, periodOriginals, dreRecords, periodKey, dreTab);
+      // Empty label => ignore (subtotal duplicate)
+      if (!label) continue;
+
+      const isGroup = isGroupLabel(label);
+      const isSubtotal = isSubtotalLabel(label);
+
+      if (isGroup) {
+        currentGroup = label;
       }
-    } else {
-      // Format 2: block summary (column A = label, column B = value)
-      const periodKey = "summary";
-      const periodValues: Partial<Record<LineKey, number>> = {};
-      const periodOriginals: Partial<Record<LineKey, number | null>> = {};
 
-      for (const [rowIdx, mapping] of rowMappings.entries()) {
-        const cellValue = rows[rowIdx]?.[1];
-        const parsed = parseBRL(cellValue);
+      // Extract numeric values from all month + total columns
+      const values = new Map<number, number>();
+      let hasAnyValue = false;
+
+      for (const colIdx of allValueCols) {
+        const cellVal = row?.[colIdx];
+        const parsed = parseBRL(cellVal);
         if (parsed !== null) {
-          periodValues[mapping.key] = parsed;
-          const cellRef = `${dreTab}!B${rowIdx + 1}`;
-          dreRecords.push({
-            period_key: periodKey,
-            line_key: mapping.key,
-            value: parsed,
-            source_tab: dreTab,
-            source_cell: cellRef,
-            source_label: mapping.label,
-            is_calculated: false,
-            original_value: null,
-          });
+          values.set(colIdx, parsed);
+          hasAnyValue = true;
         }
       }
 
-      addCalculatedSubtotals(periodValues, periodOriginals, dreRecords, periodKey, dreTab);
+      // Only save if at least one numeric value exists
+      if (!hasAnyValue && !isGroup) continue;
+
+      parsedLines.push({
+        label,
+        rowIndex: rowIdx,
+        isGroup,
+        isSubtotal,
+        groupLabel: isGroup ? label : currentGroup,
+        values,
+      });
     }
 
-    // 10. UPSERT dre_values
-    if (dreRecords.length > 0) {
-      const upsertData = dreRecords.map(r => ({
-        user_id: userId,
-        sheet_id: connection_id,
-        period_key: r.period_key,
-        line_key: r.line_key,
-        value: r.value,
-        source_tab: r.source_tab,
-        source_cell: r.source_cell,
-        source_label: r.source_label,
-        is_calculated: r.is_calculated,
-        original_value: r.original_value,
-      }));
+    console.log(`Parsed ${parsedLines.length} valid lines`);
 
-      const { error: upsertError } = await supabase
-        .from("dre_values")
-        .upsert(upsertData, { onConflict: "user_id,sheet_id,period_key,line_key" });
-
-      if (upsertError) {
-        console.error("UPSERT error:", upsertError);
-        throw new Error(`Failed to save DRE values: ${upsertError.message}`);
-      }
+    // 8. Build period columns (months + TOTAL)
+    const periodColumns: Array<{ colIndex: number; periodKey: string; periodLabel: string }> = [
+      ...monthCols.map(m => ({ colIndex: m.colIndex, periodKey: m.periodKey, periodLabel: m.label })),
+    ];
+    if (totalColIndex >= 0) {
+      periodColumns.push({ colIndex: totalColIndex, periodKey: "TOTAL", periodLabel: "TOTAL" });
     }
 
-    // 11. Save mapping cache
-    const mappingData: Record<string, DRELineMapping> = {};
-    for (const [rowIdx, mapping] of rowMappings.entries()) {
-      mappingData[mapping.key] = {
-        row_index: rowIdx,
-        label: mapping.label,
-        keywords_matched: mapping.keywords,
-      };
+    // 9. Delete old data and insert new
+    // Delete old dre_lines first (cascade from dre_periods), then dre_periods
+    const { data: oldPeriods } = await supabase
+      .from("dre_periods")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("sheet_id", connection_id);
+
+    if (oldPeriods && oldPeriods.length > 0) {
+      const oldPeriodIds = oldPeriods.map(p => p.id);
+      await supabase.from("dre_lines").delete().in("period_id", oldPeriodIds);
+      await supabase.from("dre_periods").delete().eq("user_id", userId).eq("sheet_id", connection_id);
     }
 
-    await supabase.from("dre_mappings").upsert({
+    // 10. Insert dre_periods
+    const periodInserts = periodColumns.map((pc, idx) => ({
       user_id: userId,
       sheet_id: connection_id,
-      tab_name: dreTab,
-      header_signature: headerSignature,
-      mapping: mappingData,
-      format_detected: formatDetected,
-      confidence: rowMappings.size / Object.keys(LINE_KEY_KEYWORDS).length,
-    }, { onConflict: "user_id,sheet_id,header_signature" });
+      period_key: pc.periodKey,
+      period_label: pc.periodLabel,
+      col_index: pc.colIndex,
+      validation_status: "ok",
+      validation_notes: [],
+      last_import_at: new Date().toISOString(),
+    }));
 
-    // 12. Return result
-    const periods = [...new Set(dreRecords.map(r => r.period_key))];
+    const { data: insertedPeriods, error: periodError } = await supabase
+      .from("dre_periods")
+      .insert(periodInserts)
+      .select("id, period_key, col_index");
+
+    if (periodError) throw new Error(`Failed to insert periods: ${periodError.message}`);
+
+    const periodMap = new Map<string, { id: string; colIndex: number }>();
+    for (const p of insertedPeriods || []) {
+      periodMap.set(p.period_key, { id: p.id, colIndex: p.col_index });
+    }
+
+    // 11. Insert dre_lines (one per line per period)
+    const lineInserts: Array<{
+      period_id: string;
+      user_id: string;
+      group_label: string | null;
+      line_label: string;
+      value: number;
+      source_cell: string;
+      source_tab: string;
+      order_index: number;
+      is_group: boolean;
+      is_subtotal: boolean;
+    }> = [];
+
+    for (let lineIdx = 0; lineIdx < parsedLines.length; lineIdx++) {
+      const line = parsedLines[lineIdx];
+
+      for (const [pKey, pData] of periodMap.entries()) {
+        const colIdx = pData.colIndex;
+        const val = line.values.get(colIdx);
+
+        // For group headers without values, still insert with value 0 to preserve structure
+        const finalValue = val ?? 0;
+
+        // Skip non-group lines with no value for this period
+        if (!line.isGroup && val === undefined) continue;
+
+        const cellRef = `${dreTab}!${colToLetter(colIdx)}${line.rowIndex + 1}`;
+
+        lineInserts.push({
+          period_id: pData.id,
+          user_id: userId,
+          group_label: line.groupLabel,
+          line_label: line.label,
+          value: finalValue,
+          source_cell: cellRef,
+          source_tab: dreTab,
+          order_index: lineIdx,
+          is_group: line.isGroup,
+          is_subtotal: line.isSubtotal,
+        });
+      }
+    }
+
+    // Insert in batches of 500
+    const BATCH_SIZE = 500;
+    let totalInserted = 0;
+    for (let i = 0; i < lineInserts.length; i += BATCH_SIZE) {
+      const batch = lineInserts.slice(i, i + BATCH_SIZE);
+      const { error: lineError } = await supabase.from("dre_lines").insert(batch);
+      if (lineError) throw new Error(`Failed to insert lines batch: ${lineError.message}`);
+      totalInserted += batch.length;
+    }
+
+    // 12. Validation: check consistency for each period
+    const validationUpdates: Array<{ periodId: string; status: string; notes: string[] }> = [];
+
+    for (const [pKey, pData] of periodMap.entries()) {
+      const periodLines = lineInserts.filter(l => l.period_id === pData.id && !l.is_group);
+      const notes: string[] = [];
+
+      // Find subtotals and group items
+      const getGroupItems = (groupNorm: string) =>
+        periodLines.filter(l => l.group_label && normalize(l.group_label).includes(groupNorm) && !l.is_subtotal && !l.is_group);
+
+      const getSubtotal = (keyword: string) =>
+        periodLines.find(l => l.is_subtotal && normalize(l.line_label).includes(keyword));
+
+      // Check: RECEITA LIQUIDA ~= items in FATURAMENTO + items in DEDUCOES
+      const faturamentoItems = getGroupItems("faturamento");
+      const deducoesItems = getGroupItems("deducoe");
+      const recLiqSubtotal = getSubtotal("receita liquida");
+
+      if (faturamentoItems.length > 0 && recLiqSubtotal) {
+        const sumFat = faturamentoItems.reduce((s, l) => s + l.value, 0);
+        const sumDed = deducoesItems.reduce((s, l) => s + l.value, 0);
+        const expected = sumFat + sumDed;
+        if (Math.abs(recLiqSubtotal.value - expected) > 0.01) {
+          notes.push(`Receita Líquida diverge: planilha=${recLiqSubtotal.value}, calculado=${expected.toFixed(2)}`);
+        }
+      }
+
+      // Check: DESPESAS TOTAIS ~= sum of items in DESPESAS
+      const despesasItems = getGroupItems("despesa");
+      const despTotalSubtotal = getSubtotal("despesas totais") || getSubtotal("total despesas");
+
+      if (despesasItems.length > 0 && despTotalSubtotal) {
+        const sumDesp = despesasItems.reduce((s, l) => s + l.value, 0);
+        if (Math.abs(despTotalSubtotal.value - sumDesp) > 0.01) {
+          notes.push(`Despesas Totais diverge: planilha=${despTotalSubtotal.value}, calculado=${sumDesp.toFixed(2)}`);
+        }
+      }
+
+      if (notes.length > 0) {
+        validationUpdates.push({ periodId: pData.id, status: "warning", notes });
+      }
+    }
+
+    for (const vu of validationUpdates) {
+      await supabase.from("dre_periods").update({
+        validation_status: vu.status,
+        validation_notes: vu.notes,
+      }).eq("id", vu.periodId);
+    }
+
+    console.log(`Import complete: ${periodColumns.length} periods, ${totalInserted} lines`);
+
     return new Response(JSON.stringify({
       success: true,
       found: true,
       tab_name: dreTab,
-      format: formatDetected,
-      periods,
-      lines_mapped: rowMappings.size,
-      values_saved: dreRecords.length,
-      mapping: mappingData,
+      periods_count: periodColumns.length,
+      lines_count: totalInserted,
+      periods: periodColumns.map(p => p.periodKey),
+      warnings: validationUpdates.length,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error) {
@@ -447,75 +542,3 @@ Deno.serve(async (req) => {
     }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
-
-// ========== SUBTOTAL CALCULATION ==========
-
-function addCalculatedSubtotals(
-  periodValues: Partial<Record<LineKey, number>>,
-  periodOriginals: Partial<Record<LineKey, number | null>>,
-  dreRecords: Array<{
-    period_key: string; line_key: LineKey; value: number;
-    source_tab: string; source_cell: string; source_label: string;
-    is_calculated: boolean; original_value: number | null;
-  }>,
-  periodKey: string,
-  dreTab: string,
-) {
-  const v = (key: LineKey) => periodValues[key] ?? 0;
-
-  const calculations: Array<{ key: LineKey; calc: () => number; label: string }> = [
-    { key: "REVENUE_NET", calc: () => v("REVENUE_GROSS") - Math.abs(v("TAXES")), label: "Receita Líquida (calculado)" },
-    { key: "GROSS_PROFIT", calc: () => {
-      const revNet = periodValues["REVENUE_NET"] ?? (v("REVENUE_GROSS") - Math.abs(v("TAXES")));
-      return revNet - Math.abs(v("COGS"));
-    }, label: "Lucro Bruto (calculado)" },
-    { key: "OPEX_TOTAL", calc: () => -(Math.abs(v("OPEX_ADMIN")) + Math.abs(v("OPEX_SALES")) + Math.abs(v("OPEX_PAYROLL")) + Math.abs(v("OPEX_FINANCE")) + Math.abs(v("OPEX_OTHER"))), label: "Total Despesas Operacionais (calculado)" },
-    { key: "EBITDA", calc: () => {
-      const gp = periodValues["GROSS_PROFIT"] ?? (
-        (periodValues["REVENUE_NET"] ?? (v("REVENUE_GROSS") - Math.abs(v("TAXES")))) - Math.abs(v("COGS"))
-      );
-      const opex = Math.abs(v("OPEX_ADMIN")) + Math.abs(v("OPEX_SALES")) + Math.abs(v("OPEX_PAYROLL")) + Math.abs(v("OPEX_FINANCE")) + Math.abs(v("OPEX_OTHER"));
-      return gp - opex;
-    }, label: "EBITDA (calculado)" },
-    { key: "OPERATING_INCOME", calc: () => {
-      return periodValues["EBITDA"] ?? v("EBITDA");
-    }, label: "Resultado Operacional (calculado)" },
-    { key: "NET_INCOME", calc: () => {
-      const opInc = periodValues["OPERATING_INCOME"] ?? periodValues["EBITDA"] ?? v("EBITDA");
-      return opInc + v("FIN_RESULT") - Math.abs(v("IR_CSLL"));
-    }, label: "Resultado Líquido (calculado)" },
-  ];
-
-  for (const { key, calc, label } of calculations) {
-    const calculated = calc();
-    const existing = periodValues[key];
-    // Only add if not already present as a direct read, or if present, validate
-    const existingRecord = dreRecords.find(r => r.period_key === periodKey && r.line_key === key && !r.is_calculated);
-
-    if (existingRecord) {
-      // Compare with calculation
-      const tolerance = Math.max(Math.abs(calculated) * 0.01, 1); // 1% or R$1
-      if (Math.abs(existingRecord.value - calculated) > tolerance) {
-        // Mark as recalculated, store original
-        existingRecord.is_calculated = true;
-        existingRecord.original_value = existingRecord.value;
-        existingRecord.value = calculated;
-        existingRecord.source_label += " [recalculado]";
-      }
-      periodValues[key] = existingRecord.value;
-    } else {
-      // Add calculated value
-      periodValues[key] = calculated;
-      dreRecords.push({
-        period_key: periodKey,
-        line_key: key,
-        value: calculated,
-        source_tab: dreTab,
-        source_cell: "calculado",
-        source_label: label,
-        is_calculated: true,
-        original_value: null,
-      });
-    }
-  }
-}
