@@ -1,191 +1,181 @@
 
 
-# DRE - Demonstracao do Resultado do Exercicio
+# Reimplementacao do Importador e Pagina DRE
 
-## Visao Geral
+## Problema com a implementacao atual
 
-Substituir o menu "Balanco Patrimonial" por uma pagina de DRE completa, alimentada exclusivamente pela aba "DRE" da planilha Google Sheets do cliente. Inclui importador especializado, validacao de consistencia matematica, rastreabilidade de origem (aba/celula), e UI com KPIs + tabela estruturada.
+A edge function `dre-sync` atual usa um sistema rigido de **keyword matching** com `LineKey` enums fixos (REVENUE_GROSS, TAXES, COGS, etc.). Isso significa que:
+- Linhas da planilha que nao correspondem a nenhuma keyword sao **ignoradas**
+- A hierarquia real da planilha (secoes/grupos) e **perdida**
+- Nao suporta a coluna **TOTAL**
+- Linhas com label vazio nao sao tratadas como "subtotal duplicado"
 
-## Arquitetura
+O usuario quer um importador que leia **100% das linhas validas** preservando a estrutura original.
+
+## Nova Arquitetura
 
 ```text
 +------------------+       +-------------------+       +------------------+
 | Google Sheets    |       | Edge Function     |       | Supabase DB      |
-| Aba "DRE"        | ----> | dre-sync          | ----> | dre_values       |
-| (auto-detect)   |       | (parse + validate)|       | dre_mappings     |
+| Aba "DRE"        | ----> | dre-sync (v2)     | ----> | dre_periods      |
+| (auto-detect)   |       | (generic parser)  |       | dre_lines        |
 +------------------+       +-------------------+       +------------------+
                                                               |
                                                               v
                                                        +------------------+
                                                        | Frontend         |
-                                                       | DREPage.tsx      |
-                                                       | useDRE.ts        |
+                                                       | DREPage.tsx (v2) |
+                                                       | useDRE.ts (v2)   |
                                                        +------------------+
 ```
 
-## Entregaveis (6 blocos)
+## Bloco 1 -- Novo Schema (migracao SQL)
 
-### Bloco 1 -- Banco de Dados (migracoes)
+Criar duas novas tabelas e manter as antigas (para nao quebrar nada durante transicao):
 
-**Tabela `dre_values`:**
-- `id` uuid PK
+**Tabela `dre_periods`:**
+- `id` uuid PK default gen_random_uuid()
 - `user_id` uuid NOT NULL
-- `sheet_id` uuid (referencia a `google_sheet_connections.id`)
-- `period_key` text (ex: "2026-01", "2025")
-- `line_key` text NOT NULL (enum logico: REVENUE_GROSS, TAXES, REVENUE_NET, COGS, GROSS_PROFIT, OPEX_TOTAL, OPEX_ADMIN, OPEX_SALES, OPEX_PAYROLL, OPEX_FINANCE, OPEX_OTHER, EBITDA, OPERATING_INCOME, FIN_RESULT, PRE_TAX_INCOME, IR_CSLL, NET_INCOME)
-- `value` numeric NOT NULL
-- `source_tab` text
-- `source_cell` text (ex: "DRE!C12")
-- `source_label` text (texto original da linha encontrada)
-- `is_calculated` boolean DEFAULT false (se foi recalculado internamente)
-- `original_value` numeric (valor original da planilha, para comparacao)
-- `created_at` / `updated_at`
-- UNIQUE(user_id, sheet_id, period_key, line_key)
+- `sheet_id` uuid (FK -> google_sheet_connections.id)
+- `period_key` text NOT NULL (ex: '2025-04', '2025-05', 'TOTAL')
+- `period_label` text (label original do header, ex: 'abr./25')
+- `col_index` integer (indice da coluna na planilha)
+- `validation_status` text DEFAULT 'ok' (valores: 'ok', 'warning', 'missing')
+- `validation_notes` jsonb DEFAULT '[]'
+- `last_import_at` timestamptz DEFAULT now()
+- `created_at` timestamptz DEFAULT now()
+- `updated_at` timestamptz DEFAULT now()
+- UNIQUE(user_id, sheet_id, period_key)
 
-**Tabela `dre_mappings`:**
-- `id` uuid PK
+**Tabela `dre_lines`:**
+- `id` uuid PK default gen_random_uuid()
+- `period_id` uuid NOT NULL (FK -> dre_periods.id ON DELETE CASCADE)
 - `user_id` uuid NOT NULL
-- `sheet_id` uuid
-- `tab_name` text
-- `header_signature` text
-- `mapping` jsonb (line_key -> {row_index, label, keywords_matched})
-- `format_detected` text ("columns_by_month" ou "block_summary")
-- `confidence` numeric DEFAULT 0.5
-- `created_at` / `updated_at`
-- UNIQUE(user_id, sheet_id, header_signature)
+- `group_label` text (ex: 'FATURAMENTO', 'DEDUCOES', 'DESPESAS TOTAIS')
+- `line_label` text NOT NULL (ex: 'Receita', 'Simples Nacional', 'Aluguel')
+- `value` numeric NOT NULL DEFAULT 0
+- `source_cell` text (ex: 'DRE!C12')
+- `source_tab` text DEFAULT 'DRE'
+- `order_index` integer NOT NULL (manter ordem do Excel)
+- `is_group` boolean DEFAULT false (true = linha de secao/header)
+- `is_subtotal` boolean DEFAULT false (true = linha reconhecida como subtotal)
+- `created_at` timestamptz DEFAULT now()
+- `updated_at` timestamptz DEFAULT now()
 
-**RLS:** Ambas com politicas user_id = auth.uid() para SELECT, INSERT, UPDATE, DELETE.
+**RLS:** Ambas com politicas `user_id = auth.uid()` para SELECT, INSERT, UPDATE, DELETE.
 
-### Bloco 2 -- Edge Function `dre-sync`
+**Indice:** `CREATE INDEX idx_dre_lines_period ON dre_lines(period_id)`.
 
-Nova funcao em `supabase/functions/dre-sync/index.ts`.
+## Bloco 2 -- Edge Function `dre-sync` (reescrita completa)
 
-**Fluxo:**
-1. Recebe `connection_id` (da planilha conectada)
-2. Busca a conexao e tokens OAuth (refresh se necessario, reutiliza logica existente)
-3. Busca metadata da spreadsheet (lista de abas)
-4. Auto-detect da aba DRE: procura abas com nomes ["DRE","dre","Demonstracao","Resultado","DRE 2025","DRE 2026"] (case-insensitive, sem acentos)
-5. Se nao encontrar: retorna `{ found: false, message: "Aba DRE nao encontrada" }`
-6. Le toda a aba DRE (A1:Z200)
-7. Detecta formato:
-   - **Formato 1 (colunas por mes):** primeira linha/coluna tem labels, colunas subsequentes tem meses
-   - **Formato 2 (bloco resumo):** labels e valores em pares (coluna A = label, coluna B = valor)
-8. Mapeia cada linha por palavras-chave (case/acento insensitive):
-   - REVENUE_GROSS: ["receita bruta","faturamento","receitas","receita operacional bruta"]
-   - TAXES: ["impostos","deducoes","iss","icms","pis","cofins","taxas sobre receita","deducao"]
-   - COGS: ["custo","cmv","csp","custo dos servicos","custo mercadoria","cpv"]
-   - OPEX_ADMIN: ["administrativa","administracao","adm","despesas administrativas"]
-   - OPEX_SALES: ["comercial","marketing","vendas","trafego","despesas comerciais"]
-   - OPEX_PAYROLL: ["salario","pessoal","folha","pro-labore","pro labore","prolabore"]
-   - OPEX_FINANCE: ["financeiro","juros","tarifas","taxa bancaria","despesas financeiras"]
-   - OPEX_OTHER: ["outras","diversas","outras despesas"]
-   - (tambem aceita subtotais prontos: REVENUE_NET, GROSS_PROFIT, EBITDA, etc.)
-9. Para cada periodo (coluna-mes ou bloco):
-   - Extrai valores base usando `parseBRL` (reutiliza logica existente)
-   - Recalcula subtotais internamente:
-     - REVENUE_NET = REVENUE_GROSS - TAXES
-     - GROSS_PROFIT = REVENUE_NET - COGS
-     - OPEX_TOTAL = soma(OPEX_ADMIN + OPEX_SALES + OPEX_PAYROLL + OPEX_FINANCE + OPEX_OTHER)
-     - EBITDA = GROSS_PROFIT - OPEX_TOTAL
-     - OPERATING_INCOME = EBITDA (ajustado se houver depreciacao)
-     - NET_INCOME = OPERATING_INCOME + FIN_RESULT - IR_CSLL
-   - Compara com valores informados na planilha; se divergir, armazena `is_calculated=true` e `original_value`
-10. UPSERT em `dre_values` (chave: user_id + sheet_id + period_key + line_key)
-11. Salva/atualiza `dre_mappings` com cache do mapeamento
-12. Retorna resultado detalhado
+Reescrever `supabase/functions/dre-sync/index.ts` com logica generica:
 
-**Rastreabilidade:** cada valor salvo inclui `source_tab` (ex: "DRE"), `source_cell` (ex: "DRE!C12"), `source_label` (ex: "Receita Bruta de Servicos").
+**Fluxo detalhado:**
 
-### Bloco 3 -- Hook `useDRE.ts`
+1. Receber `connection_id`
+2. Buscar conexao + refresh token (reutilizar logica existente)
+3. Listar abas da planilha e encontrar aba "DRE" (busca exata primeiro, depois fuzzy)
+4. Ler aba inteira (A1:Z200)
 
-Novo hook em `src/hooks/useDRE.ts`:
-- Query `dre_values` filtrado por user_id, sheet_id, period_key
-- Query `dre_mappings` para saber se ja tem cache
-- Mutation `syncDRE` que chama a edge function `dre-sync`
-- Calculos de margens no frontend (redundancia de seguranca):
-  - Margem Bruta = GROSS_PROFIT / REVENUE_NET
-  - Margem EBITDA = EBITDA / REVENUE_NET
-  - Margem Liquida = NET_INCOME / REVENUE_NET
-  - Se REVENUE_NET = 0, retorna null (exibe "--")
-- Lista de periodos disponiveis (extraidos dos period_keys unicos)
-- Estado de validacao (campos com `is_calculated=true` e `original_value` diferente)
+5. **Detectar header de meses:**
+   - Percorrer linhas de cima para baixo
+   - Encontrar a primeira linha onde existem 3+ colunas consecutivas (a partir de B) com valores que parecem datas ou meses (patterns: `abr./25`, `mai./25`, datas seriais do Excel, `Jan`, `Fev`, etc.)
+   - Nessa mesma linha, identificar coluna cujo texto normalizado seja "total"
+   - Definir: `headerRowIndex`, `monthCols[]` (indices + labels), `totalColIndex`
 
-### Bloco 4 -- Pagina `DREPage.tsx`
+6. **Parsear meses do header:**
+   - Suportar formatos: `abr./25`, `abr/25`, `abr./2025`, `04/2025`, datas ISO, texto livre
+   - Converter para `period_key` no formato `YYYY-MM`
+   - Coluna TOTAL vira `period_key = 'TOTAL'`
 
-Nova pagina em `src/pages/DREPage.tsx`:
+7. **Percorrer linhas abaixo do header:**
+   - Para cada linha `i` (a partir de `headerRowIndex + 1`):
+     - `label = rows[i][0]` (coluna A)
+     - Se `label` for vazio/null/whitespace => **IGNORAR** (subtotal duplicado)
+     - Se `label` for todo maiusculo (ou contem certas palavras-chave de secao) => marcar como `is_group = true`, atualizar `currentGroup = label`
+     - Caso contrario => `is_group = false`, pertence ao `currentGroup` atual
+     - Extrair valores de cada coluna-mes e da coluna TOTAL usando `parseBRL`
+     - Somente salvar a linha se tiver pelo menos 1 valor numerico em alguma coluna
 
-**Header:**
-- Titulo "DRE" com icone BarChart3
-- Seletor de periodo (dropdown com meses disponiveis + opcao YTD)
-- Seletor de planilha (se houver multiplas conexoes)
-- "Ultima atualizacao" + botao "Atualizar DRE"
+8. **Detectar subtotais conhecidos** (para validacao, nao para filtrar):
+   - Keywords de subtotal: `["receita liquida", "resultado", "despesas totais", "lucro bruto", "ebitda", "resultado mes", "resultado do mes", "total despesas"]`
+   - Se a label normalizada bater com alguma keyword, marcar `is_subtotal = true`
 
-**KPIs (7 cards no topo):**
-- Receita Liquida (R$)
-- Lucro Bruto (R$)
-- EBITDA (R$)
-- Resultado Liquido (R$)
-- Margem Bruta (%)
-- Margem EBITDA (%)
-- Margem Liquida (%)
+9. **Validacao de consistencia:**
+   - Para cada periodo, tentar verificar:
+     - Se existe grupo FATURAMENTO + grupo DEDUCOES + subtotal RECEITA LIQUIDA: verificar se `RECEITA LIQUIDA ~= soma(itens FATURAMENTO) + soma(itens DEDUCOES)`
+     - Se existe subtotal DESPESAS TOTAIS: verificar se `DESPESAS TOTAIS ~= soma(itens do grupo DESPESAS)`
+   - Se divergencia > R$ 0,01: marcar `validation_status = 'warning'` no `dre_periods` com nota explicativa
 
-**Tabela DRE (layout classico contabil):**
+10. **Salvar no banco:**
+    - DELETE antigos `dre_lines` e `dre_periods` para esse user_id + sheet_id (limpar e reimportar)
+    - INSERT `dre_periods` (um por coluna-mes + TOTAL)
+    - INSERT `dre_lines` (uma por linha valida por periodo)
+    - Retornar contagem de periodos e linhas importadas
 
-| Linha DRE | Valor (R$) | % Receita Liq. | Status |
-|---|---|---|---|
-| Receita Bruta | 150.000 | -- | ok |
-| (-) Deducoes/Impostos | -12.000 | -- | ok |
-| **Receita Liquida** | **138.000** | 100% | ok |
-| (-) Custos/CMV | -45.000 | 32,6% | ok |
-| **Lucro Bruto** | **93.000** | 67,4% | ok |
-| (-) Despesas Operacionais | | | |
-| ... Administrativas | -15.000 | 10,9% | ok |
-| ... Comerciais | -8.000 | 5,8% | ok |
-| ... Pessoal | -25.000 | 18,1% | ok |
-| ... Financeiras | -3.000 | 2,2% | ok |
-| ... Outras | -2.000 | 1,4% | ok |
-| **Total Despesas Op.** | **-53.000** | 38,4% | ok |
-| **EBITDA** | **40.000** | 29,0% | ok |
-| Resultado Financeiro | -1.500 | 1,1% | ok |
-| **Resultado Liquido** | **38.500** | 27,9% | ok |
+## Bloco 3 -- Hook `useDRE.ts` (reescrita)
 
-- Linhas de subtotal em negrito com fundo diferenciado
-- Coluna "Status": icone discreto de check (validado) ou alerta (divergencia com tooltip)
+Novo hook com interface adaptada ao novo schema:
 
-**Estado vazio:** se nao houver aba DRE na planilha, mostra instrucao clara com template sugerido.
+- **Query `dre_periods`:** buscar periodos disponiveis para o sheet_id selecionado
+- **Query `dre_lines`:** buscar linhas do periodo selecionado, ordenadas por `order_index`
+- **Mutation `syncDRE`:** chamar edge function `dre-sync`
+- **KPIs calculados no frontend** a partir das linhas importadas:
+  - Faturamento: buscar grupo "FATURAMENTO" -- usar subtotal se `is_group=true` e tem valor, senao somar itens do grupo
+  - Receita Liquida: buscar linha com `is_subtotal=true` e label ~= "receita liquida", senao calcular Faturamento + Deducoes
+  - Despesas Totais: buscar subtotal "DESPESAS TOTAIS", senao somar itens
+  - Resultado do Mes: buscar subtotal "RESULTADO", senao calcular
+  - Margem Liquida: Resultado / Receita Liquida (se != 0, senao "--")
 
-**Estado de carregamento:** skeleton loading consistente com o resto do app.
+## Bloco 4 -- Pagina `DREPage.tsx` (reescrita)
 
-### Bloco 5 -- Navegacao e Rotas
+**Desktop-only guard:**
+```tsx
+const isDesktop = useMediaQuery("(min-width: 1024px)");
+if (!isDesktop) {
+  return <PlaceholderMobile message="DRE disponivel apenas no desktop." />;
+}
+```
 
-**AppSidebar.tsx:**
-- Substituir `{ title: "Balanco Patrimonial", url: "/balance", icon: Scale }` por `{ title: "DRE", url: "/dre", icon: BarChart3 }`
+**Layout desktop:**
 
-**App.tsx:**
-- Remover import de `BalanceSheetPage`
-- Adicionar import de `DREPage`
-- Substituir rota `/balance` por `/dre`
+1. **Header:** titulo "DRE" + seletor de periodo (dropdown com meses + TOTAL) + seletor de planilha (se multiplas) + botao "Atualizar DRE" + ultima atualizacao
 
-**config.toml:**
-- Adicionar entrada `[functions.dre-sync]` com `verify_jwt = false`
+2. **KPIs (5 cards):**
+   - Faturamento (R$)
+   - Receita Liquida (R$)
+   - Despesas Totais (R$)
+   - Resultado do Mes (R$)
+   - Margem Liquida (%)
 
-### Bloco 6 -- Arquivos Criados/Modificados
+3. **Tabela DRE (layout contabil):**
+   - Linhas com `is_group=true` renderizadas como header de secao (negrito, fundo diferenciado)
+   - Linhas normais renderizadas abaixo do grupo, com indentacao
+   - Linhas com `is_subtotal=true` em negrito com borda superior
+   - Coluna: Linha DRE | Valor (R$)
+   - Ordem preservada pelo `order_index`
+
+4. **Estado vazio:** instrucao clara para criar aba DRE
+
+5. **Skeleton loading** durante carregamento
+
+## Bloco 5 -- Arquivos criados/modificados
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/dre-sync/index.ts` | Criar |
-| `src/pages/DREPage.tsx` | Criar |
-| `src/hooks/useDRE.ts` | Criar |
-| `src/App.tsx` | Modificar (rota) |
-| `src/components/layout/AppSidebar.tsx` | Modificar (menu) |
-| `supabase/config.toml` | Modificar (nova funcao) |
-| Migracao SQL | Criar tabelas dre_values e dre_mappings |
+| Migracao SQL | Criar tabelas dre_periods e dre_lines com RLS |
+| `supabase/functions/dre-sync/index.ts` | Reescrever (importador generico) |
+| `src/hooks/useDRE.ts` | Reescrever (novo schema) |
+| `src/pages/DREPage.tsx` | Reescrever (desktop-only, novo layout) |
 
-## Detalhes Tecnicos Importantes
+Nao sera necessario alterar `App.tsx` nem `AppSidebar.tsx` pois ja estao com DRE configurado.
 
-- A edge function `dre-sync` reutiliza a mesma logica de refresh de token OAuth e `parseBRL` ja existente no `google-sheets-sync`
-- O mapeamento por palavras-chave usa normalizacao NFD para ignorar acentos (ex: "Despesas Financeiras" == "despesas financeiras" == "DESPESAS FINANCEIRAS")
-- A deteccao de formato (colunas por mes vs bloco) analisa a primeira linha: se as colunas apos a primeira tiverem nomes de meses (Jan, Fev, Mar...) ou datas, e Formato 1; caso contrario, Formato 2
-- Cada UPSERT usa a constraint UNIQUE(user_id, sheet_id, period_key, line_key) para idempotencia
-- A pagina BalanceSheetPage atual usa dados estaticos (hardcoded); nao ha perda de dados reais ao remove-la
+## Detalhes Tecnicos
+
+- O `parseBRL` existente na edge function sera mantido (ja robusto para formatos BR)
+- A deteccao de header suporta formatos como `abr./25` usando regex: `/^([a-z]{3,})\.?[\s\/\-]*(\d{2,4})$/`
+- Linhas com label vazio sao ignoradas ANTES de qualquer processamento
+- A coluna TOTAL e tratada como um periodo especial (period_key = 'TOTAL')
+- O DELETE + INSERT (em vez de UPSERT) simplifica o fluxo e evita orfaos quando linhas sao removidas da planilha
+- A validacao de consistencia usa tolerancia de R$ 0,01 e gera warnings internos sem bloquear a importacao
 
