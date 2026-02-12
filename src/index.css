@@ -737,3 +737,34 @@
 .sidebar-glass [data-sidebar="sidebar"] {
   background: transparent !important;
 }
+
+/* ============================================
+   SIDEBAR LOGO - LIQUID GLASS
+   ============================================ */
+
+.sidebar-logo-glass {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(45, 126, 243, 0.15);
+  border-radius: 1rem;
+  box-shadow:
+    0 0 20px rgba(45, 126, 243, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  position: relative;
+  overflow: hidden;
+}
+
+.sidebar-logo-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(45, 126, 243, 0.05) 0%,
+    transparent 50%,
+    rgba(45, 126, 243, 0.03) 100%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
