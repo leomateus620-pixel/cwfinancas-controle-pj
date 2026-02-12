@@ -36,18 +36,18 @@ export function QuickLinks({ delay = 0 }: QuickLinksProps) {
       style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards" }}
     >
       <div className="liquid-glass-compact p-5 md:p-6">
-        <h3 className="text-white/90 font-semibold text-sm mb-4">Atalhos</h3>
+        <h3 className="text-foreground/90 font-semibold text-sm mb-4">Atalhos</h3>
         <div className="grid grid-cols-3 gap-2">
           {links.map(link => (
             <button
               key={link.href}
               onClick={() => navigate(link.href)}
-              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl hover:bg-white/5 transition-all group"
+              className="flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl hover:bg-primary/5 transition-all group"
             >
-              <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center group-hover:bg-white/10 transition-colors">
-                <link.icon className="w-4 h-4 text-white/50 group-hover:text-white/80 transition-colors" />
+              <div className="w-9 h-9 rounded-xl bg-foreground/[0.04] flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+                <link.icon className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
-              <span className="text-white/40 group-hover:text-white/70 text-[10px] font-medium text-center leading-tight transition-colors">
+              <span className="text-muted-foreground/70 group-hover:text-foreground text-[10px] font-medium text-center leading-tight transition-colors">
                 {link.label}
               </span>
             </button>

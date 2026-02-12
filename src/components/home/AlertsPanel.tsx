@@ -9,9 +9,9 @@ interface AlertsPanelProps {
 }
 
 const priorityConfig = {
-  high: { icon: AlertTriangle, color: "text-red-400", bg: "bg-red-400/10" },
-  medium: { icon: AlertCircle, color: "text-amber-400", bg: "bg-amber-400/10" },
-  low: { icon: Info, color: "text-blue-400", bg: "bg-blue-400/10" },
+  high: { icon: AlertTriangle, color: "text-red-600", bg: "bg-red-600/10" },
+  medium: { icon: AlertCircle, color: "text-amber-600", bg: "bg-amber-600/10" },
+  low: { icon: Info, color: "text-blue-600", bg: "bg-blue-600/10" },
 };
 
 export function AlertsPanel({ alerts, delay = 0 }: AlertsPanelProps) {
@@ -23,12 +23,12 @@ export function AlertsPanel({ alerts, delay = 0 }: AlertsPanelProps) {
       style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards" }}
     >
       <GlassCard className="p-5 md:p-6 h-full">
-        <h3 className="text-white/90 font-semibold text-sm mb-4">Alertas</h3>
+        <h3 className="text-foreground/90 font-semibold text-sm mb-4">Alertas</h3>
 
         {visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 text-center">
-            <CheckCircle className="w-8 h-8 text-emerald-400/40 mb-2" />
-            <p className="text-white/40 text-xs">Nenhum alerta no momento</p>
+            <CheckCircle className="w-8 h-8 text-emerald-600/40 mb-2" />
+            <p className="text-muted-foreground text-xs">Nenhum alerta no momento</p>
           </div>
         ) : (
           <div className="space-y-3 stagger-list">
@@ -41,8 +41,8 @@ export function AlertsPanel({ alerts, delay = 0 }: AlertsPanelProps) {
                     <Icon className={cn("w-3.5 h-3.5", config.color)} />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-white/70 text-xs font-medium">{alert.title}</p>
-                    <p className="text-white/40 text-[11px] leading-relaxed mt-0.5">{alert.description}</p>
+                    <p className="text-foreground/80 text-xs font-medium">{alert.title}</p>
+                    <p className="text-muted-foreground text-[11px] leading-relaxed mt-0.5">{alert.description}</p>
                   </div>
                 </div>
               );

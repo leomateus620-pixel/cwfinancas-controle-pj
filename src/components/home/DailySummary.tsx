@@ -22,7 +22,7 @@ export function DailySummary({ dailyTrend, insights, delay = 0 }: DailySummaryPr
     >
       <GlassCard className="p-5 md:p-6 h-full">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white/90 font-semibold text-sm">Resumo do Dia</h3>
+          <h3 className="text-foreground/90 font-semibold text-sm">Resumo do Dia</h3>
           <div className="flex gap-1">
             {([7, 14, 30] as const).map(p => (
               <button
@@ -30,8 +30,8 @@ export function DailySummary({ dailyTrend, insights, delay = 0 }: DailySummaryPr
                 onClick={() => setPeriod(p)}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
                   period === p
-                    ? "bg-white/15 text-white"
-                    : "text-white/30 hover:text-white/50 hover:bg-white/5"
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-foreground/5"
                 }`}
               >
                 {p}d
@@ -46,7 +46,7 @@ export function DailySummary({ dailyTrend, insights, delay = 0 }: DailySummaryPr
             <LineChart data={filteredData}>
               <defs>
                 <linearGradient id="sparklineGrad" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="hsl(217 91% 60%)" stopOpacity={0.6} />
+                  <stop offset="0%" stopColor="hsl(221 85% 53%)" stopOpacity={0.7} />
                   <stop offset="100%" stopColor="hsl(160 84% 39%)" stopOpacity={1} />
                 </linearGradient>
               </defs>
@@ -60,11 +60,13 @@ export function DailySummary({ dailyTrend, insights, delay = 0 }: DailySummaryPr
               />
               <RechartsTooltip
                 contentStyle={{
-                  background: "rgba(0,0,0,0.8)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "rgba(255,255,255,0.9)",
+                  border: "1px solid rgba(15,23,42,0.08)",
                   borderRadius: "8px",
                   fontSize: "11px",
-                  color: "#fff",
+                  color: "hsl(222 47% 11%)",
+                  backdropFilter: "blur(12px)",
+                  boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
                 }}
                 formatter={(v: number) => [
                   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
@@ -83,8 +85,8 @@ export function DailySummary({ dailyTrend, insights, delay = 0 }: DailySummaryPr
         <div className="space-y-2.5">
           {insights.map((insight, i) => (
             <div key={i} className="flex items-start gap-2.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-blue-400/60 mt-1.5 shrink-0" />
-              <p className="text-white/60 text-xs leading-relaxed">{insight}</p>
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-600/50 mt-1.5 shrink-0" />
+              <p className="text-muted-foreground text-xs leading-relaxed">{insight}</p>
             </div>
           ))}
         </div>

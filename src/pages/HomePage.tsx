@@ -68,7 +68,7 @@ export default function HomePage() {
 
   if (data.isLoading) {
     return (
-      <div className="home-dark-bg min-h-[calc(100vh-64px)] -m-5 md:-m-6 p-5 md:p-8">
+      <div className="home-glass-bg min-h-[calc(100vh-64px)] -m-5 md:-m-6 p-5 md:p-8">
         <div className="max-w-[1440px] mx-auto">
           <HomeSkeletonLoading />
         </div>
@@ -83,20 +83,20 @@ export default function HomePage() {
     : null;
 
   return (
-    <div className="home-dark-bg min-h-[calc(100vh-64px)] -m-5 md:-m-6 p-5 md:p-8">
+    <div className="home-glass-bg min-h-[calc(100vh-64px)] -m-5 md:-m-6 p-5 md:p-8">
       <div className="max-w-[1440px] mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-white text-2xl md:text-3xl font-bold tracking-tight">
+          <h1 className="text-foreground text-2xl md:text-3xl font-bold tracking-tight">
             {data.greeting}, <span className="gradient-text-primary">{data.companyName}</span>!
           </h1>
-          <p className="text-white/40 text-sm mt-1">Aqui está seu resumo financeiro diário.</p>
+          <p className="text-muted-foreground/70 text-sm mt-1">Aqui está seu resumo financeiro diário.</p>
           <div className="flex items-center gap-4 mt-2">
-            <span className="text-white/25 text-xs capitalize">{formattedDate}</span>
+            <span className="text-muted-foreground/50 text-xs capitalize">{formattedDate}</span>
             {lastSync && (
               <>
-                <span className="text-white/10">•</span>
-                <span className="text-white/25 text-xs">{lastSync}</span>
+                <span className="text-border">•</span>
+                <span className="text-muted-foreground/50 text-xs">{lastSync}</span>
               </>
             )}
           </div>
@@ -112,47 +112,47 @@ export default function HomePage() {
                 <HomeKPICard
                   label="Caixa Atual"
                   value={formatBRL(data.currentBalance)}
-                  icon={<Wallet className="w-5 h-5 text-blue-400" />}
+                  icon={<Wallet className="w-5 h-5 text-blue-600" />}
                   tooltip="Saldo líquido: total de receitas menos despesas de todas as transações importadas."
                   href="/cash-flow"
                   large
-                  valueColor={data.currentBalance >= 0 ? "text-emerald-400" : "text-red-400"}
+                  valueColor={data.currentBalance >= 0 ? "text-emerald-600" : "text-red-600"}
                   delay={0}
                 />
               </div>
               <HomeKPICard
                 label="Entradas do Mês"
                 value={formatBRL(data.monthIncome)}
-                icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
+                icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
                 tooltip="Soma de todas as receitas registradas no mês corrente."
                 href="/income"
-                valueColor="text-emerald-400"
+                valueColor="text-emerald-600"
                 delay={60}
               />
               <HomeKPICard
                 label="Saídas do Mês"
                 value={formatBRL(data.monthExpense)}
-                icon={<TrendingDown className="w-5 h-5 text-red-400" />}
+                icon={<TrendingDown className="w-5 h-5 text-red-600" />}
                 tooltip="Soma de todas as despesas registradas no mês corrente."
                 href="/expenses"
-                valueColor="text-red-400"
+                valueColor="text-red-600"
                 delay={120}
               />
 
               <HomeKPICard
                 label="Resultado do Mês"
                 value={formatBRL(data.monthResult)}
-                icon={<BarChart3 className="w-5 h-5 text-blue-400" />}
+                icon={<BarChart3 className="w-5 h-5 text-blue-600" />}
                 tooltip="Diferença entre entradas e saídas do mês corrente."
                 href="/overview"
-                valueColor={data.monthResult >= 0 ? "text-emerald-400" : "text-red-400"}
+                valueColor={data.monthResult >= 0 ? "text-emerald-600" : "text-red-600"}
                 trend={{ value: data.variationPercent, label: "vs mês anterior" }}
                 delay={180}
               />
               <HomeKPICard
                 label="Contas a Receber"
                 value={formatBRL(data.receivables)}
-                icon={<Clock className="w-5 h-5 text-amber-400" />}
+                icon={<Clock className="w-5 h-5 text-amber-600" />}
                 tooltip="Valor total de faturas com status pendente."
                 href="/invoices"
                 delay={240}
@@ -160,7 +160,7 @@ export default function HomePage() {
               <HomeKPICard
                 label="Contas a Pagar"
                 value={formatBRL(data.payables)}
-                icon={<CreditCard className="w-5 h-5 text-orange-400" />}
+                icon={<CreditCard className="w-5 h-5 text-orange-600" />}
                 tooltip="Despesas futuras programadas."
                 href="/expenses"
                 delay={300}
@@ -169,9 +169,9 @@ export default function HomePage() {
                 <HomeKPICard
                   label="Fôlego de Caixa"
                   value={`${data.runwayDays} dias`}
-                  icon={<Hourglass className="w-5 h-5 text-purple-400" />}
+                  icon={<Hourglass className="w-5 h-5 text-purple-600" />}
                   tooltip="Estimativa de quantos dias o saldo atual cobre, com base na média de despesas dos últimos 90 dias."
-                  valueColor={data.runwayDays > 60 ? "text-emerald-400" : data.runwayDays > 30 ? "text-amber-400" : "text-red-400"}
+                  valueColor={data.runwayDays > 60 ? "text-emerald-600" : data.runwayDays > 30 ? "text-amber-600" : "text-red-600"}
                   delay={360}
                 />
               )}

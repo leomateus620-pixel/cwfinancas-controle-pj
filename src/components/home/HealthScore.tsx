@@ -16,17 +16,17 @@ function getScoreLabel(score: number) {
 }
 
 function getScoreColor(score: number) {
-  if (score >= 80) return "text-emerald-400";
-  if (score >= 60) return "text-blue-400";
-  if (score >= 40) return "text-amber-400";
-  return "text-red-400";
+  if (score >= 80) return "text-emerald-600";
+  if (score >= 60) return "text-blue-600";
+  if (score >= 40) return "text-amber-600";
+  return "text-red-600";
 }
 
 function getStrokeColor(score: number) {
-  if (score >= 80) return "#34d399";
-  if (score >= 60) return "#60a5fa";
-  if (score >= 40) return "#fbbf24";
-  return "#f87171";
+  if (score >= 80) return "#059669";
+  if (score >= 60) return "#2563eb";
+  if (score >= 40) return "#d97706";
+  return "#dc2626";
 }
 
 export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
@@ -40,10 +40,10 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
     >
       <GlassCard className="p-5 md:p-6 h-full flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-white/90 font-semibold text-sm">Saúde Financeira</h3>
+          <h3 className="text-foreground/90 font-semibold text-sm">Saúde Financeira</h3>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="text-white/30 hover:text-white/60 transition-colors text-xs">ⓘ</button>
+              <button className="text-muted-foreground/50 hover:text-muted-foreground transition-colors text-xs">ⓘ</button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-[260px] text-xs">
               Score composto por margem de lucro, fôlego de caixa, contas a receber e tendência mensal. Cada fator vale até 25 pontos.
@@ -55,7 +55,7 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
         <div className="flex-1 flex items-center justify-center">
           <div className="relative w-32 h-32">
             <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
+              <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(15,23,42,0.06)" strokeWidth="6" />
               <circle
                 cx="50" cy="50" r="45"
                 fill="none"
@@ -75,7 +75,7 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
               <span className={cn("text-3xl font-bold tabular-nums", getScoreColor(score))}>
                 {score}
               </span>
-              <span className="text-white/40 text-[10px] font-medium uppercase tracking-wider">
+              <span className="text-muted-foreground/70 text-[10px] font-medium uppercase tracking-wider">
                 {getScoreLabel(score)}
               </span>
             </div>
@@ -86,9 +86,9 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
         <div className="mt-4 space-y-2">
           {factors.map((f, i) => (
             <div key={i} className="flex items-center justify-between">
-              <span className="text-white/40 text-[11px]">{f.label}</span>
+              <span className="text-muted-foreground text-[11px]">{f.label}</span>
               <div className="flex items-center gap-2">
-                <div className="w-16 h-1 rounded-full bg-white/5 overflow-hidden">
+                <div className="w-16 h-1 rounded-full bg-foreground/5 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-1000"
                     style={{
@@ -97,7 +97,7 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
                     }}
                   />
                 </div>
-                <span className="text-white/50 text-[10px] tabular-nums w-8 text-right">
+                <span className="text-muted-foreground/70 text-[10px] tabular-nums w-8 text-right">
                   {f.score}/{f.weight}
                 </span>
               </div>
