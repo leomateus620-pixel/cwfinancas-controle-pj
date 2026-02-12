@@ -3,93 +3,89 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
-type LineKey =
-  | "REVENUE_GROSS" | "TAXES" | "REVENUE_NET" | "COGS" | "GROSS_PROFIT"
-  | "OPEX_TOTAL" | "OPEX_ADMIN" | "OPEX_SALES" | "OPEX_PAYROLL" | "OPEX_FINANCE" | "OPEX_OTHER"
-  | "EBITDA" | "OPERATING_INCOME" | "FIN_RESULT" | "PRE_TAX_INCOME" | "IR_CSLL" | "NET_INCOME";
-
-interface DREValue {
+interface DREPeriod {
   id: string;
-  period_key: string;
-  line_key: LineKey;
-  value: number;
-  source_tab: string | null;
-  source_cell: string | null;
-  source_label: string | null;
-  is_calculated: boolean;
-  original_value: number | null;
+  user_id: string;
   sheet_id: string | null;
-  updated_at: string;
+  period_key: string;
+  period_label: string | null;
+  col_index: number | null;
+  validation_status: string;
+  validation_notes: string[];
+  last_import_at: string;
 }
 
-interface DREMargins {
-  grossMargin: number | null;
-  ebitdaMargin: number | null;
-  netMargin: number | null;
+interface DRELine {
+  id: string;
+  period_id: string;
+  user_id: string;
+  group_label: string | null;
+  line_label: string;
+  value: number;
+  source_cell: string | null;
+  source_tab: string | null;
+  order_index: number;
+  is_group: boolean;
+  is_subtotal: boolean;
 }
 
-interface DRESyncResult {
-  success: boolean;
-  found: boolean;
-  tab_name?: string;
-  format?: string;
-  periods?: string[];
-  lines_mapped?: number;
-  values_saved?: number;
-  message?: string;
-  error?: string;
+function normalize(text: string): string {
+  return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 }
 
-export function useDRE(sheetId?: string, periodKey?: string) {
+export function useDRE(sheetId?: string) {
   const { session } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch DRE values
-  const {
-    data: dreValues,
-    isLoading: isLoadingValues,
-    error: valuesError,
-  } = useQuery({
-    queryKey: ["dre-values", sheetId, periodKey],
-    queryFn: async () => {
-      let query = supabase
-        .from("dre_values")
-        .select("*")
-        .order("line_key");
-
-      if (sheetId) query = query.eq("sheet_id", sheetId);
-      if (periodKey) query = query.eq("period_key", periodKey);
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data || []) as DREValue[];
-    },
-    enabled: !!session,
-  });
-
-  // Fetch available periods
+  // Fetch periods
   const {
     data: periods,
     isLoading: isLoadingPeriods,
   } = useQuery({
-    queryKey: ["dre-periods", sheetId],
+    queryKey: ["dre-periods-v2", sheetId],
     queryFn: async () => {
       let query = supabase
-        .from("dre_values")
-        .select("period_key");
+        .from("dre_periods")
+        .select("*")
+        .order("period_key", { ascending: true });
 
       if (sheetId) query = query.eq("sheet_id", sheetId);
 
       const { data, error } = await query;
       if (error) throw error;
-      const uniquePeriods = [...new Set((data || []).map(d => d.period_key))];
-      return uniquePeriods.sort().reverse();
+      return (data || []) as DREPeriod[];
     },
     enabled: !!session,
   });
 
-  // Sync DRE mutation
+  // Selected period managed externally, but provide helper
+  const periodOptions = (periods || []).map(p => ({
+    key: p.period_key,
+    label: p.period_label || p.period_key,
+    id: p.id,
+    validationStatus: p.validation_status,
+  }));
+
+  // Fetch lines for a specific period
+  function useLines(periodId?: string) {
+    return useQuery({
+      queryKey: ["dre-lines-v2", periodId],
+      queryFn: async () => {
+        if (!periodId) return [];
+        const { data, error } = await supabase
+          .from("dre_lines")
+          .select("*")
+          .eq("period_id", periodId)
+          .order("order_index", { ascending: true });
+        if (error) throw error;
+        return (data || []) as DRELine[];
+      },
+      enabled: !!session && !!periodId,
+    });
+  }
+
+  // Sync mutation
   const syncDRE = useMutation({
     mutationFn: async (connectionId: string) => {
       const { data, error } = await supabase.functions.invoke("dre-sync", {
@@ -97,20 +93,26 @@ export function useDRE(sheetId?: string, periodKey?: string) {
       });
       if (error) throw error;
       if (data.error) throw new Error(data.error);
-      return data as DRESyncResult;
+      return data;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["dre-values"] });
-      queryClient.invalidateQueries({ queryKey: ["dre-periods"] });
+      queryClient.invalidateQueries({ queryKey: ["dre-periods-v2"] });
+      queryClient.invalidateQueries({ queryKey: ["dre-lines-v2"] });
       if (data.success) {
         toast({
           title: "DRE sincronizada",
-          description: `${data.values_saved} valores importados da aba "${data.tab_name}".`,
+          description: `${data.lines_count} linhas importadas em ${data.periods_count} períodos da aba "${data.tab_name}".`,
         });
       } else if (!data.found) {
         toast({
           title: "Aba DRE não encontrada",
           description: data.message || "Crie uma aba chamada 'DRE' na planilha.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Problema na importação",
+          description: data.message || "Verifique o formato da aba DRE.",
           variant: "destructive",
         });
       }
@@ -124,51 +126,62 @@ export function useDRE(sheetId?: string, periodKey?: string) {
     },
   });
 
-  // Helper: get value for a specific line key
-  const getValue = (key: LineKey): number | null => {
-    const item = dreValues?.find(v => v.line_key === key);
-    return item ? item.value : null;
-  };
+  // KPI calculator from lines
+  function calculateKPIs(lines: DRELine[]) {
+    const findSubtotal = (keyword: string) =>
+      lines.find(l => l.is_subtotal && normalize(l.line_label).includes(keyword));
 
-  // Helper: get DRE item with metadata
-  const getItem = (key: LineKey): DREValue | null => {
-    return dreValues?.find(v => v.line_key === key) || null;
-  };
+    const findGroupLine = (keyword: string) =>
+      lines.find(l => l.is_group && normalize(l.line_label).includes(keyword));
 
-  // Calculate margins (frontend redundancy)
-  const margins: DREMargins = (() => {
-    const revenueNet = getValue("REVENUE_NET");
-    if (!revenueNet || revenueNet === 0) {
-      return { grossMargin: null, ebitdaMargin: null, netMargin: null };
-    }
-    const grossProfit = getValue("GROSS_PROFIT");
-    const ebitda = getValue("EBITDA");
-    const netIncome = getValue("NET_INCOME");
-    return {
-      grossMargin: grossProfit !== null ? (grossProfit / revenueNet) * 100 : null,
-      ebitdaMargin: ebitda !== null ? (ebitda / revenueNet) * 100 : null,
-      netMargin: netIncome !== null ? (netIncome / revenueNet) * 100 : null,
+    const getGroupItemsSum = (groupKeyword: string) => {
+      const items = lines.filter(
+        l => l.group_label && normalize(l.group_label).includes(groupKeyword) && !l.is_group && !l.is_subtotal
+      );
+      return items.reduce((sum, l) => sum + l.value, 0);
     };
-  })();
 
-  // Validation status: items with is_calculated=true and original_value different
-  const divergences = (dreValues || []).filter(
-    v => v.is_calculated && v.original_value !== null && Math.abs(v.value - v.original_value) > 1
-  );
+    // Faturamento
+    const fatGroup = findGroupLine("faturamento");
+    const faturamento = fatGroup && fatGroup.value !== 0
+      ? fatGroup.value
+      : getGroupItemsSum("faturamento");
 
-  const hasData = (dreValues || []).length > 0;
+    // Receita Liquida
+    const recLiqLine = findSubtotal("receita liquida");
+    const receitaLiquida = recLiqLine
+      ? recLiqLine.value
+      : faturamento + getGroupItemsSum("deducoe");
+
+    // Despesas Totais
+    const despTotalLine = findSubtotal("despesas totais") || findSubtotal("total despesas");
+    const despesasTotais = despTotalLine
+      ? despTotalLine.value
+      : getGroupItemsSum("despesa");
+
+    // Resultado do Mes
+    const resultadoLine = findSubtotal("resultado");
+    const resultado = resultadoLine
+      ? resultadoLine.value
+      : receitaLiquida + despesasTotais; // despesas are negative
+
+    // Margem Liquida
+    const margemLiquida = receitaLiquida !== 0
+      ? (resultado / receitaLiquida) * 100
+      : null;
+
+    return { faturamento, receitaLiquida, despesasTotais, resultado, margemLiquida };
+  }
+
+  const hasData = (periods || []).length > 0;
 
   return {
-    dreValues,
-    isLoadingValues,
-    valuesError,
     periods,
+    periodOptions,
     isLoadingPeriods,
+    useLines,
     syncDRE,
-    getValue,
-    getItem,
-    margins,
-    divergences,
+    calculateKPIs,
     hasData,
   };
 }

@@ -156,6 +156,62 @@ export type Database = {
         }
         Relationships: []
       }
+      dre_lines: {
+        Row: {
+          created_at: string | null
+          group_label: string | null
+          id: string
+          is_group: boolean | null
+          is_subtotal: boolean | null
+          line_label: string
+          order_index: number
+          period_id: string
+          source_cell: string | null
+          source_tab: string | null
+          updated_at: string | null
+          user_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string | null
+          group_label?: string | null
+          id?: string
+          is_group?: boolean | null
+          is_subtotal?: boolean | null
+          line_label: string
+          order_index: number
+          period_id: string
+          source_cell?: string | null
+          source_tab?: string | null
+          updated_at?: string | null
+          user_id: string
+          value?: number
+        }
+        Update: {
+          created_at?: string | null
+          group_label?: string | null
+          id?: string
+          is_group?: boolean | null
+          is_subtotal?: boolean | null
+          line_label?: string
+          order_index?: number
+          period_id?: string
+          source_cell?: string | null
+          source_tab?: string | null
+          updated_at?: string | null
+          user_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dre_lines_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "dre_periods"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dre_mappings: {
         Row: {
           confidence: number
@@ -196,6 +252,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "dre_mappings_sheet_id_fkey"
+            columns: ["sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dre_periods: {
+        Row: {
+          col_index: number | null
+          created_at: string | null
+          id: string
+          last_import_at: string | null
+          period_key: string
+          period_label: string | null
+          sheet_id: string | null
+          updated_at: string | null
+          user_id: string
+          validation_notes: Json | null
+          validation_status: string | null
+        }
+        Insert: {
+          col_index?: number | null
+          created_at?: string | null
+          id?: string
+          last_import_at?: string | null
+          period_key: string
+          period_label?: string | null
+          sheet_id?: string | null
+          updated_at?: string | null
+          user_id: string
+          validation_notes?: Json | null
+          validation_status?: string | null
+        }
+        Update: {
+          col_index?: number | null
+          created_at?: string | null
+          id?: string
+          last_import_at?: string | null
+          period_key?: string
+          period_label?: string | null
+          sheet_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+          validation_notes?: Json | null
+          validation_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dre_periods_sheet_id_fkey"
             columns: ["sheet_id"]
             isOneToOne: false
             referencedRelation: "google_sheet_connections"
