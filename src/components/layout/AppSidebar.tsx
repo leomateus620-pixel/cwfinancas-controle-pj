@@ -70,7 +70,7 @@ export function AppSidebar() {
           <img 
             src={collapsed ? logoIcon : logoFull} 
             alt="CW Finanças" 
-            className={`object-contain transition-all duration-300 ${collapsed ? 'w-9 h-9' : 'h-10 md:h-16 w-auto'}`}
+            className={`object-contain transition-all duration-300 ${collapsed ? 'w-9 h-9' : 'h-[120px] md:h-[156px] w-auto'}`}
             style={{ filter: 'drop-shadow(0 2px 6px rgba(15, 23, 42, 0.08))' }}
           />
         </div>
