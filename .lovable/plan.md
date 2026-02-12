@@ -1,181 +1,133 @@
 
 
-# Reimplementacao do Importador e Pagina DRE
+# Roteamento de Abas + Importacao Multi-Tab de Transacoes
 
-## Problema com a implementacao atual
+## Problema Atual
 
-A edge function `dre-sync` atual usa um sistema rigido de **keyword matching** com `LineKey` enums fixos (REVENUE_GROSS, TAXES, COGS, etc.). Isso significa que:
-- Linhas da planilha que nao correspondem a nenhuma keyword sao **ignoradas**
-- A hierarquia real da planilha (secoes/grupos) e **perdida**
-- Nao suporta a coluna **TOTAL**
-- Linhas com label vazio nao sao tratadas como "subtotal duplicado"
-
-O usuario quer um importador que leia **100% das linhas validas** preservando a estrutura original.
+O sync atual (`google-sheets-sync`) le apenas UMA aba por vez (a que esta configurada na conexao). Quando o usuario seleciona "Todas as Abas", o sistema tenta ler tudo de uma vez sem distinguir abas mensais da aba DRE, causando mistura de dados ou perda de linhas.
 
 ## Nova Arquitetura
 
 ```text
-+------------------+       +-------------------+       +------------------+
-| Google Sheets    |       | Edge Function     |       | Supabase DB      |
-| Aba "DRE"        | ----> | dre-sync (v2)     | ----> | dre_periods      |
-| (auto-detect)   |       | (generic parser)  |       | dre_lines        |
-+------------------+       +-------------------+       +------------------+
-                                                              |
-                                                              v
-                                                       +------------------+
-                                                       | Frontend         |
-                                                       | DREPage.tsx (v2) |
-                                                       | useDRE.ts (v2)   |
-                                                       +------------------+
+Planilha Google Sheets
+  |
+  |-- Aba "DRE"          --> dre-sync (existente, ja funciona)
+  |-- Aba "Janeiro"       |
+  |-- Aba "Fevereiro"     |--> sheets-sync-all-tabs (NOVA edge function)
+  |-- Aba "Marco"         |    - Roteador classifica cada aba
+  |-- ...                 |    - So importa MONTHLY_TRANSACTIONS no range escolhido
+  |-- Aba "Dezembro"      |
+  |-- Aba "Santo Angelo"  --> IGNORE_FOR_MAIN_SYNC
 ```
 
-## Bloco 1 -- Novo Schema (migracao SQL)
+## Bloco 1 -- Tab Router (utilidade compartilhada dentro da edge function)
 
-Criar duas novas tabelas e manter as antigas (para nao quebrar nada durante transicao):
+Logica de classificacao de abas implementada na nova edge function:
 
-**Tabela `dre_periods`:**
-- `id` uuid PK default gen_random_uuid()
-- `user_id` uuid NOT NULL
-- `sheet_id` uuid (FK -> google_sheet_connections.id)
-- `period_key` text NOT NULL (ex: '2025-04', '2025-05', 'TOTAL')
-- `period_label` text (label original do header, ex: 'abr./25')
-- `col_index` integer (indice da coluna na planilha)
-- `validation_status` text DEFAULT 'ok' (valores: 'ok', 'warning', 'missing')
-- `validation_notes` jsonb DEFAULT '[]'
-- `last_import_at` timestamptz DEFAULT now()
-- `created_at` timestamptz DEFAULT now()
-- `updated_at` timestamptz DEFAULT now()
-- UNIQUE(user_id, sheet_id, period_key)
+**DRE_ONLY:** nome exato "DRE" (case-insensitive) ou contem "Demonstracao" / "Resultado"
 
-**Tabela `dre_lines`:**
-- `id` uuid PK default gen_random_uuid()
-- `period_id` uuid NOT NULL (FK -> dre_periods.id ON DELETE CASCADE)
-- `user_id` uuid NOT NULL
-- `group_label` text (ex: 'FATURAMENTO', 'DEDUCOES', 'DESPESAS TOTAIS')
-- `line_label` text NOT NULL (ex: 'Receita', 'Simples Nacional', 'Aluguel')
-- `value` numeric NOT NULL DEFAULT 0
-- `source_cell` text (ex: 'DRE!C12')
-- `source_tab` text DEFAULT 'DRE'
-- `order_index` integer NOT NULL (manter ordem do Excel)
-- `is_group` boolean DEFAULT false (true = linha de secao/header)
-- `is_subtotal` boolean DEFAULT false (true = linha reconhecida como subtotal)
-- `created_at` timestamptz DEFAULT now()
-- `updated_at` timestamptz DEFAULT now()
+**MONTHLY_TRANSACTIONS:** deteccao de meses PT-BR:
+- Nomes completos: "Janeiro"..."Dezembro" (case-insensitive)
+- Abreviacoes: "Jan"..."Dez"
+- Com ano: "Jan/2025", "Janeiro 2025", "dez/25", "Jun/26"
+- Cada match retorna um `period_key` (YYYY-MM) + indice de ordenacao (1-12)
 
-**RLS:** Ambas com politicas `user_id = auth.uid()` para SELECT, INSERT, UPDATE, DELETE.
+**IGNORE:** qualquer outra aba
 
-**Indice:** `CREATE INDEX idx_dre_lines_period ON dre_lines(period_id)`.
+## Bloco 2 -- Nova Edge Function `sheets-sync-all-tabs`
 
-## Bloco 2 -- Edge Function `dre-sync` (reescrita completa)
+Criar `supabase/functions/sheets-sync-all-tabs/index.ts`
 
-Reescrever `supabase/functions/dre-sync/index.ts` com logica generica:
-
-**Fluxo detalhado:**
-
-1. Receber `connection_id`
-2. Buscar conexao + refresh token (reutilizar logica existente)
-3. Listar abas da planilha e encontrar aba "DRE" (busca exata primeiro, depois fuzzy)
-4. Ler aba inteira (A1:Z200)
-
-5. **Detectar header de meses:**
-   - Percorrer linhas de cima para baixo
-   - Encontrar a primeira linha onde existem 3+ colunas consecutivas (a partir de B) com valores que parecem datas ou meses (patterns: `abr./25`, `mai./25`, datas seriais do Excel, `Jan`, `Fev`, etc.)
-   - Nessa mesma linha, identificar coluna cujo texto normalizado seja "total"
-   - Definir: `headerRowIndex`, `monthCols[]` (indices + labels), `totalColIndex`
-
-6. **Parsear meses do header:**
-   - Suportar formatos: `abr./25`, `abr/25`, `abr./2025`, `04/2025`, datas ISO, texto livre
-   - Converter para `period_key` no formato `YYYY-MM`
-   - Coluna TOTAL vira `period_key = 'TOTAL'`
-
-7. **Percorrer linhas abaixo do header:**
-   - Para cada linha `i` (a partir de `headerRowIndex + 1`):
-     - `label = rows[i][0]` (coluna A)
-     - Se `label` for vazio/null/whitespace => **IGNORAR** (subtotal duplicado)
-     - Se `label` for todo maiusculo (ou contem certas palavras-chave de secao) => marcar como `is_group = true`, atualizar `currentGroup = label`
-     - Caso contrario => `is_group = false`, pertence ao `currentGroup` atual
-     - Extrair valores de cada coluna-mes e da coluna TOTAL usando `parseBRL`
-     - Somente salvar a linha se tiver pelo menos 1 valor numerico em alguma coluna
-
-8. **Detectar subtotais conhecidos** (para validacao, nao para filtrar):
-   - Keywords de subtotal: `["receita liquida", "resultado", "despesas totais", "lucro bruto", "ebitda", "resultado mes", "resultado do mes", "total despesas"]`
-   - Se a label normalizada bater com alguma keyword, marcar `is_subtotal = true`
-
-9. **Validacao de consistencia:**
-   - Para cada periodo, tentar verificar:
-     - Se existe grupo FATURAMENTO + grupo DEDUCOES + subtotal RECEITA LIQUIDA: verificar se `RECEITA LIQUIDA ~= soma(itens FATURAMENTO) + soma(itens DEDUCOES)`
-     - Se existe subtotal DESPESAS TOTAIS: verificar se `DESPESAS TOTAIS ~= soma(itens do grupo DESPESAS)`
-   - Se divergencia > R$ 0,01: marcar `validation_status = 'warning'` no `dre_periods` com nota explicativa
-
-10. **Salvar no banco:**
-    - DELETE antigos `dre_lines` e `dre_periods` para esse user_id + sheet_id (limpar e reimportar)
-    - INSERT `dre_periods` (um por coluna-mes + TOTAL)
-    - INSERT `dre_lines` (uma por linha valida por periodo)
-    - Retornar contagem de periodos e linhas importadas
-
-## Bloco 3 -- Hook `useDRE.ts` (reescrita)
-
-Novo hook com interface adaptada ao novo schema:
-
-- **Query `dre_periods`:** buscar periodos disponiveis para o sheet_id selecionado
-- **Query `dre_lines`:** buscar linhas do periodo selecionado, ordenadas por `order_index`
-- **Mutation `syncDRE`:** chamar edge function `dre-sync`
-- **KPIs calculados no frontend** a partir das linhas importadas:
-  - Faturamento: buscar grupo "FATURAMENTO" -- usar subtotal se `is_group=true` e tem valor, senao somar itens do grupo
-  - Receita Liquida: buscar linha com `is_subtotal=true` e label ~= "receita liquida", senao calcular Faturamento + Deducoes
-  - Despesas Totais: buscar subtotal "DESPESAS TOTAIS", senao somar itens
-  - Resultado do Mes: buscar subtotal "RESULTADO", senao calcular
-  - Margem Liquida: Resultado / Receita Liquida (se != 0, senao "--")
-
-## Bloco 4 -- Pagina `DREPage.tsx` (reescrita)
-
-**Desktop-only guard:**
-```tsx
-const isDesktop = useMediaQuery("(min-width: 1024px)");
-if (!isDesktop) {
-  return <PlaceholderMobile message="DRE disponivel apenas no desktop." />;
+**Entrada:**
+```json
+{
+  "connection_id": "uuid",
+  "month_range": { "from": "2025-06", "to": "2025-12" }
 }
 ```
 
-**Layout desktop:**
+**Fluxo:**
+1. Buscar conexao + refresh token (reutiliza logica existente do `google-sheets-sync`)
+2. Buscar metadata da planilha (lista de abas)
+3. Classificar cada aba pelo roteador
+4. Filtrar apenas `MONTHLY_TRANSACTIONS` dentro do `month_range`
+5. Ordenar cronologicamente
+6. Para cada aba mensal:
+   - Ler dados (A1:Z1000)
+   - Detectar header (reutiliza `autoDetectMapping` existente)
+   - Importar linhas usando a mesma logica do `google-sheets-sync` (parseBRL, extractAmount, parseDate, idempotencia por external_row_key)
+   - O `source_tab` salvo sera o nome real da aba (ex: "Junho")
+7. Retornar resultado agregado: abas importadas, linhas por aba, erros
 
-1. **Header:** titulo "DRE" + seletor de periodo (dropdown com meses + TOTAL) + seletor de planilha (se multiplas) + botao "Atualizar DRE" + ultima atualizacao
+**Importante:** a aba DRE e COMPLETAMENTE ignorada por esta funcao.
 
-2. **KPIs (5 cards):**
-   - Faturamento (R$)
-   - Receita Liquida (R$)
-   - Despesas Totais (R$)
-   - Resultado do Mes (R$)
-   - Margem Liquida (%)
+## Bloco 3 -- UI: Modal de Selecao Atualizado
 
-3. **Tabela DRE (layout contabil):**
-   - Linhas com `is_group=true` renderizadas como header de secao (negrito, fundo diferenciado)
-   - Linhas normais renderizadas abaixo do grupo, com indentacao
-   - Linhas com `is_subtotal=true` em negrito com borda superior
-   - Coluna: Linha DRE | Valor (R$)
-   - Ordem preservada pelo `order_index`
+Modificar `SpreadsheetSelectorModal.tsx`:
 
-4. **Estado vazio:** instrucao clara para criar aba DRE
+Quando o usuario seleciona "Todas as Abas", adicionar um passo intermediario (novo step `"month-range"`):
 
-5. **Skeleton loading** durante carregamento
+1. **Step "sheets"**: usuario clica em "Todas as Abas"
+2. **Step "month-range"** (NOVO):
+   - Titulo: "Selecionar periodo de importacao"
+   - Dois dropdowns: "Mes inicial" e "Mes final"
+   - Lista dos meses disponiveis (detectados das abas da planilha)
+   - Informativo: "A aba DRE sera importada separadamente no menu DRE"
+   - Padrao inteligente: ultimos 6 meses disponiveis
+3. **Step "confirm"**: mostra resumo incluindo range selecionado
 
-## Bloco 5 -- Arquivos criados/modificados
+Quando o usuario seleciona uma aba individual, o fluxo permanece igual (sem step de range).
+
+## Bloco 4 -- Hook `useGoogleSheets` Atualizado
+
+Adicionar ao hook:
+
+- Nova mutation `syncAllTabs` que chama `sheets-sync-all-tabs`
+- O `createConnection` passa a salvar `data_type: "all_tabs"` e um campo `month_range` no `column_mapping` (ou num campo dedicado) quando o modo e "Todas as Abas"
+
+## Bloco 5 -- GoogleSheetsPage: Botao de Sync Inteligente
+
+Quando a conexao tem `sheet_name === null` (todas as abas):
+- O botao "Sincronizar" chama `syncAllTabs` em vez de `syncData`
+- Mostra contadores pos-sync: "X abas mensais, Y linhas importadas, DRE separada"
+
+## Bloco 6 -- Garantia de Separacao (DRE vs Transacoes)
+
+**Transacoes (tabela `transactions`):**
+- Alimentam: Home, Dashboard, Receitas, Despesas, Fluxo de Caixa, Previsoes
+- Fonte: abas mensais apenas
+- `source_tab` = nome da aba mensal (ex: "Junho")
+
+**DRE (tabelas `dre_periods` + `dre_lines`):**
+- Alimenta: SOMENTE o menu DRE
+- Fonte: aba DRE apenas
+- Importacao separada via botao "Atualizar DRE" na pagina DRE
+
+Nenhum codigo existente nos hooks de transacoes (useTransactions, useHomeDashboard, etc.) precisa mudar, pois eles ja consultam a tabela `transactions` que so recebe dados de abas mensais.
+
+## Bloco 7 -- config.toml
+
+Adicionar:
+```toml
+[functions.sheets-sync-all-tabs]
+verify_jwt = false
+```
+
+## Arquivos Criados/Modificados
 
 | Arquivo | Acao |
 |---|---|
-| Migracao SQL | Criar tabelas dre_periods e dre_lines com RLS |
-| `supabase/functions/dre-sync/index.ts` | Reescrever (importador generico) |
-| `src/hooks/useDRE.ts` | Reescrever (novo schema) |
-| `src/pages/DREPage.tsx` | Reescrever (desktop-only, novo layout) |
-
-Nao sera necessario alterar `App.tsx` nem `AppSidebar.tsx` pois ja estao com DRE configurado.
+| `supabase/functions/sheets-sync-all-tabs/index.ts` | Criar (nova edge function) |
+| `supabase/config.toml` | Adicionar nova funcao |
+| `src/components/modals/SpreadsheetSelectorModal.tsx` | Adicionar step "month-range" |
+| `src/hooks/useGoogleSheets.ts` | Adicionar mutation `syncAllTabs` |
+| `src/pages/GoogleSheetsPage.tsx` | Sync inteligente (all tabs vs single tab) |
 
 ## Detalhes Tecnicos
 
-- O `parseBRL` existente na edge function sera mantido (ja robusto para formatos BR)
-- A deteccao de header suporta formatos como `abr./25` usando regex: `/^([a-z]{3,})\.?[\s\/\-]*(\d{2,4})$/`
-- Linhas com label vazio sao ignoradas ANTES de qualquer processamento
-- A coluna TOTAL e tratada como um periodo especial (period_key = 'TOTAL')
-- O DELETE + INSERT (em vez de UPSERT) simplifica o fluxo e evita orfaos quando linhas sao removidas da planilha
-- A validacao de consistencia usa tolerancia de R$ 0,01 e gera warnings internos sem bloquear a importacao
+- A nova edge function reutiliza as mesmas funcoes utilitarias do `google-sheets-sync`: `parseBRL`, `parseDate`, `autoDetectMapping`, `extractAmount`, `isSkippableRow`, `generateRowHash`, `refreshAccessToken`
+- Idempotencia: o `external_row_key` inclui o nome da aba, entao linhas de abas diferentes nunca colidem
+- A deteccao de meses usa um mapa PT-BR completo (Jan-Dez, Janeiro-Dezembro) com suporte a variantes com ano
+- O month_range usa comparacao de strings "YYYY-MM" para filtrar abas no intervalo
+- A aba DRE nunca e processada pela funcao de transacoes -- hard-coded como `IGNORE`
 
