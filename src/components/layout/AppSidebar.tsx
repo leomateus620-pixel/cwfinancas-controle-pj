@@ -66,11 +66,11 @@ export function AppSidebar() {
       {/* Header with Logo */}
       <SidebarHeader className="p-4 border-b border-white/[0.06]">
         <div className={`flex items-center justify-center ${collapsed ? 'p-1' : 'p-3'}`}>
-          <div className={`sidebar-logo-glass ${collapsed ? 'p-1.5' : 'p-4 w-full'} flex items-center justify-center`}>
+            <div className={`sidebar-logo-glass ${collapsed ? 'p-1.5' : 'p-5 w-full'} flex items-center justify-center`}>
             <img 
               src={logoIcon} 
               alt="CW Finanças" 
-              className={`object-contain transition-all duration-300 ${collapsed ? 'w-8 h-8' : 'w-full max-w-[160px] h-auto'}`}
+              className={`object-contain transition-all duration-300 ${collapsed ? 'w-8 h-8' : 'w-full max-w-[200px] h-auto'}`}
               style={{ filter: 'drop-shadow(0 0 12px rgba(45, 126, 243, 0.25))' }}
             />
           </div>
