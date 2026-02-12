@@ -1,18 +1,19 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { CalendarDays } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import { Separator } from "@/components/ui/separator";
+import { ptBR } from "date-fns/locale";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useDateRange } from "@/contexts/DateRangeContext";
+
+const ALLOWED_ROUTES = ["/overview", "/income", "/expenses", "/cash-flow"];
 
 const PRESET_OPTIONS = [
   { key: "7d", label: "7d" },
@@ -25,10 +26,13 @@ const PRESET_OPTIONS = [
 ];
 
 export function GlobalDateRangeFilter() {
+  const location = useLocation();
   const { range, preset, setPreset, setCustomRange, rangeLabel, formattedRange } = useDateRange();
   const [open, setOpen] = useState(false);
   const [customFrom, setCustomFrom] = useState<Date | undefined>(range.from);
   const [customTo, setCustomTo] = useState<Date | undefined>(range.to);
+
+  if (!ALLOWED_ROUTES.includes(location.pathname)) return null;
 
   const handlePresetClick = (key: string) => {
     setPreset(key);
@@ -52,18 +56,26 @@ export function GlobalDateRangeFilter() {
         }
       }}>
         <PopoverTrigger asChild>
-          <Button
-            variant="outline"
-            className="gap-2 rounded-lg border-border hover:bg-accent text-sm h-9 px-3"
+          <button
+            className="liquid-glass-compact flex items-center gap-2 px-3 py-1.5 rounded-xl cursor-pointer transition-all duration-200 text-sm"
           >
             <CalendarDays className="w-4 h-4 text-muted-foreground" />
-            <span className="text-foreground font-medium">{rangeLabel}</span>
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5 font-normal text-muted-foreground">
-              {formattedRange}
-            </Badge>
-          </Button>
+            <span className="font-medium text-foreground">{rangeLabel}</span>
+            <span className="text-[10px] text-muted-foreground">{formattedRange}</span>
+          </button>
         </PopoverTrigger>
-        <PopoverContent className="w-auto p-0" align="end" sideOffset={8}>
+        <PopoverContent
+          className="w-auto p-0 border-none shadow-xl"
+          align="end"
+          sideOffset={8}
+          style={{
+            background: "rgba(255, 255, 255, 0.75)",
+            backdropFilter: "blur(24px) saturate(120%)",
+            borderRadius: "16px",
+            border: "1px solid rgba(255,255,255,0.5)",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.6)",
+          }}
+        >
           <div className="p-4 space-y-4">
             {/* Presets */}
             <div>
@@ -76,10 +88,10 @@ export function GlobalDateRangeFilter() {
                     key={opt.key}
                     onClick={() => handlePresetClick(opt.key)}
                     className={cn(
-                      "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                      "px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200",
                       preset === opt.key
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-secondary text-secondary-foreground hover:bg-accent"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "liquid-glass-compact hover:border-foreground/10"
                     )}
                   >
                     {opt.label}
@@ -88,7 +100,7 @@ export function GlobalDateRangeFilter() {
               </div>
             </div>
 
-            <Separator />
+            <Separator className="opacity-30" />
 
             {/* Custom range */}
             <div>
@@ -103,7 +115,7 @@ export function GlobalDateRangeFilter() {
                     selected={customFrom}
                     onSelect={setCustomFrom}
                     locale={ptBR}
-                    className={cn("p-2 pointer-events-auto text-xs")}
+                    className="p-2 pointer-events-auto text-xs"
                     disabled={(date) => customTo ? date > customTo : false}
                   />
                 </div>
@@ -114,7 +126,7 @@ export function GlobalDateRangeFilter() {
                     selected={customTo}
                     onSelect={setCustomTo}
                     locale={ptBR}
-                    className={cn("p-2 pointer-events-auto text-xs")}
+                    className="p-2 pointer-events-auto text-xs"
                     disabled={(date) => customFrom ? date < customFrom : false}
                   />
                 </div>
