@@ -308,6 +308,54 @@ Deno.serve(async (req) => {
       );
     }
 
+    // --- Resolve OAuth access token ---
+    let accessToken = connection.access_token;
+    const tokenExpiresAt = connection.token_expires_at
+      ? new Date(connection.token_expires_at).getTime()
+      : 0;
+
+    // Refresh proactively if token expires within 60s
+    if (!accessToken || Date.now() > tokenExpiresAt - 60_000) {
+      const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID");
+      const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
+
+      if (!connection.refresh_token || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+        return new Response(
+          JSON.stringify({ error: "OAuth credentials missing – reconnect Google Sheets" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: GOOGLE_CLIENT_ID,
+          client_secret: GOOGLE_CLIENT_SECRET,
+          refresh_token: connection.refresh_token,
+          grant_type: "refresh_token",
+        }),
+      });
+
+      if (!tokenRes.ok) {
+        const errText = await tokenRes.text();
+        console.error("Token refresh failed:", errText);
+        return new Response(
+          JSON.stringify({ error: "Failed to refresh Google token" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const tokenData = await tokenRes.json();
+      accessToken = tokenData.access_token;
+      const newExpiresAt = new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString();
+
+      await supabase
+        .from("google_sheet_connections")
+        .update({ access_token: accessToken, token_expires_at: newExpiresAt })
+        .eq("id", connectionId);
+    }
+
     let sourceTab = tabName || connection.sheet_name || null;
 
     // If no tab specified, discover the first sheet name from the spreadsheet
