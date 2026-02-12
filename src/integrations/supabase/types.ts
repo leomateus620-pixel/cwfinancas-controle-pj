@@ -412,6 +412,139 @@ export type Database = {
           },
         ]
       }
+      forecast_insights: {
+        Row: {
+          generated_at: string
+          horizon: string
+          id: string
+          insights: Json | null
+          metadata: Json | null
+          opportunities: Json | null
+          recommendations: Json | null
+          risks: Json | null
+          sheet_id: string | null
+          summary: string | null
+          user_id: string
+        }
+        Insert: {
+          generated_at?: string
+          horizon: string
+          id?: string
+          insights?: Json | null
+          metadata?: Json | null
+          opportunities?: Json | null
+          recommendations?: Json | null
+          risks?: Json | null
+          sheet_id?: string | null
+          summary?: string | null
+          user_id: string
+        }
+        Update: {
+          generated_at?: string
+          horizon?: string
+          id?: string
+          insights?: Json | null
+          metadata?: Json | null
+          opportunities?: Json | null
+          recommendations?: Json | null
+          risks?: Json | null
+          sheet_id?: string | null
+          summary?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_insights_sheet_id_fkey"
+            columns: ["sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      forecast_monthly: {
+        Row: {
+          calibration_notes: Json | null
+          confidence_score: number | null
+          created_at: string
+          despesa_prev_base: number | null
+          despesa_prev_opt: number | null
+          despesa_prev_pess: number | null
+          despesa_real: number | null
+          id: string
+          is_forecast: boolean | null
+          month_key: string
+          receita_prev_base: number | null
+          receita_prev_opt: number | null
+          receita_prev_pess: number | null
+          receita_real: number | null
+          saldo_prev_base: number | null
+          saldo_prev_opt: number | null
+          saldo_prev_pess: number | null
+          saldo_real: number | null
+          sheet_id: string | null
+          updated_at: string
+          user_id: string
+          validation_status: string | null
+        }
+        Insert: {
+          calibration_notes?: Json | null
+          confidence_score?: number | null
+          created_at?: string
+          despesa_prev_base?: number | null
+          despesa_prev_opt?: number | null
+          despesa_prev_pess?: number | null
+          despesa_real?: number | null
+          id?: string
+          is_forecast?: boolean | null
+          month_key: string
+          receita_prev_base?: number | null
+          receita_prev_opt?: number | null
+          receita_prev_pess?: number | null
+          receita_real?: number | null
+          saldo_prev_base?: number | null
+          saldo_prev_opt?: number | null
+          saldo_prev_pess?: number | null
+          saldo_real?: number | null
+          sheet_id?: string | null
+          updated_at?: string
+          user_id: string
+          validation_status?: string | null
+        }
+        Update: {
+          calibration_notes?: Json | null
+          confidence_score?: number | null
+          created_at?: string
+          despesa_prev_base?: number | null
+          despesa_prev_opt?: number | null
+          despesa_prev_pess?: number | null
+          despesa_real?: number | null
+          id?: string
+          is_forecast?: boolean | null
+          month_key?: string
+          receita_prev_base?: number | null
+          receita_prev_opt?: number | null
+          receita_prev_pess?: number | null
+          receita_real?: number | null
+          saldo_prev_base?: number | null
+          saldo_prev_opt?: number | null
+          saldo_prev_pess?: number | null
+          saldo_real?: number | null
+          sheet_id?: string | null
+          updated_at?: string
+          user_id?: string
+          validation_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "forecast_monthly_sheet_id_fkey"
+            columns: ["sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_integration_logs: {
         Row: {
           created_at: string
