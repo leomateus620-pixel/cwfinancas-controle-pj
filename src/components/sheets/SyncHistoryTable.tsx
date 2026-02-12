@@ -1,4 +1,4 @@
-import { CheckCircle, AlertCircle, Clock, Loader2, XCircle } from "lucide-react";
+import { CheckCircle, AlertCircle, Clock, Loader2, XCircle, Timer, Ban } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SyncRun {
@@ -8,7 +8,7 @@ interface SyncRun {
   sheet_name?: string;
   started_at: string;
   finished_at: string | null;
-  status: "running" | "success" | "partial" | "error";
+  status: "running" | "success" | "partial" | "error" | "timeout" | "canceled";
   mode: "MANUAL" | "SCHEDULED" | "PUSH";
   rows_read: number;
   rows_upserted: number;
@@ -48,6 +48,10 @@ const getStatusConfig = (status: string) => {
       return { icon: AlertCircle, color: "text-warning", bg: "bg-warning/10", label: "Parcial" };
     case "error":
       return { icon: XCircle, color: "text-destructive", bg: "bg-destructive/10", label: "Erro" };
+    case "timeout":
+      return { icon: Timer, color: "text-warning", bg: "bg-warning/10", label: "Timeout" };
+    case "canceled":
+      return { icon: Ban, color: "text-muted-foreground", bg: "bg-muted", label: "Cancelado" };
     case "running":
       return { icon: Loader2, color: "text-primary", bg: "bg-primary/10", label: "Executando" };
     default:

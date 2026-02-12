@@ -675,6 +675,62 @@ export type Database = {
         }
         Relationships: []
       }
+      sheet_sync_jobs: {
+        Row: {
+          connection_id: string
+          created_at: string
+          error_message: string | null
+          error_step: string | null
+          finished_at: string | null
+          heartbeat_at: string | null
+          id: string
+          mode: string
+          progress: Json | null
+          request_id: string | null
+          started_at: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          connection_id: string
+          created_at?: string
+          error_message?: string | null
+          error_step?: string | null
+          finished_at?: string | null
+          heartbeat_at?: string | null
+          id?: string
+          mode?: string
+          progress?: Json | null
+          request_id?: string | null
+          started_at?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          connection_id?: string
+          created_at?: string
+          error_message?: string | null
+          error_step?: string | null
+          finished_at?: string | null
+          heartbeat_at?: string | null
+          id?: string
+          mode?: string
+          progress?: Json | null
+          request_id?: string | null
+          started_at?: string | null
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sheet_sync_jobs_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transaction_flags: {
         Row: {
           confidence: number | null
