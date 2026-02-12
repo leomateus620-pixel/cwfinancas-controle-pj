@@ -1,129 +1,107 @@
 
 
-# Correcao Definitiva: Sync Infinito + Job Control
+# Reset de Dados Importados + Limpeza Automatica ao Desconectar
 
-## Diagnostico
+## Problema
 
-O erro de console mostra `FunctionsFetchError: Failed to send a request to the Edge Function` para `sheets-sync-all-tabs`. Isso significa que a chamada nem chega ao servidor -- a funcao pode ter falhado no deploy, ou o request expirou antes de completar. Como resultado:
+Quando o usuario desconecta uma planilha ou a conta Google, apenas os registros de conexao e tokens sao removidos. Os dados importados (transacoes, DRE, insights, perfis de planilha, agregacoes, jobs) permanecem no banco, causando valores "fantasma" nos menus Dashboard, Receitas, Despesas, Fluxo de Caixa e Previsoes.
 
-1. O `google_sheet_sync_logs` fica com `status = 'running'` para sempre (nunca recebe update de `completed_at`)
-2. A UI mostra "Executando" indefinidamente baseado nesse log
-3. Nao existe mecanismo de timeout ou heartbeat para detectar jobs travados
-4. Nao existe prevencao de concorrencia (clicar varias vezes cria multiplos logs "running")
+## Solucao em 4 Blocos
 
-## Solucao em 5 Blocos
+### Bloco 1 -- Edge Function `reset-sheet-data`
 
-### Bloco 1 -- Tabela `sheet_sync_jobs` (migracao SQL)
+Criar `supabase/functions/reset-sheet-data/index.ts`
 
-Criar tabela dedicada para controle de jobs com heartbeat e timeout:
-
-```text
-sheet_sync_jobs
-- id uuid PK
-- user_id uuid NOT NULL
-- connection_id uuid NOT NULL
-- mode text NOT NULL (ALL_TABS / SINGLE_TAB / DRE_ONLY)
-- status text NOT NULL DEFAULT 'queued'
-  (queued | running | success | failed | canceled | timeout)
-- started_at timestamptz
-- finished_at timestamptz
-- heartbeat_at timestamptz
-- progress jsonb DEFAULT '{}'
-  (tabs_total, tabs_done, rows_read, rows_imported, current_tab)
-- error_message text
-- error_step text
-- request_id text
-- created_at timestamptz DEFAULT now()
+**Entrada:**
+```json
+{
+  "connection_id": "uuid" | null,
+  "scope": "ALL" | "TRANSACTIONS_ONLY" | "DRE_ONLY"
+}
 ```
 
-RLS: `user_id = auth.uid()` para SELECT. INSERT/UPDATE/DELETE somente via service role (edge functions).
+- Se `connection_id` fornecido: limpa dados vinculados aquela planilha
+- Se `connection_id` nulo: limpa TODOS os dados do usuario (reset total)
 
-### Bloco 2 -- Edge Function `sheets-sync-all-tabs` (reescrita com job control)
+**Sequencia de deletes (scope=ALL):**
 
-Reescrever a funcao com controle completo:
+1. `transactions` WHERE `source_sheet_id = connection_id` (ou `user_id` se reset total)
+2. `transaction_flags` WHERE transaction_id in transacoes deletadas (cascade natural se FK existir, senao delete explicito)
+3. `financial_daily_aggregates` WHERE `source_sheet_id = connection_id`
+4. `dre_lines` WHERE `user_id` (via period_id cascade ou delete direto)
+5. `dre_periods` WHERE `sheet_id = connection_id`
+6. `dre_values` WHERE `sheet_id = connection_id`
+7. `dre_mappings` WHERE `sheet_id = connection_id`
+8. `ai_sheet_profiles` WHERE `connected_sheet_id = connection_id`
+9. `ai_insights` WHERE `connected_sheet_id = connection_id`
+10. `sheet_sync_jobs` WHERE `connection_id = connection_id`
+11. `google_sheet_sync_logs` WHERE `connection_id = connection_id`
 
-**Inicio:**
-1. Verificar se existe job `running` para o mesmo `user_id + connection_id`
-   - Se `heartbeat_at` < 2 minutos atras: retornar `{ error: "already_running" }` (HTTP 409)
-   - Se `heartbeat_at` > 2 minutos atras: marcar como `timeout` e prosseguir
-2. Criar novo job com `status = 'running'`, `started_at = now()`, `heartbeat_at = now()`
+**Escopo TRANSACTIONS_ONLY:** apenas itens 1-3
+**Escopo DRE_ONLY:** apenas itens 4-7
 
-**Execucao (try/catch/finally):**
-- Antes de cada etapa critica, atualizar `heartbeat_at` e `progress`:
-  - `step=auth` -> heartbeat
-  - `step=listTabs` -> heartbeat + `progress.tabs_total`
-  - `step=classifyTabs` -> heartbeat
-  - Para cada aba: `step=readTab(tabName)` -> heartbeat + `progress.tabs_done++`
-  - `step=upsertRows` -> heartbeat + `progress.rows_imported`
-- Implementar timeout interno: verificar `Date.now() - startTime > 110_000` (110s para dar margem antes do timeout de 150s do Supabase) e se exceder, salvar progresso parcial e marcar `status = 'timeout'`
+**Retorno:** `{ ok: true, deleted: { transactions: N, dre_lines: N, ... } }`
 
-**Erro (catch):**
-- Salvar `status = 'failed'`, `error_message`, `error_step`, `finished_at`
+A funcao usa `service_role` para poder deletar em tabelas onde o frontend nao tem permissao de DELETE (como `sheet_sync_jobs`, `google_sheet_sync_logs`). Valida o JWT do usuario para garantir que so apaga dados dele.
 
-**Fim (finally):**
-- Se status ainda for `running`, atualizar para `success` com `finished_at`
-- Garantir que o `google_sheet_connections.sync_status` tambem e atualizado
+### Bloco 2 -- Integrar Reset no Fluxo de Desconexao
 
-**Logs detalhados** em cada etapa para facilitar debug futuro.
+**`deleteConnection` (remover planilha individual):**
+1. Chamar `reset-sheet-data` com `connection_id` e `scope=ALL`
+2. Somente apos sucesso, deletar o registro da conexao
+3. Invalidar todas as queries relevantes (transactions, home-dashboard, sync-jobs, dre, insights)
 
-### Bloco 3 -- Edge Function `google-sheets-sync` (mesma protecao)
+**`disconnectGoogle` (desconectar conta inteira):**
+1. Para cada conexao do usuario, chamar `reset-sheet-data` com `scope=ALL`
+2. Somente apos sucesso de todos os resets, deletar tokens e conexoes
+3. Invalidar todas as queries
 
-Aplicar o mesmo pattern de job control na funcao de sync de aba unica:
-- Criar job antes de processar
-- Heartbeat durante processamento
-- try/catch/finally garantindo finalizacao
-- Prevencao de concorrencia
+### Bloco 3 -- Botao "Zerar Dados Importados" na UI
 
-### Bloco 4 -- Hook `useSyncStatus` + novo `useSyncJobs` 
+Adicionar na pagina Google Sheets, abaixo das conexoes, um botao danger:
 
-**Novo hook `useSyncJobs`:**
-- Query em `sheet_sync_jobs` para o `connection_id` ativo
-- Polling a cada 3 segundos SOMENTE quando existe job `running` ou `queued`
-- Para de fazer polling quando status e `success/failed/timeout/canceled`
-- Detecta job travado: se `heartbeat_at` > 5 minutos, mostra "Sync travou" na UI
+- Label: "Zerar Dados Importados"
+- Confirmacao em 2 passos: dialog com input "Digite ZERAR para confirmar"
+- Ao confirmar: chama `reset-sheet-data` com `connection_id=null` e `scope=ALL` (reset total)
+- Apos sucesso: toast "Dados zerados. Pronto para reimportar." + invalidar queries
+- O botao fica desabilitado durante execucao
 
-**Atualizar `useGoogleSheets`:**
-- Apos chamar `syncAllTabs` ou `syncData`, capturar erro de rede (`FunctionsFetchError`) e:
-  - Mostrar toast informativo ("Sincronizacao iniciada, acompanhe o progresso")
-  - Iniciar polling do job
-  - NAO travar a UI esperando resposta da function
+### Bloco 4 -- Invalidacao Completa de Queries
 
-### Bloco 5 -- UI: GoogleSheetsPage + SyncHistoryTable
+Apos qualquer reset (manual ou automatico), invalidar:
+- `["transactions"]`
+- `["home-dashboard"]`
+- `["sync-jobs"]`
+- `["google-sheet-connections"]`
+- `["google-oauth-status"]`
+- `["dre-periods"]`
+- `["dre-lines"]`
+- `["balance-sheet"]`
+- `["invoices"]`
+- `["ai-insights"]`
+- `["finance-insights"]`
+- `["flagged-transactions"]`
+- `["cash-flow"]`
 
-**GoogleSheetsPage:**
-- Botao "Sincronizar" desabilitado quando existe job `running` para aquela conexao
-- Se job `running` existe, mostrar indicador de progresso (tabs_done/tabs_total, rows_imported)
-- Se job `timeout` ou `failed`, mostrar mensagem com botao "Tentar novamente"
-- Badge visual no card da conexao mostrando status do ultimo job
-
-**SyncHistoryTable:**
-- Adicionar coluna "Progresso" mostrando dados do `progress` jsonb
-- Jobs com status `timeout` mostram icone diferente de `error`
-- Adicionar status `timeout` e `canceled` ao mapa de cores
-
-**Prevencao de cliques multiplos:**
-- O botao "Sincronizar" verifica se existe job ativo antes de disparar
-- Se usuario clicar com job ativo, mostrar toast "Sincronizacao ja em andamento"
+Isso garante que todos os cards/graficos/tabelas refletem estado vazio imediatamente.
 
 ## Arquivos Criados/Modificados
 
 | Arquivo | Acao |
 |---|---|
-| Migracao SQL | Criar tabela `sheet_sync_jobs` com RLS |
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Reescrever com job control |
-| `supabase/functions/google-sheets-sync/index.ts` | Adicionar job control |
-| `supabase/config.toml` | Sem alteracao (funcoes ja registradas) |
-| `src/hooks/useSyncJobs.ts` | Criar (polling de jobs) |
-| `src/hooks/useGoogleSheets.ts` | Tratar erro de rede, integrar com jobs |
-| `src/pages/GoogleSheetsPage.tsx` | Mostrar progresso/status do job |
-| `src/components/sheets/SyncHistoryTable.tsx` | Adicionar status timeout/canceled |
+| `supabase/functions/reset-sheet-data/index.ts` | Criar (edge function de reset) |
+| `supabase/config.toml` | Adicionar `[functions.reset-sheet-data]` |
+| `src/hooks/useGoogleSheets.ts` | Modificar `deleteConnection` e `disconnectGoogle` para chamar reset antes |
+| `src/pages/GoogleSheetsPage.tsx` | Adicionar botao "Zerar Dados Importados" com confirmacao |
 
 ## Detalhes Tecnicos
 
-- O timeout interno de 110s garante que a funcao finaliza antes do limite de 150s do Supabase Edge Functions
-- O heartbeat a cada etapa critica (nao a cada linha) minimiza queries extras ao banco
-- A verificacao de concorrencia usa `heartbeat_at` como indicador de "vida" -- se o heartbeat parou ha mais de 2 minutos, o job e considerado morto
-- O polling do frontend usa `refetchInterval` do React Query, ativado condicionalmente
-- O `FunctionsFetchError` capturado no frontend permite que a UI nao trave mesmo quando o request falha na rede
-- Jobs antigos com status `running` sem heartbeat recente sao automaticamente marcados como `timeout` quando um novo sync e iniciado
+- A edge function usa `createClient` com `SUPABASE_SERVICE_ROLE_KEY` para poder deletar em tabelas com RLS restritivo (sheet_sync_jobs, google_sheet_sync_logs)
+- A funcao valida o JWT do usuario via header Authorization para garantir que so apaga dados do usuario autenticado
+- Deletes sao executados em sequencia (nao transacao SQL) para evitar locks longos, mas cada um e idempotente
+- Se algum delete falhar, a funcao retorna erro parcial com indicacao de qual tabela falhou
+- O campo `source_sheet_id` na tabela `transactions` e usado para filtrar por conexao -- transacoes sem `source_sheet_id` (manuais) NAO sao apagadas
+- `dre_lines` sao deletadas via CASCADE do `dre_periods` (period_id FK) ou diretamente por `user_id`
+- A confirmacao "Digite ZERAR" previne cliques acidentais
+- O fluxo de desconexao e bloqueante: se o reset falhar, a desconexao nao prossegue e o usuario recebe mensagem de erro
 
