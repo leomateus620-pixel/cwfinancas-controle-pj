@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.dre-sync]
 verify_jwt = false
+
+[functions.sheets-sync-all-tabs]
+verify_jwt = false

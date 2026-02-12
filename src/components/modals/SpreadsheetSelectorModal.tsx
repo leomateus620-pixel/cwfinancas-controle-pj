@@ -12,10 +12,18 @@ import {
   ChevronRight, 
   Loader2, 
   Table,
-  CheckCircle
+  CheckCircle,
+  Calendar,
+  Info
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { UseMutationResult } from "@tanstack/react-query";
 
 interface Spreadsheet {
   id: string;
@@ -30,10 +38,14 @@ interface Sheet {
   index: number;
 }
 
+interface MonthRange {
+  from: string; // "YYYY-MM"
+  to: string;   // "YYYY-MM"
+}
+
 interface SpreadsheetSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  // Props from parent hook
   spreadsheets: Spreadsheet[] | undefined;
   isLoadingSpreadsheets: boolean;
   onLoadSpreadsheets: () => void;
@@ -44,11 +56,55 @@ interface SpreadsheetSelectorModalProps {
     spreadsheetId: string;
     spreadsheetName: string;
     sheetName: string | null;
+    monthRange?: MonthRange;
   }) => Promise<void>;
   isCreatingConnection: boolean;
 }
 
-type Step = "spreadsheets" | "sheets" | "confirm";
+type Step = "spreadsheets" | "sheets" | "month-range" | "confirm";
+
+// PT-BR month names and abbreviations for tab classification
+const MONTH_FULL: Record<string, number> = {
+  janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
+  julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+};
+const MONTH_ABBR: Record<string, number> = {
+  jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
+};
+
+const MONTH_LABELS: Record<number, string> = {
+  1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
+  7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+};
+
+function detectMonthFromTab(tabName: string): { monthIndex: number; year: number } | null {
+  const normalized = tabName.trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const defaultYear = new Date().getFullYear();
+
+  for (const [name, idx] of Object.entries(MONTH_FULL)) {
+    const regex = new RegExp(`^${name}[\\s\\/\\-]*(\\d{2,4})?$`, "i");
+    const match = normalized.match(regex);
+    if (match) {
+      let year = defaultYear;
+      if (match[1]) { const n = parseInt(match[1]); year = n >= 100 ? n : n >= 50 ? 1900 + n : 2000 + n; }
+      return { monthIndex: idx, year };
+    }
+  }
+
+  for (const [abbr, idx] of Object.entries(MONTH_ABBR)) {
+    const regex = new RegExp(`^${abbr}\\.?[\\s\\/\\-]*(\\d{2,4})?$`, "i");
+    const match = normalized.match(regex);
+    if (match) {
+      let year = defaultYear;
+      if (match[1]) { const n = parseInt(match[1]); year = n >= 100 ? n : n >= 50 ? 1900 + n : 2000 + n; }
+      return { monthIndex: idx, year };
+    }
+  }
+
+  return null;
+}
 
 export function SpreadsheetSelectorModal({ 
   open, 
@@ -65,11 +121,11 @@ export function SpreadsheetSelectorModal({
   const [step, setStep] = useState<Step>("spreadsheets");
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const [monthRange, setMonthRange] = useState<MonthRange>({ from: "", to: "" });
+  const [detectedMonths, setDetectedMonths] = useState<Array<{ periodKey: string; label: string }>>([]);
   
-  // Flag to prevent duplicate calls (handles StrictMode and re-renders)
   const hasLoadedRef = useRef(false);
 
-  // Load spreadsheets when modal opens - with duplicate call prevention
   useEffect(() => {
     if (open && step === "spreadsheets" && !spreadsheets && !isLoadingSpreadsheets && !hasLoadedRef.current) {
       hasLoadedRef.current = true;
@@ -77,16 +133,46 @@ export function SpreadsheetSelectorModal({
     }
   }, [open, step, spreadsheets, isLoadingSpreadsheets, onLoadSpreadsheets]);
 
-  // Reset state when modal closes
   useEffect(() => {
     if (!open) {
       setStep("spreadsheets");
       setSelectedSpreadsheet(null);
       setSelectedSheet(null);
-      // Reset the load flag so it can load again next time
+      setMonthRange({ from: "", to: "" });
+      setDetectedMonths([]);
       hasLoadedRef.current = false;
     }
   }, [open]);
+
+  // Detect monthly tabs when sheetsData arrives
+  useEffect(() => {
+    if (sheetsData?.sheets) {
+      const months: Array<{ periodKey: string; label: string; monthIndex: number; year: number }> = [];
+      for (const sheet of sheetsData.sheets) {
+        const detected = detectMonthFromTab(sheet.title);
+        if (detected) {
+          const pk = `${detected.year}-${String(detected.monthIndex).padStart(2, "0")}`;
+          months.push({
+            periodKey: pk,
+            label: `${MONTH_LABELS[detected.monthIndex]} ${detected.year}`,
+            monthIndex: detected.monthIndex,
+            year: detected.year,
+          });
+        }
+      }
+      months.sort((a, b) => a.periodKey.localeCompare(b.periodKey));
+      setDetectedMonths(months);
+
+      // Smart default: last 6 available months
+      if (months.length > 0) {
+        const startIdx = Math.max(0, months.length - 6);
+        setMonthRange({
+          from: months[startIdx].periodKey,
+          to: months[months.length - 1].periodKey,
+        });
+      }
+    }
+  }, [sheetsData]);
 
   const handleSelectSpreadsheet = (spreadsheet: { id: string; name: string }) => {
     setSelectedSpreadsheet(spreadsheet);
@@ -96,7 +182,12 @@ export function SpreadsheetSelectorModal({
 
   const handleSelectSheet = (sheetName: string | null) => {
     setSelectedSheet(sheetName);
-    setStep("confirm");
+    if (sheetName === null) {
+      // "Todas as Abas" -> go to month-range step
+      setStep("month-range");
+    } else {
+      setStep("confirm");
+    }
   };
 
   const handleConfirm = async () => {
@@ -106,6 +197,7 @@ export function SpreadsheetSelectorModal({
       spreadsheetId: selectedSpreadsheet.id,
       spreadsheetName: selectedSpreadsheet.name,
       sheetName: selectedSheet,
+      monthRange: selectedSheet === null ? monthRange : undefined,
     });
 
     onOpenChange(false);
@@ -115,9 +207,16 @@ export function SpreadsheetSelectorModal({
     if (step === "sheets") {
       setStep("spreadsheets");
       setSelectedSpreadsheet(null);
-    } else if (step === "confirm") {
+    } else if (step === "month-range") {
       setStep("sheets");
       setSelectedSheet(null);
+    } else if (step === "confirm") {
+      if (selectedSheet === null) {
+        setStep("month-range");
+      } else {
+        setStep("sheets");
+        setSelectedSheet(null);
+      }
     }
   };
 
@@ -129,11 +228,13 @@ export function SpreadsheetSelectorModal({
             <FileSpreadsheet className="w-5 h-5 text-primary" />
             {step === "spreadsheets" && "Selecionar Planilha"}
             {step === "sheets" && "Selecionar Aba"}
+            {step === "month-range" && "Selecionar Período"}
             {step === "confirm" && "Confirmar Conexão"}
           </DialogTitle>
           <DialogDescription>
             {step === "spreadsheets" && "Escolha a planilha que deseja conectar."}
             {step === "sheets" && "Escolha a aba com os dados financeiros."}
+            {step === "month-range" && "Selecione o intervalo de meses para importar transações."}
             {step === "confirm" && "Revise e confirme a conexão."}
           </DialogDescription>
         </DialogHeader>
@@ -211,7 +312,7 @@ export function SpreadsheetSelectorModal({
                         <div>
                           <p className="font-medium text-foreground">Todas as Abas</p>
                           <p className="text-xs text-muted-foreground">
-                            Importar dados de todas as abas
+                            Importar transações de abas mensais
                           </p>
                         </div>
                       </div>
@@ -247,6 +348,89 @@ export function SpreadsheetSelectorModal({
             </div>
           )}
 
+          {/* Step: Month Range */}
+          {step === "month-range" && (
+            <div className="space-y-5">
+              <div className="text-sm text-muted-foreground px-1">
+                Planilha: <span className="font-medium text-foreground">{selectedSpreadsheet?.name}</span>
+              </div>
+
+              {detectedMonths.length === 0 ? (
+                <div className="p-4 rounded-xl bg-muted/50 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Nenhuma aba mensal detectada nesta planilha.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        Mês inicial
+                      </label>
+                      <Select value={monthRange.from} onValueChange={(v) => setMonthRange(prev => ({ ...prev, from: v }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {detectedMonths.map((m) => (
+                            <SelectItem key={m.periodKey} value={m.periodKey}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-primary" />
+                        Mês final
+                      </label>
+                      <Select value={monthRange.to} onValueChange={(v) => setMonthRange(prev => ({ ...prev, to: v }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {detectedMonths.filter(m => m.periodKey >= monthRange.from).map((m) => (
+                            <SelectItem key={m.periodKey} value={m.periodKey}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 flex items-start gap-2">
+                    <Info className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      A aba <strong>DRE</strong> será importada separadamente no menu DRE. Apenas abas mensais serão importadas como transações.
+                    </p>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    {detectedMonths.length} aba(s) mensal(is) detectada(s) •{" "}
+                    {detectedMonths.filter(m => m.periodKey >= monthRange.from && m.periodKey <= monthRange.to).length} selecionada(s)
+                  </p>
+                </>
+              )}
+
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={handleBack} className="flex-1">
+                  Voltar
+                </Button>
+                <Button
+                  onClick={() => setStep("confirm")}
+                  disabled={!monthRange.from || !monthRange.to || detectedMonths.length === 0}
+                  className="flex-1"
+                >
+                  Continuar
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Step: Confirm */}
           {step === "confirm" && (
             <div className="space-y-6">
@@ -262,13 +446,26 @@ export function SpreadsheetSelectorModal({
                   <CheckCircle className="w-5 h-5 text-success" />
                   <div>
                     <p className="text-sm text-muted-foreground">Aba</p>
-                    <p className="font-medium text-foreground">{selectedSheet || "Todas as abas"}</p>
+                    <p className="font-medium text-foreground">{selectedSheet || "Todas as abas (mensais)"}</p>
                   </div>
                 </div>
+                {selectedSheet === null && monthRange.from && monthRange.to && (
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="w-5 h-5 text-success" />
+                    <div>
+                      <p className="text-sm text-muted-foreground">Período</p>
+                      <p className="font-medium text-foreground">
+                        {detectedMonths.find(m => m.periodKey === monthRange.from)?.label} → {detectedMonths.find(m => m.periodKey === monthRange.to)?.label}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Ao confirmar, o sistema irá analisar sua planilha e detectar automaticamente as colunas de dados financeiros.
+                {selectedSheet === null
+                  ? "O sistema importará transações das abas mensais selecionadas. A aba DRE será importada separadamente."
+                  : "Ao confirmar, o sistema irá analisar sua planilha e detectar automaticamente as colunas de dados financeiros."}
               </p>
 
               <div className="flex gap-3">
