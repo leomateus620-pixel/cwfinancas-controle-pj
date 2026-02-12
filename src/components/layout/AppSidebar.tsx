@@ -60,23 +60,24 @@ export function AppSidebar() {
 
   return (
     <Sidebar 
-      className="border-r border-border bg-sidebar"
+      className="sidebar-glass"
       collapsible="icon"
     >
       {/* Header with Logo */}
-      <SidebarHeader className="p-5 border-b border-border">
+      <SidebarHeader className="p-5 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           <div className="relative">
             <img 
               src={logoImg} 
               alt="CW Finanças" 
-              className="w-10 h-10 rounded-xl object-contain shadow-corporate-md"
+              className="w-10 h-10 rounded-xl object-contain"
+              style={{ filter: 'drop-shadow(0 0 8px rgba(45, 126, 243, 0.3))' }}
             />
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="font-bold text-foreground tracking-tight text-lg">CW Finanças</span>
-              <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Controle PJ</span>
+              <span className="font-bold text-white tracking-tight text-lg">CW Finanças</span>
+              <span className="text-[11px] text-white/50 uppercase tracking-wider font-medium">Controle PJ</span>
             </div>
           )}
         </div>
@@ -85,7 +86,7 @@ export function AppSidebar() {
       <SidebarContent className="px-3 py-5">
         {/* Main Navigation */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-white/35 uppercase tracking-wider px-3 mb-3">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -102,15 +103,15 @@ export function AppSidebar() {
                       end={item.url === "/"}
                       className={`
                         flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                        text-muted-foreground hover:text-foreground hover:bg-accent
-                        ${isActive(item.url) ? 'bg-accent text-primary font-medium' : ''}
+                        text-white/65 hover:text-white/90 hover:bg-white/[0.06]
+                        ${isActive(item.url) ? 'bg-blue-500/10 text-blue-400 font-medium' : ''}
                       `}
-                      activeClassName="bg-accent text-primary font-medium"
+                      activeClassName="bg-blue-500/10 text-blue-400 font-medium"
                     >
                       {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-full" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
                       )}
-                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-primary' : ''}`} />
+                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-400' : ''}`} />
                       {!collapsed && <span className="text-sm">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
@@ -122,7 +123,7 @@ export function AppSidebar() {
 
         {/* Tools Navigation */}
         <SidebarGroup className="mt-6">
-          <SidebarGroupLabel className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-white/35 uppercase tracking-wider px-3 mb-3">
             Ferramentas
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -138,15 +139,15 @@ export function AppSidebar() {
                       to={item.url} 
                       className={`
                         flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                        text-muted-foreground hover:text-foreground hover:bg-accent
-                        ${isActive(item.url) ? 'bg-accent text-primary font-medium' : ''}
+                        text-white/65 hover:text-white/90 hover:bg-white/[0.06]
+                        ${isActive(item.url) ? 'bg-blue-500/10 text-blue-400 font-medium' : ''}
                       `}
-                      activeClassName="bg-accent text-primary font-medium"
+                      activeClassName="bg-blue-500/10 text-blue-400 font-medium"
                     >
                       {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-full" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
                       )}
-                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-primary' : ''}`} />
+                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-400' : ''}`} />
                       {!collapsed && <span className="text-sm">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
@@ -158,7 +159,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* Footer */}
-      <SidebarFooter className="p-3 border-t border-border">
+      <SidebarFooter className="p-3 border-t border-white/[0.06]">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton 
@@ -170,15 +171,15 @@ export function AppSidebar() {
                 to="/settings" 
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                  text-muted-foreground hover:text-foreground hover:bg-accent
-                  ${isActive("/settings") ? 'bg-accent text-primary font-medium' : ''}
+                  text-white/65 hover:text-white/90 hover:bg-white/[0.06]
+                  ${isActive("/settings") ? 'bg-blue-500/10 text-blue-400 font-medium' : ''}
                 `}
-                activeClassName="bg-accent text-primary font-medium"
+                activeClassName="bg-blue-500/10 text-blue-400 font-medium"
               >
                 {isActive("/settings") && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-primary rounded-r-full" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
                 )}
-                <Settings className={`w-5 h-5 shrink-0 transition-colors ${isActive("/settings") ? 'text-primary' : ''}`} />
+                <Settings className={`w-5 h-5 shrink-0 transition-colors ${isActive("/settings") ? 'text-blue-400' : ''}`} />
                 {!collapsed && <span className="text-sm">Configurações</span>}
               </NavLink>
             </SidebarMenuButton>
