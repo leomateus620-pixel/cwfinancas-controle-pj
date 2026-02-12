@@ -12,7 +12,7 @@ import {
   LineChart,
   FileSpreadsheet
 } from "lucide-react";
-import logoImg from "@/assets/logo.png";
+import logoIcon from "@/assets/logo-icon.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 
@@ -64,22 +64,16 @@ export function AppSidebar() {
       collapsible="icon"
     >
       {/* Header with Logo */}
-      <SidebarHeader className="p-5 border-b border-white/[0.06]">
-        <div className="flex items-center gap-3">
-          <div className="relative">
+      <SidebarHeader className="p-4 border-b border-white/[0.06]">
+        <div className={`flex items-center justify-center ${collapsed ? 'p-1' : 'p-3'}`}>
+          <div className={`sidebar-logo-glass ${collapsed ? 'p-1.5' : 'p-4 w-full'} flex items-center justify-center`}>
             <img 
-              src={logoImg} 
+              src={logoIcon} 
               alt="CW Finanças" 
-              className="w-10 h-10 rounded-xl object-contain"
-              style={{ filter: 'drop-shadow(0 0 8px rgba(45, 126, 243, 0.3))' }}
+              className={`object-contain transition-all duration-300 ${collapsed ? 'w-8 h-8' : 'w-full max-w-[160px] h-auto'}`}
+              style={{ filter: 'drop-shadow(0 0 12px rgba(45, 126, 243, 0.25))' }}
             />
           </div>
-          {!collapsed && (
-            <div className="flex flex-col">
-              <span className="font-bold text-white tracking-tight text-lg">CW Finanças</span>
-              <span className="text-[11px] text-white/50 uppercase tracking-wider font-medium">Controle PJ</span>
-            </div>
-          )}
         </div>
       </SidebarHeader>
 
