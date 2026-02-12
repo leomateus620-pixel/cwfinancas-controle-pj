@@ -106,6 +106,7 @@ function GoogleSheetsPageContent() {
     getSpreadsheetSheets,
     createConnection,
     syncData,
+    syncAllTabs,
     deleteConnection,
     disconnectGoogle,
   } = useGoogleSheets();
@@ -179,8 +180,14 @@ function GoogleSheetsPageContent() {
     refetchAuthStatus();
   };
 
-  const handleSync = (connectionId: string) => {
-    syncData.mutate(connectionId);
+  const handleSync = (connection: { id: string; sheet_name: string | null; data_type: string; column_mapping: Record<string, string> }) => {
+    if (connection.sheet_name === null && connection.data_type === "all_tabs") {
+      // Smart sync: use syncAllTabs for "all tabs" connections
+      const monthRange = (connection.column_mapping as Record<string, unknown>)?.month_range as { from: string; to: string } | undefined;
+      syncAllTabs.mutate({ connectionId: connection.id, monthRange });
+    } else {
+      syncData.mutate(connection.id);
+    }
   };
 
   const handleDelete = (connectionId: string) => {
@@ -223,6 +230,7 @@ function GoogleSheetsPageContent() {
     spreadsheetId: string;
     spreadsheetName: string;
     sheetName: string | null;
+    monthRange?: { from: string; to: string };
   }) => {
     await createConnection.mutateAsync(params);
   }, [createConnection]);
@@ -410,7 +418,7 @@ function GoogleSheetsPageContent() {
           {(connections ?? []).map((connection, index) => {
             const statusInfo = getStatusInfo(connection.sync_status);
             const StatusIcon = statusInfo.icon;
-            const isSyncing = syncData.isPending && syncData.variables === connection.id;
+            const isSyncing = (syncData.isPending && syncData.variables === connection.id) || (syncAllTabs.isPending && syncAllTabs.variables?.connectionId === connection.id);
 
             return (
               <Card 
@@ -440,11 +448,15 @@ function GoogleSheetsPageContent() {
                             <ExternalLink className="w-4 h-4" />
                           </a>
                         </h3>
-                        {connection.sheet_name && (
+                        {connection.sheet_name ? (
                           <p className="text-sm text-muted-foreground">
                             Aba: {connection.sheet_name}
                           </p>
-                        )}
+                        ) : connection.data_type === "all_tabs" ? (
+                          <p className="text-sm text-muted-foreground">
+                            Todas as abas (transações mensais)
+                          </p>
+                        ) : null}
                         <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <StatusIndicator status={statusInfo.indicator} size="sm" pulse={connection.sync_status === "syncing"} />
@@ -460,7 +472,7 @@ function GoogleSheetsPageContent() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleSync(connection.id)}
+                        onClick={() => handleSync(connection)}
                         disabled={isSyncing}
                         className="gap-2 rounded-lg"
                       >

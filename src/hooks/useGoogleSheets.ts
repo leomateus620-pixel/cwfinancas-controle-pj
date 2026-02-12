@@ -46,6 +46,21 @@ interface SyncResult {
   errors: Array<{ row: number; error: string }>;
 }
 
+interface SyncAllTabsResult {
+  success: boolean;
+  tabs_imported: number;
+  tab_results: Array<{ tab: string; periodKey: string; rowsImported: number; rowsSkipped: number; errors: number }>;
+  total_imported: number;
+  total_skipped: number;
+  total_errors: number;
+  errors: Array<{ tab: string; row: number; error: string }>;
+}
+
+interface MonthRange {
+  from: string;
+  to: string;
+}
+
 interface OAuthStatus {
   connected: boolean;
   code: string;
@@ -230,12 +245,14 @@ export function useGoogleSheets() {
       spreadsheetId,
       spreadsheetName,
       sheetName,
-      dataType = "transactions",
+      dataType,
+      monthRange,
     }: {
       spreadsheetId: string;
       spreadsheetName: string;
       sheetName: string | null;
       dataType?: string;
+      monthRange?: MonthRange;
     }) => {
       if (!session?.user?.id) {
         throw new Error("Not authenticated");
@@ -251,6 +268,13 @@ export function useGoogleSheets() {
         throw new Error("Google authorization not found. Please reconnect.");
       }
 
+      // Determine data_type and store month_range in column_mapping
+      const isAllTabs = sheetName === null;
+      const finalDataType = dataType || (isAllTabs ? "all_tabs" : "transactions");
+      const columnMapping = isAllTabs && monthRange 
+        ? JSON.parse(JSON.stringify({ month_range: monthRange }))
+        : {};
+
       const { data, error } = await supabase
         .from("google_sheet_connections")
         .insert({
@@ -261,8 +285,9 @@ export function useGoogleSheets() {
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token,
           token_expires_at: tokenData.expires_at,
-          data_type: dataType,
-        })
+          data_type: finalDataType,
+          column_mapping: columnMapping,
+        } as never)
         .select()
         .single();
 
@@ -310,6 +335,37 @@ export function useGoogleSheets() {
     },
     onError: (error) => {
       console.error("Sync error:", error);
+      toast({
+        title: "Erro na sincronização",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Sync all tabs (monthly transactions only)
+  const syncAllTabs = useMutation({
+    mutationFn: async ({ connectionId, monthRange }: { connectionId: string; monthRange?: MonthRange }) => {
+      const { data, error } = await supabase.functions.invoke("sheets-sync-all-tabs", {
+        body: { connection_id: connectionId, month_range: monthRange },
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      return data as SyncAllTabsResult;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["home-dashboard"] });
+      toast({
+        title: "Sincronização concluída",
+        description: `${data.tabs_imported} aba(s) mensal(is), ${data.total_imported} linhas importadas.`,
+      });
+    },
+    onError: (error) => {
+      console.error("Sync all tabs error:", error);
       toast({
         title: "Erro na sincronização",
         description: error instanceof Error ? error.message : "Erro desconhecido",
@@ -430,6 +486,7 @@ export function useGoogleSheets() {
     // Connection operations
     createConnection,
     syncData,
+    syncAllTabs,
     updateMapping,
     deleteConnection,
     disconnectGoogle,
