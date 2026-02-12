@@ -1,39 +1,72 @@
 
+# Header da Sidebar: Logo em destaque com Liquid Glass
 
-# Correcao: Sidebar posicionada no fundo da tela
+## O que muda
 
-## Problema
+A area do header da sidebar (acima dos menus) vai exibir **apenas a logo** (imagem da maleta azul/verde), sem os textos "CW Financas" e "Controle PJ". A logo ocupara toda a largura disponivel do header, em alta resolucao, com bordas em estilo liquid glass texturizado.
 
-A classe `.sidebar-glass` esta aplicada no div externo do componente `<Sidebar>`. Esse div externo **nao tem posicionamento fixo** — ele e apenas um "spacer" que reserva espaco no layout. O div que realmente renderiza a sidebar visivel e o div filho com `fixed inset-y-0`.
+---
 
-Resultado: os estilos visuais (gradiente dark, borda azul) ficam no spacer invisivel, e o div fixo (que aparece na tela) fica sem fundo, "flutuando" na posicao errada.
+## Passos
 
-## Solucao
+### 1. Copiar a nova logo para o projeto
 
-Mover os estilos visuais do `.sidebar-glass` para que atinjam o div fixo interno, nao o div externo.
+Copiar a imagem enviada (`ChatGPT_Image_12_de_fev._de_2026_07_56_39.png`) para `src/assets/logo-icon.png` para uso como asset importado no componente.
 
-### Mudanca unica: `src/index.css`
+### 2. Atualizar `src/components/layout/AppSidebar.tsx` — Header
 
-Alterar o seletor `.sidebar-glass` para aplicar os estilos visuais no div fixo interno que contem `[data-sidebar="sidebar"]`:
+Substituir o bloco do header atual por:
 
-**Antes:**
+- Remover os textos "CW Financas" e "Controle PJ"
+- Exibir apenas a logo centralizada, ocupando toda a largura do header
+- A logo tera tamanho generoso (~80% da largura da sidebar) com `object-contain`
+- Envolver a logo num container com efeito liquid glass nas bordas:
+  - Borda arredondada (`rounded-2xl`)
+  - Borda sutil azul brilhante (`border border-blue-500/20`)
+  - Box-shadow com glow azul difuso
+  - Background com leve transparencia glass (`bg-white/[0.04]` + `backdrop-blur`)
+- Padding vertical confortavel para dar respiro
+- No modo collapsed (icone), a logo reduz para um icone pequeno (`w-8 h-8`)
+
+### 3. Adicionar CSS para `.sidebar-logo-glass` em `src/index.css`
+
+Nova classe CSS para o container da logo:
+
 ```css
-.sidebar-glass {
-  background: linear-gradient(...);
-  border-right: ...;
-  box-shadow: ...;
+.sidebar-logo-glass {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(45, 126, 243, 0.15);
+  border-radius: 1rem;
+  box-shadow:
+    0 0 20px rgba(45, 126, 243, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
   position: relative;
+  overflow: hidden;
 }
-.sidebar-glass::after { /* noise texture */ }
-.sidebar-glass > * { position: relative; z-index: 1; }
-.sidebar-glass [data-sidebar="sidebar"] { background: transparent !important; }
+
+.sidebar-logo-glass::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(45, 126, 243, 0.05) 0%,
+    transparent 50%,
+    rgba(45, 126, 243, 0.03) 100%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
 ```
 
-**Depois:**
-- `.sidebar-glass` fica sem estilos visuais (apenas container)
-- `.sidebar-glass > div:last-child` (o div fixo) recebe o gradiente, borda e shadow
-- `.sidebar-glass > div:last-child::after` recebe a textura noise
-- `.sidebar-glass [data-sidebar="sidebar"]` continua transparente
+---
 
-Isso garante que os estilos visuais fiquem no div `fixed inset-y-0` que e realmente visivel na tela, na posicao correta (lateral esquerda, altura total).
+## Resultado Visual
 
+- Header da sidebar exibe apenas a logo (maleta azul/verde) grande e centralizada
+- Container da logo com bordas liquid glass azul brilhante (glow sutil)
+- Textura de vidro com gradiente translucido e backdrop-blur
+- Sem textos — visual limpo e premium
+- No modo collapsed, a logo aparece como icone compacto
+- Resolucao 4K preservada pela imagem original em alta qualidade
