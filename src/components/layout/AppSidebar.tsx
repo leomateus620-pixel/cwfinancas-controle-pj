@@ -65,12 +65,12 @@ export function AppSidebar() {
       collapsible="icon"
     >
       {/* Header with Logo */}
-      <SidebarHeader className={`border-b border-black/[0.06] ${collapsed ? 'p-2' : 'px-3 py-3'}`}>
-        <div className={`flex items-center justify-center ${collapsed ? '' : 'rounded-2xl border border-black/[0.06] bg-white/20 backdrop-blur-xl'}`}>
+      <SidebarHeader className={`border-b border-black/[0.06] ${collapsed ? 'p-2' : 'px-3 py-2 md:py-4'}`}>
+        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-start md:justify-center h-[56px] md:h-[104px] rounded-2xl border border-black/[0.06] bg-white/15 md:bg-white/20 backdrop-blur-xl shadow-sm'}`}>
           <img 
             src={collapsed ? logoIcon : logoFull} 
             alt="CW Finanças" 
-            className={`object-contain transition-all duration-300 ${collapsed ? 'w-9 h-9' : 'h-16 w-auto max-w-[90%] my-2'}`}
+            className={`object-contain transition-all duration-300 ${collapsed ? 'w-9 h-9' : 'h-8 md:h-[72px] w-auto px-3 md:px-0'}`}
             style={{ filter: 'drop-shadow(0 2px 6px rgba(15, 23, 42, 0.08))' }}
           />
         </div>
