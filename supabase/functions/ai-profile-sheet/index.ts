@@ -308,57 +308,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    const sourceTab = tabName || connection.sheet_name || "Sheet1";
+    let sourceTab = tabName || connection.sheet_name || null;
 
-    // Fetch sample data from Google Sheets
-    const { data: oauthToken } = await supabase
-      .from("google_oauth_tokens")
-      .select("access_token, refresh_token, expires_at")
-      .eq("user_id", userId)
-      .single();
-
-    if (!oauthToken) {
-      return new Response(
-        JSON.stringify({ error: "No Google OAuth token found" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Refresh token if expired
-    let accessToken = oauthToken.access_token;
-    const expiresAt = new Date(oauthToken.expires_at).getTime();
-    if (Date.now() >= expiresAt - 60000) {
-      const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID");
-      const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
-      const refreshRes = await fetch("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: GOOGLE_CLIENT_ID || "",
-          client_secret: GOOGLE_CLIENT_SECRET || "",
-          refresh_token: oauthToken.refresh_token,
-          grant_type: "refresh_token",
-        }),
+    // If no tab specified, discover the first sheet name from the spreadsheet
+    if (!sourceTab) {
+      const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=sheets.properties.title`;
+      const metaRes = await fetch(metaUrl, {
+        headers: { "Authorization": `Bearer ${accessToken}` },
       });
-      if (refreshRes.ok) {
-        const refreshData = await refreshRes.json();
-        accessToken = refreshData.access_token;
-        const newExpiresAt = new Date(Date.now() + (refreshData.expires_in || 3600) * 1000).toISOString();
-        await supabase.from("google_oauth_tokens").update({
-          access_token: accessToken,
-          expires_at: newExpiresAt,
-          updated_at: new Date().toISOString(),
-        }).eq("user_id", userId);
+      if (metaRes.ok) {
+        const metaData = await metaRes.json();
+        const sheets = metaData.sheets || [];
+        if (sheets.length > 0) {
+          sourceTab = sheets[0].properties?.title || "Sheet1";
+        } else {
+          sourceTab = "Sheet1";
+        }
       } else {
-        console.error("Token refresh failed:", await refreshRes.text());
-        return new Response(
-          JSON.stringify({ error: "Google token expired. Please reconnect." }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        console.error("Failed to get spreadsheet metadata:", await metaRes.text());
+        sourceTab = "Sheet1";
       }
     }
 
-    // Get sheet data (first 100 rows for profiling)
+    // Fetch sample data from Google Sheets (first 100 rows for profiling)
     const range = `'${sourceTab}'!A1:Z100`;
     const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}`;
     
