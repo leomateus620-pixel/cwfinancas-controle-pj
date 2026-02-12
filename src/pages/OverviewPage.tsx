@@ -4,8 +4,8 @@ import { ExpenseChart } from "@/components/dashboard/ExpenseChart";
 import { ProfitDistributionChart } from "@/components/dashboard/ProfitDistributionChart";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { DataQualityCard } from "@/components/dashboard/DataQualityCard";
-import { Calendar, Wallet } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Wallet } from "lucide-react";
+
 import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { TrendBadge } from "@/components/ui/trend-badge";
@@ -21,13 +21,6 @@ export function OverviewPage() {
             Visão geral das finanças da sua empresa
           </p>
         </div>
-        <Button 
-          variant="outline" 
-          className="gap-2 self-start rounded-lg border-border hover:bg-accent text-sm h-9"
-        >
-          <Calendar className="w-4 h-4" />
-          <span>Jan - Dez, 2024</span>
-        </Button>
       </div>
 
       {/* Hero Balance Card */}

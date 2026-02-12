@@ -2,7 +2,6 @@ import {
   ArrowLeftRight, 
   TrendingUp, 
   TrendingDown, 
-  Calendar,
   ArrowDownLeft,
   ArrowUpRight,
   RefreshCw,
@@ -147,7 +146,7 @@ function LoadingState() {
 }
 
 export function CashFlowPage() {
-  const { cashFlowData, upcomingPayments, totals, isLoading, hasData } = useCashFlow(12);
+  const { cashFlowData, upcomingPayments, totals, isLoading, hasData } = useCashFlow();
 
   if (isLoading) {
     return <LoadingState />;
@@ -186,10 +185,6 @@ export function CashFlowPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="gap-2 rounded-xl border-border group transition-premium">
-            <Calendar className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            <span>Últimos 12 meses</span>
-          </Button>
           <Button asChild className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium">
             <Link to="/google-sheets">
               <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />

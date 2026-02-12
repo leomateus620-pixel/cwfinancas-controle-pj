@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { useTransactions } from "./useTransactions";
-import { format, startOfMonth, subMonths, parseISO, isValid } from "date-fns";
+import { format, startOfMonth, subMonths, parseISO, isValid, differenceInMonths, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useDateRange } from "@/contexts/DateRangeContext";
 
 export interface CashFlowDataPoint {
   month: string;
@@ -21,21 +22,32 @@ export interface UpcomingPayment {
   type: "income" | "expense";
 }
 
-export function useCashFlow(months: number = 12) {
+export function useCashFlow() {
   const { transactions, isLoading, error } = useTransactions();
+
+  let globalRange: { from: Date; to: Date } | null = null;
+  try {
+    const dr = useDateRange();
+    globalRange = dr.range;
+  } catch {
+    // fallback
+  }
+
+  const rangeFrom = globalRange?.from || subMonths(new Date(), 12);
+  const rangeTo = globalRange?.to || new Date();
 
   const cashFlowData = useMemo(() => {
     if (!transactions || transactions.length === 0) {
       return [];
     }
 
-    // Group transactions by month
+    // Group transactions by month within the global range
     const monthlyData = new Map<string, { inflow: number; outflow: number; count: number }>();
     
-    // Initialize last N months
-    const now = new Date();
-    for (let i = months - 1; i >= 0; i--) {
-      const monthDate = startOfMonth(subMonths(now, i));
+    // Initialize months within range
+    const totalMonths = differenceInMonths(rangeTo, rangeFrom) + 1;
+    for (let i = 0; i < totalMonths; i++) {
+      const monthDate = startOfMonth(addMonths(rangeFrom, i));
       const monthKey = format(monthDate, "yyyy-MM");
       monthlyData.set(monthKey, { inflow: 0, outflow: 0, count: 0 });
     }
@@ -87,7 +99,7 @@ export function useCashFlow(months: number = 12) {
     }
 
     return result;
-  }, [transactions, months]);
+  }, [transactions, rangeFrom, rangeTo]);
 
   // Get upcoming payments (future transactions)
   const upcomingPayments = useMemo((): UpcomingPayment[] => {
