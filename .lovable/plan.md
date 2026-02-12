@@ -1,107 +1,163 @@
 
 
-# Reset de Dados Importados + Limpeza Automatica ao Desconectar
+# Filtro Global de Periodo (Date Range) -- Desktop-Only
 
-## Problema
+## Visao Geral
 
-Quando o usuario desconecta uma planilha ou a conta Google, apenas os registros de conexao e tokens sao removidos. Os dados importados (transacoes, DRE, insights, perfis de planilha, agregacoes, jobs) permanecem no banco, causando valores "fantasma" nos menus Dashboard, Receitas, Despesas, Fluxo de Caixa e Previsoes.
+Implementar um filtro de periodo unico e global que controla todas as telas do app. O estado sera gerenciado via React Context, sincronizado com query string da URL e persistido no campo `preferences` da tabela `profiles` (que ja possui um campo jsonb para isso -- nao precisa criar tabela nova).
 
-## Solucao em 4 Blocos
+## Bloco 1 -- Context + Estado Global
 
-### Bloco 1 -- Edge Function `reset-sheet-data`
+Criar `src/contexts/DateRangeContext.tsx`:
 
-Criar `supabase/functions/reset-sheet-data/index.ts`
+```text
+DateRangeProvider
+  state: { from: Date, to: Date, preset: string | null }
+  actions: setPreset(key), setCustomRange(from, to), reset()
+```
 
-**Entrada:**
+**Presets disponíveis:**
+- `7d` -- Ultimos 7 dias
+- `30d` -- Ultimos 30 dias
+- `3m` -- Ultimos 3 meses
+- `6m` -- Ultimos 6 meses (DEFAULT)
+- `12m` -- Ultimos 12 meses
+- `month` -- Mes atual
+- `year` -- Ano atual
+- `custom` -- Intervalo manual
+
+**Inicializacao (ordem de prioridade):**
+1. Query string da URL (`?from=YYYY-MM-DD&to=YYYY-MM-DD&preset=6m`)
+2. Preferencia salva em `profiles.preferences.dateRange`
+3. Default: ultimos 6 meses
+
+**Sincronizacao:**
+- Ao mudar periodo: atualizar query string + salvar em `profiles.preferences` (debounced, 1s)
+- Ao navegar entre paginas: ler do Context (ja em memoria), URL reflete automaticamente
+
+**Helper para DRE:**
+- Expor `monthRange: { from: "YYYY-MM", to: "YYYY-MM" }` derivado das datas, para filtrar `period_key`
+
+## Bloco 2 -- Componente GlobalDateRangeFilter (Desktop-Only)
+
+Criar `src/components/layout/GlobalDateRangeFilter.tsx`:
+
+**Layout:**
+- Popover com botao trigger mostrando periodo ativo (ex: "Ultimos 6 meses: 12/08/2025 - 12/02/2026")
+- Dentro do popover:
+  - Grid de chips para presets (7d, 30d, 3m, 6m, 12m, Mes, Ano)
+  - Separador
+  - Secao "Personalizar" com dois DatePickers (inicio/fim) + botao "Aplicar"
+- Badge discreto no trigger mostrando o preset ativo
+
+**Responsivo:**
+- `hidden lg:flex` para o componente completo
+- Em `< lg`: nada visivel (desktop-only conforme requisito)
+
+**Posicionamento:**
+- Renderizado dentro do `DashboardHeader`, ao lado do botao de exportar (substituindo o botao estatico "Jan - Dez, 2024" que existe no OverviewPage)
+
+## Bloco 3 -- Integrar Provider no App
+
+Modificar `src/App.tsx`:
+- Envolver as rotas protegidas com `<DateRangeProvider>` (dentro de `AuthProvider`, pois precisa do user para persistencia)
+
+Modificar `src/components/layout/DashboardLayout.tsx`:
+- Nao precisa de alteracao estrutural, o Context ja estara disponivel
+
+Modificar `src/components/layout/DashboardHeader.tsx`:
+- Adicionar `<GlobalDateRangeFilter />` no header, entre a busca e os botoes de acao
+
+## Bloco 4 -- Atualizar Hooks de Dados
+
+**`useTransactions`:**
+- Importar `useDateRange()` do Context
+- Sempre incluir `startDate` e `endDate` do range global nos filtros da query
+- O `queryKey` ja inclui `filters`, entao mudanca de periodo invalida automaticamente
+
+**`useHomeDashboard`:**
+- Substituir calculos hardcoded de "mes atual" e "mes anterior" por datas derivadas do range global
+- Adaptar KPIs, tendencia diaria, categorias e alertas para o periodo selecionado
+
+**`useCashFlow`:**
+- Substituir o parametro `months` fixo por `from`/`to` do range global
+- Gerar buckets mensais apenas dentro do intervalo selecionado
+
+**`useDRE`:**
+- Importar `monthRange` do Context
+- Filtrar `periodOptions` para mostrar apenas periodos dentro do range
+- Ao selecionar um periodo na DRE, respeitar o filtro global (ex: se range = ultimos 3 meses, so mostrar Jun-Ago)
+
+**`useFinanceInsights`:**
+- Passar `dateFrom` e `dateTo` do range global como parametros
+
+**`useInvoices`** (se houver filtro por data):
+- Aplicar range global no filtro de faturas
+
+## Bloco 5 -- Atualizar Paginas
+
+**Todas as paginas afetadas:**
+- Remover botoes/selects de periodo locais que existam (ex: botao "Jan - Dez, 2024" no OverviewPage, "Ultimos 12 meses" no CashFlowPage)
+- Adicionar badge discreto mostrando periodo ativo abaixo do titulo, formato: "Periodo: 12/08/2025 - 12/02/2026 (X transacoes)"
+- O filtro principal fica no header (Bloco 2), nao precisa duplicar em cada pagina
+
+**Paginas especificas:**
+
+`OverviewPage`: remover botao estatico "Jan - Dez, 2024", dados ja virao filtrados via hook
+
+`HomePage`: adaptar greeting e calculos para usar range global em vez de "mes atual" hardcoded
+
+`IncomePage` / `ExpensesPage`: dados ja filtrados pelo hook; manter filtros locais de categoria/busca como complemento
+
+`CashFlowPage`: remover botao "Ultimos 12 meses", usar range global
+
+`DREPage`: manter select de periodo individual (cada mes da DRE), mas filtrar opcoes pelo range global
+
+`ForecastsPage`: usar range global como base historica para projecoes (esta pagina usa dados hardcoded hoje -- nao alterar dados ficticios, apenas preparar para quando tiver dados reais)
+
+## Bloco 6 -- Persistencia via profiles.preferences
+
+A tabela `profiles` ja tem um campo `preferences jsonb`. Salvar nele:
+
 ```json
 {
-  "connection_id": "uuid" | null,
-  "scope": "ALL" | "TRANSACTIONS_ONLY" | "DRE_ONLY"
+  "dateRange": {
+    "preset": "6m",
+    "from": "2025-08-12",
+    "to": "2026-02-12"
+  }
 }
 ```
 
-- Se `connection_id` fornecido: limpa dados vinculados aquela planilha
-- Se `connection_id` nulo: limpa TODOS os dados do usuario (reset total)
-
-**Sequencia de deletes (scope=ALL):**
-
-1. `transactions` WHERE `source_sheet_id = connection_id` (ou `user_id` se reset total)
-2. `transaction_flags` WHERE transaction_id in transacoes deletadas (cascade natural se FK existir, senao delete explicito)
-3. `financial_daily_aggregates` WHERE `source_sheet_id = connection_id`
-4. `dre_lines` WHERE `user_id` (via period_id cascade ou delete direto)
-5. `dre_periods` WHERE `sheet_id = connection_id`
-6. `dre_values` WHERE `sheet_id = connection_id`
-7. `dre_mappings` WHERE `sheet_id = connection_id`
-8. `ai_sheet_profiles` WHERE `connected_sheet_id = connection_id`
-9. `ai_insights` WHERE `connected_sheet_id = connection_id`
-10. `sheet_sync_jobs` WHERE `connection_id = connection_id`
-11. `google_sheet_sync_logs` WHERE `connection_id = connection_id`
-
-**Escopo TRANSACTIONS_ONLY:** apenas itens 1-3
-**Escopo DRE_ONLY:** apenas itens 4-7
-
-**Retorno:** `{ ok: true, deleted: { transactions: N, dre_lines: N, ... } }`
-
-A funcao usa `service_role` para poder deletar em tabelas onde o frontend nao tem permissao de DELETE (como `sheet_sync_jobs`, `google_sheet_sync_logs`). Valida o JWT do usuario para garantir que so apaga dados dele.
-
-### Bloco 2 -- Integrar Reset no Fluxo de Desconexao
-
-**`deleteConnection` (remover planilha individual):**
-1. Chamar `reset-sheet-data` com `connection_id` e `scope=ALL`
-2. Somente apos sucesso, deletar o registro da conexao
-3. Invalidar todas as queries relevantes (transactions, home-dashboard, sync-jobs, dre, insights)
-
-**`disconnectGoogle` (desconectar conta inteira):**
-1. Para cada conexao do usuario, chamar `reset-sheet-data` com `scope=ALL`
-2. Somente apos sucesso de todos os resets, deletar tokens e conexoes
-3. Invalidar todas as queries
-
-### Bloco 3 -- Botao "Zerar Dados Importados" na UI
-
-Adicionar na pagina Google Sheets, abaixo das conexoes, um botao danger:
-
-- Label: "Zerar Dados Importados"
-- Confirmacao em 2 passos: dialog com input "Digite ZERAR para confirmar"
-- Ao confirmar: chama `reset-sheet-data` com `connection_id=null` e `scope=ALL` (reset total)
-- Apos sucesso: toast "Dados zerados. Pronto para reimportar." + invalidar queries
-- O botao fica desabilitado durante execucao
-
-### Bloco 4 -- Invalidacao Completa de Queries
-
-Apos qualquer reset (manual ou automatico), invalidar:
-- `["transactions"]`
-- `["home-dashboard"]`
-- `["sync-jobs"]`
-- `["google-sheet-connections"]`
-- `["google-oauth-status"]`
-- `["dre-periods"]`
-- `["dre-lines"]`
-- `["balance-sheet"]`
-- `["invoices"]`
-- `["ai-insights"]`
-- `["finance-insights"]`
-- `["flagged-transactions"]`
-- `["cash-flow"]`
-
-Isso garante que todos os cards/graficos/tabelas refletem estado vazio imediatamente.
+- Ao carregar o app: ler de `profiles.preferences.dateRange`
+- Ao alterar: fazer UPDATE no campo `preferences` (merge com valores existentes)
+- Debounce de 1 segundo para nao fazer update a cada clique
 
 ## Arquivos Criados/Modificados
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/reset-sheet-data/index.ts` | Criar (edge function de reset) |
-| `supabase/config.toml` | Adicionar `[functions.reset-sheet-data]` |
-| `src/hooks/useGoogleSheets.ts` | Modificar `deleteConnection` e `disconnectGoogle` para chamar reset antes |
-| `src/pages/GoogleSheetsPage.tsx` | Adicionar botao "Zerar Dados Importados" com confirmacao |
+| `src/contexts/DateRangeContext.tsx` | Criar (Context + Provider + hook useDateRange) |
+| `src/components/layout/GlobalDateRangeFilter.tsx` | Criar (componente visual) |
+| `src/App.tsx` | Adicionar DateRangeProvider |
+| `src/components/layout/DashboardHeader.tsx` | Adicionar GlobalDateRangeFilter |
+| `src/hooks/useTransactions.ts` | Integrar range global nos filtros |
+| `src/hooks/useHomeDashboard.ts` | Usar range global em vez de mes atual |
+| `src/hooks/useCashFlow.ts` | Usar range global em vez de N meses fixo |
+| `src/hooks/useDRE.ts` | Filtrar periodos pelo monthRange global |
+| `src/hooks/useFinanceInsights.ts` | Passar datas do range global |
+| `src/pages/OverviewPage.tsx` | Remover botao de periodo local |
+| `src/pages/CashFlowPage.tsx` | Remover botao de periodo local |
+| `src/pages/DREPage.tsx` | Filtrar opcoes de periodo pelo range |
+| `src/pages/HomePage.tsx` | Adaptar para range global |
 
 ## Detalhes Tecnicos
 
-- A edge function usa `createClient` com `SUPABASE_SERVICE_ROLE_KEY` para poder deletar em tabelas com RLS restritivo (sheet_sync_jobs, google_sheet_sync_logs)
-- A funcao valida o JWT do usuario via header Authorization para garantir que so apaga dados do usuario autenticado
-- Deletes sao executados em sequencia (nao transacao SQL) para evitar locks longos, mas cada um e idempotente
-- Se algum delete falhar, a funcao retorna erro parcial com indicacao de qual tabela falhou
-- O campo `source_sheet_id` na tabela `transactions` e usado para filtrar por conexao -- transacoes sem `source_sheet_id` (manuais) NAO sao apagadas
-- `dre_lines` sao deletadas via CASCADE do `dre_periods` (period_id FK) ou diretamente por `user_id`
-- A confirmacao "Digite ZERAR" previne cliques acidentais
-- O fluxo de desconexao e bloqueante: se o reset falhar, a desconexao nao prossegue e o usuario recebe mensagem de erro
+- O Context usa `useSearchParams` do React Router para sincronizar com a URL
+- A persistencia usa o campo `preferences` existente na tabela `profiles` -- sem necessidade de migracao SQL
+- O debounce de persistencia usa `useRef` + `setTimeout` para evitar writes excessivos
+- O `queryKey` de cada hook inclui `from`/`to`, garantindo que a troca de periodo dispara refetch automatico via React Query
+- Para a DRE, o helper `monthRange` converte `from: Date` para `"YYYY-MM"` usando `format(from, "yyyy-MM")` do date-fns
+- Presets sao calculados a partir de `new Date()` no momento da selecao, nao sao datas fixas
+- A URL query string permite deep linking: compartilhar uma URL com periodo especifico funciona
 
