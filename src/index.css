@@ -52,14 +52,14 @@
     /* ========== RADIUS ========== */
     --radius: 0.75rem;
 
-    /* ========== SIDEBAR (Dark Premium) ========== */
-    --sidebar-background: 222 47% 7%;
-    --sidebar-foreground: 210 40% 80%;
+    /* ========== SIDEBAR (Light Blue Glass Premium) ========== */
+    --sidebar-background: 213 100% 96%;
+    --sidebar-foreground: 222 47% 11%;
     --sidebar-primary: 221 85% 53%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 221 85% 53% / 0.12;
-    --sidebar-accent-foreground: 221 85% 53%;
-    --sidebar-border: 221 85% 53% / 0.15;
+    --sidebar-accent: 213 100% 97%;
+    --sidebar-accent-foreground: 221 85% 40%;
+    --sidebar-border: 214 32% 91%;
     --sidebar-ring: 221 85% 53%;
 
     /* ========== SEMANTIC COLORS ========== */
@@ -137,13 +137,13 @@
     --input: 217 33% 20%;
     --ring: 217 91% 60%;
 
-    --sidebar-background: 222 47% 9%;
-    --sidebar-foreground: 215 20% 65%;
+    --sidebar-background: 213 80% 92%;
+    --sidebar-foreground: 222 47% 11%;
     --sidebar-primary: 217 91% 60%;
     --sidebar-primary-foreground: 222 47% 8%;
-    --sidebar-accent: 217 33% 17%;
-    --sidebar-accent-foreground: 217 91% 60%;
-    --sidebar-border: 217 33% 18%;
+    --sidebar-accent: 213 80% 94%;
+    --sidebar-accent-foreground: 217 91% 50%;
+    --sidebar-border: 217 33% 80%;
     --sidebar-ring: 217 91% 60%;
 
     --success: 160 60% 45%;
@@ -704,21 +704,34 @@
 .sidebar-glass [data-sidebar="sidebar"] {
   background: linear-gradient(
     180deg,
-    hsl(222 47% 8%) 0%,
-    hsl(222 47% 6%) 100%
+    rgba(219, 234, 254, 0.88) 0%,
+    rgba(224, 242, 254, 0.82) 50%,
+    rgba(219, 234, 254, 0.88) 100%
   ) !important;
-  border-right: 1px solid rgba(45, 126, 243, 0.2);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
   box-shadow:
-    1px 0 20px rgba(45, 126, 243, 0.06),
-    inset -1px 0 0 rgba(255, 255, 255, 0.03);
+    1px 0 24px rgba(45, 126, 243, 0.06),
+    inset -1px 0 0 rgba(255, 255, 255, 0.5);
   position: relative;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .sidebar-glass [data-sidebar="sidebar"] {
+    background: linear-gradient(
+      180deg,
+      rgb(219, 234, 254) 0%,
+      rgb(224, 242, 254) 100%
+    ) !important;
+  }
 }
 
 .sidebar-glass [data-sidebar="sidebar"]::after {
   content: '';
   position: absolute;
   inset: 0;
-  opacity: 0.015;
+  opacity: 0.02;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   pointer-events: none;
   z-index: 0;
@@ -735,12 +748,13 @@
    ============================================ */
 
 .sidebar-logo-glass {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(45, 126, 243, 0.15);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 1rem;
   box-shadow:
-    0 0 20px rgba(45, 126, 243, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 4px 16px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   position: relative;
@@ -753,10 +767,15 @@
   inset: 0;
   background: linear-gradient(
     135deg,
-    rgba(45, 126, 243, 0.05) 0%,
+    rgba(255, 255, 255, 0.3) 0%,
     transparent 50%,
-    rgba(45, 126, 243, 0.03) 100%
+    rgba(255, 255, 255, 0.15) 100%
   );
   pointer-events: none;
   border-radius: inherit;
+}
+
+/* Sidebar glass text depth effect */
+.sidebar-glass-text {
+  text-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
