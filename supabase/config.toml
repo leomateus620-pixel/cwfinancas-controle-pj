@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.sheets-sync-all-tabs]
 verify_jwt = false
+
+[functions.reset-sheet-data]
+verify_jwt = false

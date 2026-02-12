@@ -4,6 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
+const ALL_QUERY_KEYS_TO_INVALIDATE = [
+  "transactions", "home-dashboard", "sync-jobs", "google-sheet-connections",
+  "google-oauth-status", "dre-periods", "dre-lines", "balance-sheet",
+  "invoices", "ai-insights", "finance-insights", "flagged-transactions", "cash-flow",
+];
+
 interface GoogleSheetConnection {
   id: string;
   user_id: string;
@@ -435,21 +441,34 @@ export function useGoogleSheets() {
     },
   });
 
-  // Delete connection
+  // Delete connection (with reset first)
   const deleteConnection = useMutation({
     mutationFn: async (connectionId: string) => {
+      // Step 1: Reset all imported data for this connection
+      const { data: resetResult, error: resetError } = await supabase.functions.invoke("reset-sheet-data", {
+        body: { connection_id: connectionId, scope: "ALL" },
+      });
+      if (resetError) {
+        console.error("Reset error before delete:", resetError);
+        throw new Error("Falha ao limpar dados importados. Desconexão cancelada.");
+      }
+      if (resetResult?.error) throw new Error(resetResult.error);
+      console.log("[deleteConnection] Reset result:", resetResult);
+
+      // Step 2: Only after successful reset, delete the connection
       const { error } = await supabase
         .from("google_sheet_connections")
         .delete()
         .eq("id", connectionId);
-
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
+      ALL_QUERY_KEYS_TO_INVALIDATE.forEach((key) =>
+        queryClient.invalidateQueries({ queryKey: [key] })
+      );
       toast({
         title: "Conexão removida",
-        description: "A planilha foi desconectada com sucesso.",
+        description: "A planilha e todos os dados importados foram removidos.",
       });
     },
     onError: (error) => {
@@ -462,33 +481,79 @@ export function useGoogleSheets() {
     },
   });
 
-  // Disconnect Google account entirely
+  // Reset all imported data (manual button)
+  const resetSheetData = useMutation({
+    mutationFn: async ({ connectionId, scope }: { connectionId?: string; scope?: string } = {}) => {
+      const { data, error } = await supabase.functions.invoke("reset-sheet-data", {
+        body: { connection_id: connectionId || null, scope: scope || "ALL" },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      ALL_QUERY_KEYS_TO_INVALIDATE.forEach((key) =>
+        queryClient.invalidateQueries({ queryKey: [key] })
+      );
+      toast({
+        title: "Dados zerados",
+        description: "Todos os dados importados foram removidos. Pronto para reimportar.",
+      });
+    },
+    onError: (error) => {
+      console.error("Reset sheet data error:", error);
+      toast({
+        title: "Erro ao zerar dados",
+        description: error instanceof Error ? error.message : "Erro desconhecido",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Disconnect Google account entirely (with reset first)
   const disconnectGoogle = useMutation({
     mutationFn: async () => {
       if (!session?.user?.id) throw new Error("Not authenticated");
-      
-      // Delete OAuth tokens
+
+      // Step 1: Reset ALL data for every connection
+      const { data: conns } = await supabase
+        .from("google_sheet_connections")
+        .select("id")
+        .eq("user_id", session.user.id);
+
+      if (conns && conns.length > 0) {
+        for (const conn of conns) {
+          const { error: resetErr } = await supabase.functions.invoke("reset-sheet-data", {
+            body: { connection_id: conn.id, scope: "ALL" },
+          });
+          if (resetErr) {
+            console.error(`Reset failed for connection ${conn.id}:`, resetErr);
+            throw new Error("Falha ao limpar dados. Desconexão cancelada.");
+          }
+        }
+      }
+
+      // Step 2: Delete OAuth tokens
       const { error: tokenError } = await supabase
         .from("google_oauth_tokens")
         .delete()
         .eq("user_id", session.user.id);
-      
       if (tokenError) throw tokenError;
       
-      // Delete all sheet connections
+      // Step 3: Delete all sheet connections
       const { error: connError } = await supabase
         .from("google_sheet_connections")
         .delete()
         .eq("user_id", session.user.id);
-      
       if (connError) throw connError;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["google-oauth-status"] });
-      queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
+      ALL_QUERY_KEYS_TO_INVALIDATE.forEach((key) =>
+        queryClient.invalidateQueries({ queryKey: [key] })
+      );
       toast({
         title: "Desconectado",
-        description: "Sua conta Google foi desconectada com sucesso.",
+        description: "Conta Google desconectada e todos os dados importados foram limpos.",
       });
     },
     onError: (error) => {
@@ -530,5 +595,6 @@ export function useGoogleSheets() {
     updateMapping,
     deleteConnection,
     disconnectGoogle,
+    resetSheetData,
   };
 }

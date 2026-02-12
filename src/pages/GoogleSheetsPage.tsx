@@ -16,12 +16,25 @@ import {
   History,
   BarChart3,
   Settings2,
-  Timer
+  Timer,
+  ShieldAlert,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { useSyncJobs } from "@/hooks/useSyncJobs";
@@ -112,7 +125,11 @@ function GoogleSheetsPageContent() {
     syncAllTabs,
     deleteConnection,
     disconnectGoogle,
+    resetSheetData,
   } = useGoogleSheets();
+
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  const [showResetDialog, setShowResetDialog] = useState(false);
 
   // Determine page state
   const getPageState = (): PageState => {
@@ -591,6 +608,84 @@ function GoogleSheetsPageContent() {
 
       {/* Sync History Section - only show when there are connections */}
       <SyncHistorySection />
+
+      {/* Danger Zone: Reset Data */}
+      {(connections ?? []).length > 0 && (
+        <Card className="border-destructive/30 shadow-premium-sm overflow-hidden relative">
+          <div className="absolute inset-0 bg-destructive/5 pointer-events-none" />
+          <CardHeader className="relative z-10">
+            <CardTitle className="text-base flex items-center gap-2 text-destructive">
+              <ShieldAlert className="w-5 h-5" />
+              Zona de Perigo
+            </CardTitle>
+            <CardDescription>
+              Ações irreversíveis sobre os dados importados.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="relative z-10">
+            <AlertDialog open={showResetDialog} onOpenChange={(open) => { setShowResetDialog(open); if (!open) setResetConfirmText(""); }}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2 border-destructive/50 text-destructive hover:bg-destructive/10"
+                  disabled={resetSheetData.isPending}
+                >
+                  {resetSheetData.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  Zerar Dados Importados
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Zerar todos os dados importados?</AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <p>
+                      Esta ação vai <strong>apagar permanentemente</strong> todos os dados importados das planilhas:
+                      transações, DRE, agregações, insights e histórico de sync.
+                    </p>
+                    <p>
+                      Seus dados de conta, configurações e permissões serão mantidos.
+                    </p>
+                    <p className="font-medium text-destructive">
+                      Digite <strong>ZERAR</strong> para confirmar:
+                    </p>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <Input
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="Digite ZERAR"
+                  className="mt-2"
+                />
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={resetConfirmText !== "ZERAR" || resetSheetData.isPending}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      resetSheetData.mutate({}, {
+                        onSuccess: () => {
+                          setShowResetDialog(false);
+                          setResetConfirmText("");
+                        },
+                      });
+                    }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {resetSheetData.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : null}
+                    Confirmar Reset
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Info Card */}
       <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
