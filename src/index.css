@@ -702,6 +702,10 @@
    ============================================ */
 
 .sidebar-glass {
+  /* Container only - no visual styles here */
+}
+
+.sidebar-glass > div:last-child {
   background: linear-gradient(
     180deg,
     hsl(222 47% 8%) 0%,
@@ -714,7 +718,7 @@
   position: relative;
 }
 
-.sidebar-glass::after {
+.sidebar-glass > div:last-child::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -725,7 +729,7 @@
   border-radius: inherit;
 }
 
-.sidebar-glass > * {
+.sidebar-glass > div:last-child > * {
   position: relative;
   z-index: 1;
 }
