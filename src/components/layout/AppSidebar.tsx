@@ -13,6 +13,7 @@ import {
   FileSpreadsheet
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
+import logoFull from "@/assets/logo-full.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 
@@ -64,16 +65,14 @@ export function AppSidebar() {
       collapsible="icon"
     >
       {/* Header with Logo */}
-      <SidebarHeader className="p-4 border-b border-black/[0.06]">
-        <div className={`flex items-center justify-center ${collapsed ? 'p-1' : 'p-3'}`}>
-            <div className={`sidebar-logo-glass ${collapsed ? 'p-1.5' : 'p-5 w-full'} flex items-center justify-center`}>
-            <img 
-              src={logoIcon} 
-              alt="CW Finanças" 
-              className={`object-contain transition-all duration-300 ${collapsed ? 'w-8 h-8' : 'w-full max-w-[200px] h-auto'}`}
-              style={{ filter: 'drop-shadow(0 2px 8px rgba(15, 23, 42, 0.1))' }}
-            />
-          </div>
+      <SidebarHeader className={`border-b border-black/[0.06] ${collapsed ? 'p-2' : 'px-3 py-3'}`}>
+        <div className={`flex items-center justify-center ${collapsed ? '' : 'rounded-2xl border border-black/[0.06] bg-white/20 backdrop-blur-xl'}`}>
+          <img 
+            src={collapsed ? logoIcon : logoFull} 
+            alt="CW Finanças" 
+            className={`object-contain transition-all duration-300 ${collapsed ? 'w-9 h-9' : 'h-16 w-auto max-w-[90%] my-2'}`}
+            style={{ filter: 'drop-shadow(0 2px 6px rgba(15, 23, 42, 0.08))' }}
+          />
         </div>
       </SidebarHeader>
 
