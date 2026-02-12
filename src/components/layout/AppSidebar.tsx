@@ -64,14 +64,14 @@ export function AppSidebar() {
       collapsible="icon"
     >
       {/* Header with Logo */}
-      <SidebarHeader className="p-4 border-b border-white/[0.06]">
+      <SidebarHeader className="p-4 border-b border-black/[0.06]">
         <div className={`flex items-center justify-center ${collapsed ? 'p-1' : 'p-3'}`}>
             <div className={`sidebar-logo-glass ${collapsed ? 'p-1.5' : 'p-5 w-full'} flex items-center justify-center`}>
             <img 
               src={logoIcon} 
               alt="CW Finanças" 
               className={`object-contain transition-all duration-300 ${collapsed ? 'w-8 h-8' : 'w-full max-w-[200px] h-auto'}`}
-              style={{ filter: 'drop-shadow(0 0 12px rgba(45, 126, 243, 0.25))' }}
+              style={{ filter: 'drop-shadow(0 2px 8px rgba(15, 23, 42, 0.1))' }}
             />
           </div>
         </div>
@@ -80,7 +80,7 @@ export function AppSidebar() {
       <SidebarContent className="px-3 py-5">
         {/* Main Navigation */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[11px] font-semibold text-white/35 uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -97,16 +97,16 @@ export function AppSidebar() {
                       end={item.url === "/"}
                       className={`
                         flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                        text-white/65 hover:text-white/90 hover:bg-white/[0.06]
-                        ${isActive(item.url) ? 'bg-blue-500/10 text-blue-400 font-medium' : ''}
+                        text-slate-700 hover:text-slate-900 hover:bg-white/50
+                        ${isActive(item.url) ? 'bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium' : ''}
                       `}
-                      activeClassName="bg-blue-500/10 text-blue-400 font-medium"
+                      activeClassName="bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium"
                     >
                       {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
                       )}
-                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-400' : ''}`} />
-                      {!collapsed && <span className="text-sm">{item.title}</span>}
+                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-600' : ''}`} />
+                      {!collapsed && <span className="text-sm sidebar-glass-text">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -117,7 +117,7 @@ export function AppSidebar() {
 
         {/* Tools Navigation */}
         <SidebarGroup className="mt-6">
-          <SidebarGroupLabel className="text-[11px] font-semibold text-white/35 uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">
             Ferramentas
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -133,16 +133,16 @@ export function AppSidebar() {
                       to={item.url} 
                       className={`
                         flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                        text-white/65 hover:text-white/90 hover:bg-white/[0.06]
-                        ${isActive(item.url) ? 'bg-blue-500/10 text-blue-400 font-medium' : ''}
+                        text-slate-700 hover:text-slate-900 hover:bg-white/50
+                        ${isActive(item.url) ? 'bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium' : ''}
                       `}
-                      activeClassName="bg-blue-500/10 text-blue-400 font-medium"
+                      activeClassName="bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium"
                     >
                       {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
                       )}
-                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-400' : ''}`} />
-                      {!collapsed && <span className="text-sm">{item.title}</span>}
+                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-600' : ''}`} />
+                      {!collapsed && <span className="text-sm sidebar-glass-text">{item.title}</span>}
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -153,7 +153,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* Footer */}
-      <SidebarFooter className="p-3 border-t border-white/[0.06]">
+      <SidebarFooter className="p-3 border-t border-black/[0.06]">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton 
@@ -165,16 +165,16 @@ export function AppSidebar() {
                 to="/settings" 
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                  text-white/65 hover:text-white/90 hover:bg-white/[0.06]
-                  ${isActive("/settings") ? 'bg-blue-500/10 text-blue-400 font-medium' : ''}
+                  text-slate-700 hover:text-slate-900 hover:bg-white/50
+                  ${isActive("/settings") ? 'bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium' : ''}
                 `}
-                activeClassName="bg-blue-500/10 text-blue-400 font-medium"
+                activeClassName="bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium"
               >
                 {isActive("/settings") && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-400 rounded-r-full shadow-[0_0_8px_rgba(96,165,250,0.5)]" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
                 )}
-                <Settings className={`w-5 h-5 shrink-0 transition-colors ${isActive("/settings") ? 'text-blue-400' : ''}`} />
-                {!collapsed && <span className="text-sm">Configurações</span>}
+                <Settings className={`w-5 h-5 shrink-0 transition-colors ${isActive("/settings") ? 'text-blue-600' : ''}`} />
+                {!collapsed && <span className="text-sm sidebar-glass-text">Configurações</span>}
               </NavLink>
             </SidebarMenuButton>
           </SidebarMenuItem>
