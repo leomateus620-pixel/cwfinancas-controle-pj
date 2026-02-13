@@ -71,7 +71,7 @@ const CustomLabel = (props: any) => {
 };
 
 export function ExpenseChart() {
-  const { transactions, isLoading } = useTransactions({ type: "expense" });
+  const { transactions, isLoading } = useTransactions({ type: "expense", excludeTransfers: true });
 
   const expenseData = useMemo(() => {
     if (!transactions.length) return [];
