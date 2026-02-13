@@ -638,7 +638,15 @@ Deno.serve(async (req) => {
     let monthlyTabs = classified.filter(t => t.route === "MONTHLY_TRANSACTIONS");
 
     if (month_range) {
-      monthlyTabs = monthlyTabs.filter(t => t.periodKey && t.periodKey >= month_range.from && t.periodKey <= month_range.to);
+      // Compare by month only (MM part) to avoid year mismatch between
+      // the UI's date range (e.g. 2026-04) and the spreadsheet's inferred year (e.g. 2025-04)
+      const rangeFromMonth = month_range.from.slice(-2); // "04"
+      const rangeToMonth = month_range.to.slice(-2);     // "12"
+      monthlyTabs = monthlyTabs.filter(t => {
+        if (!t.periodKey || !t.monthIndex) return false;
+        const tabMonth = String(t.monthIndex).padStart(2, "0");
+        return tabMonth >= rangeFromMonth && tabMonth <= rangeToMonth;
+      });
     }
     monthlyTabs.sort((a, b) => (a.periodKey || "").localeCompare(b.periodKey || ""));
 
