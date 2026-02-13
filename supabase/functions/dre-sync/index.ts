@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,6 +76,33 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
   const data = await response.json();
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
   return { access_token: data.access_token, expires_at: expiresAt };
+}
+
+// ============ XLSX Support ============
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+async function getFileMimeType(accessToken: string, fileId: string): Promise<{ mimeType: string; name: string }> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to get file info: ${res.status}`);
+  return res.json();
+}
+
+async function downloadXlsxWorkbook(accessToken: string, fileId: string): Promise<any> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to download xlsx: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  return XLSX.read(new Uint8Array(buffer), { type: "array" });
+}
+
+function xlsxSheetToRows(workbook: any, sheetName?: string): string[][] {
+  const target = sheetName || workbook.SheetNames[0];
+  const ws = workbook.Sheets[target];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
 }
 
 function colToLetter(col: number): string {
@@ -236,14 +264,27 @@ Deno.serve(async (req) => {
       }).eq("id", connection_id);
     }
 
-    // 3. Get spreadsheet metadata
-    const metaRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=sheets.properties.title`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!metaRes.ok) throw new Error("Failed to fetch spreadsheet metadata");
-    const meta = await metaRes.json();
-    const sheetTitles: string[] = meta.sheets.map((s: { properties: { title: string } }) => s.properties.title);
+    // 3. Detect file type
+    const fileInfo = await getFileMimeType(accessToken!, connection.spreadsheet_id);
+    const isXlsx = fileInfo.mimeType === XLSX_MIME;
+    let xlsxWorkbook: any = null;
+    if (isXlsx) {
+      xlsxWorkbook = await downloadXlsxWorkbook(accessToken!, connection.spreadsheet_id);
+    }
+
+    // 3b. Get sheet titles
+    let sheetTitles: string[];
+    if (xlsxWorkbook) {
+      sheetTitles = xlsxWorkbook.SheetNames;
+    } else {
+      const metaRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=sheets.properties.title`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!metaRes.ok) throw new Error("Failed to fetch spreadsheet metadata");
+      const meta = await metaRes.json();
+      sheetTitles = meta.sheets.map((s: { properties: { title: string } }) => s.properties.title);
+    }
 
     // 4. Auto-detect DRE tab
     const dreTab = detectDRETab(sheetTitles);
@@ -256,14 +297,19 @@ Deno.serve(async (req) => {
     }
 
     // 5. Read entire DRE tab
-    const range = encodeURIComponent(`'${dreTab}'!A1:Z200`);
-    const dataRes = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${range}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!dataRes.ok) throw new Error("Failed to read DRE tab");
-    const sheetData = await dataRes.json();
-    const rows: string[][] = sheetData.values || [];
+    let rows: string[][];
+    if (xlsxWorkbook) {
+      rows = xlsxSheetToRows(xlsxWorkbook, dreTab);
+    } else {
+      const range = encodeURIComponent(`'${dreTab}'!A1:Z200`);
+      const dataRes = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${range}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!dataRes.ok) throw new Error("Failed to read DRE tab");
+      const sheetData = await dataRes.json();
+      rows = sheetData.values || [];
+    }
 
     if (rows.length < 2) {
       return new Response(JSON.stringify({

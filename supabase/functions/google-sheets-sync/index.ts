@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { createHash } from "https://deno.land/std@0.177.0/node/crypto.ts";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +45,33 @@ function generateRowHash(content: Record<string, unknown>): string {
   const hash = createHash("md5");
   hash.update(JSON.stringify(content));
   return hash.digest("hex").slice(0, 12);
+}
+
+// ============ XLSX Support ============
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+async function getFileMimeType(accessToken: string, fileId: string): Promise<{ mimeType: string; name: string }> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to get file info: ${res.status}`);
+  return res.json();
+}
+
+async function downloadXlsxWorkbook(accessToken: string, fileId: string): Promise<any> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to download xlsx: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  return XLSX.read(new Uint8Array(buffer), { type: "array" });
+}
+
+function xlsxSheetToRows(workbook: any, sheetName?: string): string[][] {
+  const target = sheetName || workbook.SheetNames[0];
+  const ws = workbook.Sheets[target];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
 }
 
 // Refresh access token
@@ -525,33 +553,46 @@ Deno.serve(async (req) => {
     }
 
     try {
-      // Fetch spreadsheet metadata to get revision
-      const metaResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.modifiedTime`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      
+      // Detect file type (native Google Sheets vs .xlsx)
+      const fileInfo = await getFileMimeType(accessToken!, connection.spreadsheet_id);
+      const isXlsx = fileInfo.mimeType === XLSX_MIME;
+      console.log(`[${requestId}] File type: ${fileInfo.mimeType} (xlsx=${isXlsx})`);
+
       let googleRevision: string | null = null;
-      if (metaResponse.ok) {
-        const metaData = await metaResponse.json();
-        googleRevision = metaData.properties?.modifiedTime || null;
+      let values: string[][] = [];
+
+      if (isXlsx) {
+        // Download and parse xlsx via Drive API + SheetJS
+        const workbook = await downloadXlsxWorkbook(accessToken!, connection.spreadsheet_id);
+        const targetSheet = connection.sheet_name || workbook.SheetNames[0];
+        values = xlsxSheetToRows(workbook, targetSheet);
+        console.log(`[${requestId}] Parsed xlsx sheet "${targetSheet}": ${values.length} rows`);
+      } else {
+        // Native Google Sheets flow
+        const metaResponse = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.modifiedTime`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (metaResponse.ok) {
+          const metaData = await metaResponse.json();
+          googleRevision = metaData.properties?.modifiedTime || null;
+        }
+
+        const range = connection.sheet_name ? `'${connection.sheet_name}'` : "A:Z";
+        const sheetsResponse = await fetch(
+          `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (!sheetsResponse.ok) {
+          const errorText = await sheetsResponse.text();
+          console.error(`[${requestId}] Failed to fetch sheet data:`, errorText);
+          throw new Error("Failed to fetch sheet data");
+        }
+
+        const sheetsData = await sheetsResponse.json();
+        values = sheetsData.values || [];
       }
-
-      // Fetch sheet data
-      const range = connection.sheet_name ? `'${connection.sheet_name}'` : "A:Z";
-      const sheetsResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-
-      if (!sheetsResponse.ok) {
-        const errorText = await sheetsResponse.text();
-        console.error(`[${requestId}] Failed to fetch sheet data:`, errorText);
-        throw new Error("Failed to fetch sheet data");
-      }
-
-      const sheetsData = await sheetsResponse.json();
-      const values: string[][] = sheetsData.values || [];
 
       if (values.length < 2) {
         throw new Error("Sheet has no data or only headers");

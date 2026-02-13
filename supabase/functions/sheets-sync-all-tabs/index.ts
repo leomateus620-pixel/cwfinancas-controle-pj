@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { createHash } from "https://deno.land/std@0.177.0/node/crypto.ts";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,6 +89,33 @@ function generateRowHash(content: Record<string, unknown>): string {
   const hash = createHash("md5");
   hash.update(JSON.stringify(content));
   return hash.digest("hex").slice(0, 12);
+}
+
+// ============ XLSX Support ============
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+async function getFileMimeType(accessToken: string, fileId: string): Promise<{ mimeType: string; name: string }> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to get file info: ${res.status}`);
+  return res.json();
+}
+
+async function downloadXlsxWorkbook(accessToken: string, fileId: string): Promise<any> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to download xlsx: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  return XLSX.read(new Uint8Array(buffer), { type: "array" });
+}
+
+function xlsxSheetToRows(workbook: any, sheetName?: string): string[][] {
+  const target = sheetName || workbook.SheetNames[0];
+  const ws = workbook.Sheets[target];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_at: string }> {
@@ -635,21 +663,48 @@ Deno.serve(async (req) => {
       .insert({ connection_id: connectionId, status: "running", mode: "MANUAL" })
       .select().single();
 
+    // ===== Detect file type =====
+    const fileInfo = await getFileMimeType(accessToken!, connection.spreadsheet_id);
+    const isXlsx = fileInfo.mimeType === XLSX_MIME;
+    let xlsxWorkbook: any = null;
+    if (isXlsx) {
+      console.log(`[${requestId}] File is .xlsx, downloading and parsing...`);
+      xlsxWorkbook = await downloadXlsxWorkbook(accessToken!, connection.spreadsheet_id);
+    }
+
     // ===== STEP: listTabs with metadata (rowCount) =====
     if (Date.now() - startTime > INTERNAL_TIMEOUT_MS) throw new Error("TIMEOUT_INTERNAL");
     await updateJobHeartbeat(supabase, jobId, "listTabs", { tabs_total: 0, tabs_done: 0, rows_read: 0, rows_imported: 0, current_tab: "Listando abas..." });
 
-    const metaResponse = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.title,sheets.properties`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!metaResponse.ok) {
-      const errText = await metaResponse.text();
-      throw new Error(`Failed to fetch spreadsheet metadata: ${metaResponse.status} - ${errText}`);
+    let spreadsheetTitle: string;
+    let allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }>;
+
+    if (xlsxWorkbook) {
+      spreadsheetTitle = fileInfo.name || "";
+      allSheets = xlsxWorkbook.SheetNames.map((name: string, idx: number) => {
+        const sheetRows = xlsxSheetToRows(xlsxWorkbook, name);
+        return {
+          properties: {
+            title: name,
+            sheetId: idx,
+            index: idx,
+            gridProperties: { rowCount: sheetRows.length || 100 },
+          },
+        };
+      });
+    } else {
+      const metaResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.title,sheets.properties`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!metaResponse.ok) {
+        const errText = await metaResponse.text();
+        throw new Error(`Failed to fetch spreadsheet metadata: ${metaResponse.status} - ${errText}`);
+      }
+      const metaData = await metaResponse.json();
+      spreadsheetTitle = metaData.properties?.title || "";
+      allSheets = metaData.sheets || [];
     }
-    const metaData = await metaResponse.json();
-    const spreadsheetTitle: string = metaData.properties?.title || "";
-    const allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }> = metaData.sheets || [];
     console.log(`[${requestId}] Spreadsheet: "${spreadsheetTitle}", Found ${allSheets.length} tabs`);
 
     // ===== Year inference =====
@@ -728,7 +783,9 @@ Deno.serve(async (req) => {
       });
 
       // ===== PAGINATED READ =====
-      const allRows = await readTabPaginated(accessToken, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
+      const allRows = xlsxWorkbook
+        ? xlsxSheetToRows(xlsxWorkbook, tab.title)
+        : await readTabPaginated(accessToken!, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
 
       if (allRows.length < 2) {
         // Save empty audit
