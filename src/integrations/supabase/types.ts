@@ -864,6 +864,69 @@ export type Database = {
           },
         ]
       }
+      sync_tab_audit: {
+        Row: {
+          connection_id: string | null
+          created_at: string
+          errors: Json | null
+          id: string
+          job_id: string | null
+          period_key: string | null
+          rows_imported: number
+          rows_scanned: number
+          rows_skipped: number
+          rows_with_value: number
+          skip_reasons: Json | null
+          tab_name: string
+          user_id: string
+        }
+        Insert: {
+          connection_id?: string | null
+          created_at?: string
+          errors?: Json | null
+          id?: string
+          job_id?: string | null
+          period_key?: string | null
+          rows_imported?: number
+          rows_scanned?: number
+          rows_skipped?: number
+          rows_with_value?: number
+          skip_reasons?: Json | null
+          tab_name: string
+          user_id: string
+        }
+        Update: {
+          connection_id?: string | null
+          created_at?: string
+          errors?: Json | null
+          id?: string
+          job_id?: string | null
+          period_key?: string | null
+          rows_imported?: number
+          rows_scanned?: number
+          rows_skipped?: number
+          rows_with_value?: number
+          skip_reasons?: Json | null
+          tab_name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sync_tab_audit_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sync_tab_audit_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "sheet_sync_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transaction_flags: {
         Row: {
           confidence: number | null
