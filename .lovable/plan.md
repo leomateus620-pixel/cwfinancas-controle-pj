@@ -1,88 +1,71 @@
 
+# Unificacao do Motor de Calculos Financeiros
 
-# Padronizacao de Formatacao Monetaria (BRL com 2 casas decimais)
+## Diagnostico
 
-## Problema Identificado
+Apos analise detalhada do codigo, existem **3 problemas concretos** que causam inconsistencias entre telas:
 
-Existem **15 arquivos** com **13 funcoes locais diferentes** de formatacao monetaria, cada uma com regras distintas:
+### Problema 1: Graficos do Dashboard incluem transferencias
 
-- **6 arquivos** usam `maximumFractionDigits: 0` (sem centavos): RecentTransactions, ExpensesPage, IncomePage, InvoicesPage, BalanceSheetPage, DREPage
-- **5 arquivos** usam `notation: "compact"` com 1 casa decimal: CashFlowPage, ExpenseChart, RevenueChart, ForecastChart, ForecastKPIs, ForecastCashFlow
-- **2 arquivos** usam formatacao manual com `k`/`mi`: HomePage
-- **Nenhum** usa `minimumFractionDigits: 2` + `maximumFractionDigits: 2`
+Os componentes `RevenueChart` e `ExpenseChart` chamam `useTransactions()` **sem** o filtro `excludeTransfers`, fazendo com que transferencias internas inflem os graficos do Dashboard enquanto os KPIs (via `usePeriodMetrics`) as excluem corretamente.
 
-## Solucao
+### Problema 2: Fluxo de Caixa usa fonte de dados independente
 
-### Passo 1 -- Criar funcoes centralizadas em `src/lib/currency.ts`
+O hook `useCashFlow` faz sua propria query via `useTransactions()` e calcula totais localmente, em vez de consumir `usePeriodMetrics`. Isso cria uma segunda "fonte de verdade" com potencial de divergencia.
 
-Criar um unico arquivo com 3 funcoes:
+### Problema 3: Formatacao inconsistente no CashFlowPage
 
-```text
-formatCurrencyBR(amount)     -> "R$ 100.000,00" (sempre 2 casas)
-formatCompactBR(amount)      -> "R$ 100mil" ou "R$ 1,5mi" (para eixos de graficos)
-parseBRLToNumber(raw)        -> number com 2 casas decimais
-```
+As linhas 267, 273 e 279 do `CashFlowPage.tsx` usam `toLocaleString("pt-BR")` em vez de `formatCurrencyBR()`, violando a padronizacao.
 
-**`formatCurrencyBR`**: Intl.NumberFormat pt-BR, currency BRL, min/max 2 casas. Usada em cards, tabelas, tooltips, exports.
+## O que ja esta implementado corretamente
 
-**`formatCompactBR`**: Versao compacta para eixos de graficos onde espaco e limitado. Usa notation compact com 1 casa.
+- `movement_type` (INCOME/EXPENSE/TRANSFER) no banco e na importacao
+- `usePeriodMetrics` como fonte central com separacao operacional/transferencias
+- `excludeTransfers` nas paginas de Receitas e Despesas
+- Toggle Operacional/Movimentacao no Dashboard
+- `formatCurrencyBR` centralizado em `src/lib/currency.ts`
+- NUMERIC(14,2) com trigger de arredondamento no banco
+- Indice unico para prevenir duplicatas na sincronizacao
 
-**`parseBRLToNumber`**: Parser robusto que aceita formatos como "R$ 1.234,56", "100.000", "(1.234,56)", "30,00-". Rejeita valores que parecem datas.
+## Sobre armazenamento em centavos
 
-### Passo 2 -- Migracao SQL do banco
+O pedido menciona centavos (inteiro). A abordagem atual com NUMERIC(14,2) + trigger de arredondamento e a pratica padrao para BRL e ja garante precisao de 2 casas. Converter para centavos exigiria alterar o schema, todas as queries, todos os hooks, a edge function e a formatacao -- um risco altissimo sem beneficio real. O NUMERIC(14,2) permanece.
 
-- `ALTER COLUMN transactions.amount TYPE NUMERIC(14,2)`
-- `UPDATE transactions SET amount = round(amount::numeric, 2)`
-- Mesma alteracao para `invoices.value` e `balance_sheet_items.amount`
-- Usar validation trigger (nao CHECK constraint) para garantir `amount = round(amount, 2)`
+## Solucao (3 correcoes cirurgicas)
 
-### Passo 3 -- Substituir todas as funcoes locais
+### Correcao 1 -- Graficos do Dashboard excluem transferencias
 
-Remover as 13 funcoes `formatCurrency` / `formatBRL` locais e importar de `src/lib/currency.ts`:
+Alterar `RevenueChart` e `ExpenseChart` para passarem `excludeTransfers: true` na chamada de `useTransactions()`. Isso alinha os graficos com os KPIs que ja usam `usePeriodMetrics`.
 
-| Arquivo | Funcao local removida | Substituicao |
-|---|---|---|
-| `src/components/dashboard/RecentTransactions.tsx` | `formatCurrency` (0 casas) | `formatCurrencyBR` |
-| `src/components/dashboard/ExpenseChart.tsx` | `formatCurrency` (compact) | `formatCurrencyBR` para tooltip, `formatCompactBR` para eixo |
-| `src/components/dashboard/RevenueChart.tsx` | `formatCurrency` (compact) | `formatCurrencyBR` para tooltip, `formatCompactBR` para eixo |
-| `src/components/forecast/ForecastKPIs.tsx` | `formatCurrency` (compact) | `formatCurrencyBR` |
-| `src/components/forecast/ForecastCashFlow.tsx` | `formatCurrency` (compact) | `formatCurrencyBR` |
-| `src/components/forecast/ForecastChart.tsx` | `formatCurrency` (compact) | `formatCurrencyBR` para tooltip, `formatCompactBR` para eixo |
-| `src/pages/CashFlowPage.tsx` | `formatCurrency` (compact) | `formatCurrencyBR` para tooltip/cards, `formatCompactBR` para eixo |
-| `src/pages/IncomePage.tsx` | `formatCurrency` (0 casas) | `formatCurrencyBR` |
-| `src/pages/ExpensesPage.tsx` | `formatCurrency` (0 casas) | `formatCurrencyBR` |
-| `src/pages/InvoicesPage.tsx` | `formatCurrency` (0 casas) | `formatCurrencyBR` |
-| `src/pages/BalanceSheetPage.tsx` | `formatCurrency` (0 casas) | `formatCurrencyBR` |
-| `src/pages/DREPage.tsx` | `formatBRL` (0 casas) | `formatCurrencyBR` |
-| `src/pages/HomePage.tsx` | `formatBRL` + `formatFullBRL` (manual k/mi) | `formatCurrencyBR` para valores completos, `formatCompactBR` para cards compactos |
-| `src/hooks/useHomeDashboard.ts` | `formatBRL` (sem casas fixas) | `formatCurrencyBR` |
-| `src/components/home/DailySummary.tsx` | inline `toLocaleString` | `formatCurrencyBR` |
+**Arquivos**: `src/components/dashboard/RevenueChart.tsx`, `src/components/dashboard/ExpenseChart.tsx`
 
-### Passo 4 -- Atualizar parser na Edge Function
+### Correcao 2 -- CashFlow consome usePeriodMetrics
 
-Integrar `parseBRLToNumber` na logica de importacao do `sheets-sync-all-tabs` para garantir que valores importados da planilha sejam sempre arredondados a 2 casas.
+Refatorar `useCashFlow` para consumir os dados de `usePeriodMetrics` em vez de fazer query independente. Isso elimina a segunda fonte de verdade e garante que os totais do Fluxo de Caixa sejam identicos aos do Dashboard.
 
-### Passo 5 -- Testes unitarios
+O hook continuara calculando dados mensais (para o grafico) e upcoming payments a partir de `useTransactions`, mas os **totais** (totalInflow, totalOutflow, netCashFlow, transferIn, transferOut) virao de `usePeriodMetrics`.
 
-Criar `src/lib/__tests__/currency.test.ts` com cobertura para:
-- `formatCurrencyBR`: inteiros, decimais, negativos, zero
-- `parseBRLToNumber`: todos os formatos BRL, rejeicao de datas, round-trip
+**Arquivo**: `src/hooks/useCashFlow.ts`
+
+### Correcao 3 -- Formatacao BRL no CashFlowPage
+
+Substituir 3 ocorrencias de `toLocaleString("pt-BR")` por `formatCurrencyBR()` na secao de transferencias do `CashFlowPage.tsx`.
+
+**Arquivo**: `src/pages/CashFlowPage.tsx`
 
 ## Arquivos modificados
 
 | Arquivo | Acao |
 |---|---|
-| Migration SQL | ALTER amount para NUMERIC(14,2) + round dados existentes |
-| `src/lib/currency.ts` | **NOVO** -- formatCurrencyBR, formatCompactBR, parseBRLToNumber |
-| `src/lib/__tests__/currency.test.ts` | **NOVO** -- testes unitarios |
-| 15 arquivos listados acima | Remover funcao local, importar de currency.ts |
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Usar parseBRLToNumber na importacao |
+| `src/components/dashboard/RevenueChart.tsx` | Adicionar `excludeTransfers: true` |
+| `src/components/dashboard/ExpenseChart.tsx` | Adicionar `excludeTransfers: true` |
+| `src/hooks/useCashFlow.ts` | Consumir totais de `usePeriodMetrics` |
+| `src/pages/CashFlowPage.tsx` | Substituir `toLocaleString` por `formatCurrencyBR` |
 
 ## Resultado esperado
 
-- Todo valor monetario exibido com 2 casas decimais: "R$ 100.000,00"
-- Eixos de graficos usam formato compacto legivel: "R$ 100mil"
-- Tooltips e cards sempre com 2 casas
-- Banco armazena NUMERIC(14,2) -- sem perda de precisao
-- Uma unica fonte de verdade para formatacao
-
+Todas as telas (Dashboard KPIs, Dashboard graficos, Receitas, Despesas, Fluxo de Caixa) exibirao os mesmos totais operacionais:
+- Receita Operacional: R$ 417.043,65
+- Despesa Operacional: R$ 424.759,82
+- Resultado Operacional: -R$ 7.716,17
+- Transferencias separadas e visiveis apenas no Fluxo de Caixa e no Dashboard (modo Movimentacao)
