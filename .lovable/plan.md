@@ -1,88 +1,61 @@
 
+# Correcao Definitiva: Planilhas .xlsx Nao Aparecem na Listagem
 
-# Correcao Definitiva: Planilhas Compartilhadas Nao Aparecem
+## Causa Raiz
 
-## Causa Raiz Identificada
+O problema NAO e de scope OAuth nem de permissoes. Os arquivos que faltam sao **arquivos Excel (.xlsx)** compartilhados via Google Drive, nao planilhas nativas do Google Sheets.
 
-O problema NAO esta na query do Drive API (que ja esta correta com `supportsAllDrives`, `includeItemsFromAllDrives`, sem filtro de owner). O problema esta no **fluxo OAuth**.
-
-Ao verificar o banco de dados, confirmei:
-
-```text
-Usuario ae3ae0d0: scope = "drive.metadata.readonly spreadsheets.readonly"  (ANTIGO - sem drive.readonly)
-Usuario dd7f331a: scope = "drive.metadata.readonly drive.readonly spreadsheets.readonly"  (CORRETO)
+A query atual filtra por:
+```
+mimeType='application/vnd.google-apps.spreadsheet'
 ```
 
-O scope `drive.metadata.readonly` nao retorna "Compartilhados comigo" que o usuario nao adicionou ao "Meu Drive". O scope `drive.readonly` e necessario para listar TODOS os arquivos acessiveis.
-
-### Por que o scope antigo persiste?
-
-No arquivo `google-sheets-auth/index.ts` (linha 72), a logica e:
-
-```text
-if (!hasRefreshToken) {
-  authUrl.searchParams.set("prompt", "consent");
-}
+Isso retorna APENAS planilhas nativas do Google Sheets. Os arquivos .xlsx tem mimeType diferente:
+```
+application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
 ```
 
-Isso significa: se o usuario ja tem um refresh token salvo, ao "reconectar" o Google, o sistema NAO forca a tela de consentimento. O Google reutiliza os scopes antigos e o token novo continua com `drive.metadata.readonly` apenas.
+Por isso "Tarifa Zero - Controle Financeiro 2025" (icone verde do Sheets) aparece, mas "Financeiro SAH 2026.xlsx" (icone verde do Excel) nao aparece.
 
-## Solucao (2 correcoes)
+## Solucao
 
-### Correcao 1 -- Forcar consent quando scope estiver desatualizado
+Alterar a query do Drive API para incluir AMBOS os tipos de arquivo:
 
-Alterar `google-sheets-auth/index.ts` para verificar se o scope salvo inclui `drive.readonly`. Se nao incluir, forcar `prompt=consent` mesmo que ja exista refresh token.
-
-Logica:
-
-```text
-const requiredScope = "drive.readonly";
-const hasRequiredScope = tokenData?.scope?.includes(requiredScope);
-
-// Forcar consent se: nao tem refresh token OU nao tem scope necessario
-if (!hasRefreshToken || !hasRequiredScope) {
-  authUrl.searchParams.set("prompt", "consent");
-}
+```
+(mimeType='application/vnd.google-apps.spreadsheet' OR mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') AND trashed=false
 ```
 
-**Arquivo**: `supabase/functions/google-sheets-auth/index.ts`
+Isso cobrira:
+- Planilhas nativas do Google Sheets
+- Arquivos .xlsx abertos/compartilhados via Google Drive
 
-### Correcao 2 -- Detectar scope insuficiente e pedir reconexao automaticamente
-
-Alterar `google-oauth-status/index.ts` para verificar se o scope salvo inclui `drive.readonly`. Se nao incluir, retornar `needs_reauth: true` com mensagem clara.
-
-No frontend (`GoogleSheetsPage.tsx` ou `useGoogleSheets.ts`), quando `needs_reauth` for detectado, exibir um banner/toast pedindo ao usuario para reconectar, e disparar automaticamente o fluxo de reconexao.
-
-**Arquivos**: `supabase/functions/google-oauth-status/index.ts`, `src/pages/GoogleSheetsPage.tsx`
-
-## Arquivos modificados
+## Arquivo modificado
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/google-sheets-auth/index.ts` | Verificar scope salvo; forcar `prompt=consent` se `drive.readonly` ausente |
-| `supabase/functions/google-oauth-status/index.ts` | Retornar `needs_reauth` quando scope insuficiente |
-| `src/pages/GoogleSheetsPage.tsx` | Exibir alerta e botao de reconexao quando `needs_reauth` for true |
+| `supabase/functions/google-list-sheets/index.ts` | Expandir filtro mimeType para incluir .xlsx |
 
-## Fluxo apos a correcao
+## Detalhe tecnico
 
-```text
-1. Usuario abre pagina Google Sheets
-2. Backend verifica scope salvo no token
-3. Se scope NAO inclui "drive.readonly":
-   a. Frontend exibe: "Reconecte sua conta Google para acessar todas as planilhas compartilhadas"
-   b. Botao "Reconectar Google" inicia fluxo OAuth com prompt=consent
-   c. Google pede consentimento para o novo scope
-   d. Token atualizado com drive.readonly
-4. Listagem agora retorna TODAS as planilhas (Meu Drive + Compartilhadas)
+Na funcao `listDriveSpreadsheets` (linha 89), alterar:
+
+**Antes:**
+```
+let q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
 ```
 
-## O que NAO muda
+**Depois:**
+```
+let q = "(mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and trashed=false";
+```
 
-- A query do Drive API (`google-list-sheets`) ja esta correta e nao precisa de alteracao
-- O modal de selecao ja tem busca, paginacao e refresh
-- O armazenamento de tokens ja funciona corretamente
+## Impacto
 
-## Nota importante
+- Nenhuma mudanca no frontend necessaria
+- Nenhuma reconexao OAuth necessaria
+- Os arquivos .xlsx aparecerao imediatamente na proxima abertura do modal
+- A busca por nome tambem cobrira arquivos .xlsx
 
-Apos implementar, o usuario atual precisara clicar em "Reconectar Google" UMA VEZ para obter o scope atualizado. Apos isso, todas as planilhas compartilhadas aparecerao automaticamente.
+## Teste
 
+Apos deploy da edge function, abrir o modal "Selecionar Planilha" e verificar que arquivos como "Financeiro SAH 2026.xlsx" e "Controle Financeiro StartSync 2026.xlsx" aparecem na lista.
