@@ -23,6 +23,7 @@ interface DriveFile {
   name: string;
   modifiedTime: string;
   owners?: Array<{ displayName?: string; emailAddress?: string }>;
+  shared?: boolean;
 }
 
 async function refreshAccessToken(
@@ -82,13 +83,21 @@ async function refreshAccessToken(
 
 async function listDriveSpreadsheets(
   accessToken: string,
-  pageToken?: string
+  pageToken?: string,
+  searchTerm?: string
 ): Promise<{ files: DriveFile[]; nextPageToken?: string }> {
+  let q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
+  if (searchTerm) {
+    // Sanitize: remove single quotes to prevent query injection
+    const sanitized = searchTerm.replace(/'/g, "\\'");
+    q += ` and name contains '${sanitized}'`;
+  }
+
   const params = new URLSearchParams({
-    q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-    fields: "files(id,name,modifiedTime,owners(displayName,emailAddress)),nextPageToken",
+    q,
+    fields: "files(id,name,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken",
     orderBy: "modifiedTime desc",
-    pageSize: "100",
+    pageSize: "50",
     supportsAllDrives: "true",
     includeItemsFromAllDrives: "true",
   });
@@ -175,12 +184,14 @@ Deno.serve(async (req) => {
 
     const userId = userData.user.id;
 
-    // Get pageToken from body if provided
+    // Get pageToken and searchTerm from body if provided
     let pageToken: string | undefined;
+    let searchTerm: string | undefined;
     if (req.method === "POST") {
       try {
         const body = await req.json();
         pageToken = body.pageToken;
+        searchTerm = body.searchTerm;
       } catch {
         // No body or invalid JSON, that's fine
       }
@@ -235,7 +246,7 @@ Deno.serve(async (req) => {
 
     // List spreadsheets from Drive API
     try {
-      const result = await listDriveSpreadsheets(accessToken, pageToken);
+      const result = await listDriveSpreadsheets(accessToken, pageToken, searchTerm);
 
       // Transform the response for frontend
       const spreadsheets = result.files.map((file) => ({
@@ -243,6 +254,7 @@ Deno.serve(async (req) => {
         name: file.name,
         modified_time: file.modifiedTime,
         owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || undefined,
+        shared: file.shared ?? false,
       }));
 
       console.log(`[${requestId}] Successfully listed ${spreadsheets.length} spreadsheets`);
@@ -275,12 +287,13 @@ Deno.serve(async (req) => {
         }
 
         // Retry with new token
-        const result = await listDriveSpreadsheets(refreshResult.access_token, pageToken);
+        const result = await listDriveSpreadsheets(refreshResult.access_token, pageToken, searchTerm);
         const spreadsheets = result.files.map((file) => ({
           id: file.id,
           name: file.name,
           modified_time: file.modifiedTime,
           owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || undefined,
+          shared: file.shared ?? false,
         }));
 
         return new Response(
