@@ -34,14 +34,7 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { TransactionModal } from "@/components/modals/TransactionModal";
 import { useTransactions, Transaction } from "@/hooks/useTransactions";
 import { TransactionFormData } from "@/lib/validators";
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(value);
-};
+import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("pt-BR");
@@ -171,14 +164,14 @@ export function IncomePage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KPICard
           title="Receita Total"
-          value={formatCurrency(totals.income)}
+          value={formatCurrencyBR(totals.income)}
           changeLabel="no período selecionado"
           icon={<DollarSign className="w-5 h-5 text-success" />}
           trend="up"
         />
         <KPICard
           title="Ticket Médio"
-          value={formatCurrency(avgTransaction)}
+          value={formatCurrencyBR(avgTransaction)}
           changeLabel={`${transactions.length} transações`}
           icon={<ShoppingCart className="w-5 h-5 text-primary" />}
           trend="neutral"
@@ -216,7 +209,7 @@ export function IncomePage() {
                       axisLine={false} 
                       tickLine={false}
                       tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-                      tickFormatter={(value) => `R$ ${(value / 1000).toFixed(0)}k`}
+                      tickFormatter={(value) => formatCompactBR(value)}
                     />
                     <Tooltip
                       content={({ active, payload, label }) => {
@@ -225,7 +218,7 @@ export function IncomePage() {
                             <div className="bg-popover border border-border rounded-lg p-3 shadow-premium-lg">
                               <p className="text-sm font-medium text-foreground">{label}</p>
                               <p className="text-lg font-semibold text-success">
-                                {formatCurrency(payload[0].value as number)}
+                                {formatCurrencyBR(payload[0].value as number)}
                               </p>
                             </div>
                           );
@@ -375,7 +368,7 @@ export function IncomePage() {
                       <TableCell className="text-muted-foreground">{item.client_vendor || "-"}</TableCell>
                       <TableCell className="text-muted-foreground">{formatDate(item.date)}</TableCell>
                       <TableCell className="text-right font-semibold text-success">
-                        +{formatCurrency(Number(item.amount))}
+                        +{formatCurrencyBR(Number(item.amount))}
                       </TableCell>
                     </TableRow>
                   ))

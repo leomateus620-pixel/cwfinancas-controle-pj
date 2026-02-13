@@ -1,12 +1,9 @@
 import { GlassCard } from "./GlassCard";
+import { formatCurrencyBR } from "@/lib/currency";
 
 interface TopCategoriesProps {
   categories: Array<{ name: string; value: number; percent: number }>;
   delay?: number;
-}
-
-function formatBRL(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 export function TopCategories({ categories, delay = 0 }: TopCategoriesProps) {
@@ -26,7 +23,7 @@ export function TopCategories({ categories, delay = 0 }: TopCategoriesProps) {
               <div key={i}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-muted-foreground text-xs font-medium">{cat.name}</span>
-                  <span className="text-muted-foreground/70 text-[11px] tabular-nums">{formatBRL(cat.value)}</span>
+                  <span className="text-muted-foreground/70 text-[11px] tabular-nums">{formatCurrencyBR(cat.value)}</span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-foreground/5 overflow-hidden">
                   <div

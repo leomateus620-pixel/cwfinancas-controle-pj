@@ -1,12 +1,5 @@
 import type { ForecastMonthly } from "@/hooks/useForecast";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+import { formatCurrencyBR } from "@/lib/currency";
 
 const MONTH_LABELS: Record<string, string> = {
   "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr",
@@ -50,12 +43,12 @@ export function ForecastCashFlow({ forecastMonths }: Props) {
                   }`}
                 >
                   {saldo >= 0 ? "+" : ""}
-                  {formatCurrency(saldo)}
+                  {formatCurrencyBR(saldo)}
                 </span>
               </div>
               <div className="flex items-center gap-4 text-sm">
-                <span className="text-success">↓ {formatCurrency(rec)}</span>
-                <span className="text-destructive">↑ {formatCurrency(desp)}</span>
+                <span className="text-success">↓ {formatCurrencyBR(rec)}</span>
+                <span className="text-destructive">↑ {formatCurrencyBR(desp)}</span>
               </div>
             </div>
           );

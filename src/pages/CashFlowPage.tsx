@@ -28,15 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useCashFlow } from "@/hooks/useCashFlow";
 import { Link } from "react-router-dom";
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-};
+import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("pt-BR", {
@@ -78,7 +70,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
                 entry.dataKey === "inflow" ? "text-success" : 
                 entry.dataKey === "outflow" ? "text-destructive" : "text-primary"
               )}>
-                {formatCurrency(entry.value)}
+                {formatCurrencyBR(entry.value)}
               </span>
             </div>
           ))}
@@ -341,7 +333,7 @@ export function CashFlowPage() {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
-                  tickFormatter={formatCurrency}
+                  tickFormatter={formatCompactBR}
                   width={70}
                 />
                 <Tooltip content={<CustomTooltip />} />
@@ -451,7 +443,7 @@ export function CashFlowPage() {
                     )}
                   >
                     {payment.type === "income" ? "+" : "-"}
-                    {formatCurrency(Math.abs(payment.amount))}
+                    {formatCurrencyBR(Math.abs(payment.amount))}
                   </span>
                 </div>
               ))}

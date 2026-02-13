@@ -13,6 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useTransactions } from "@/hooks/useTransactions";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
+import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
 const categoryColors = [
   "hsl(var(--chart-1))",
@@ -22,15 +23,6 @@ const categoryColors = [
   "hsl(var(--chart-5))",
   "hsl(var(--muted-foreground))",
 ];
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-};
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -55,7 +47,7 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
           </span>
         </div>
         <p className="text-lg font-bold text-foreground">
-          {formatCurrency(data.value)}
+          {formatCurrencyBR(data.value)}
         </p>
       </div>
     );
@@ -73,7 +65,7 @@ const CustomLabel = (props: any) => {
       fontSize={11}
       fontWeight={500}
     >
-      {formatCurrency(value)}
+      {formatCurrencyBR(value)}
     </text>
   );
 };
@@ -126,7 +118,7 @@ export function ExpenseChart() {
           </div>
           <div className="text-right">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-            <p className="text-base font-bold text-foreground">{formatCurrency(total)}</p>
+            <p className="text-base font-bold text-foreground">{formatCurrencyBR(total)}</p>
           </div>
         </div>
       </CardHeader>
@@ -155,7 +147,7 @@ export function ExpenseChart() {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  tickFormatter={formatCurrency}
+                  tickFormatter={formatCompactBR}
                 />
                 <YAxis 
                   type="category"

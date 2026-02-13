@@ -8,14 +8,7 @@ import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { InvoiceModal } from "@/components/modals/InvoiceModal";
 import { useInvoices, Invoice } from "@/hooks/useInvoices";
 import { InvoiceFormData } from "@/lib/validators";
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(value);
-};
+import { formatCurrencyBR } from "@/lib/currency";
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("pt-BR", {
@@ -223,7 +216,7 @@ export function InvoicesPage() {
                     </div>
                     <div className="text-right flex items-center gap-4">
                       <div>
-                        <p className="text-sm font-bold text-foreground">{formatCurrency(Number(invoice.value))}</p>
+                        <p className="text-sm font-bold text-foreground">{formatCurrencyBR(Number(invoice.value))}</p>
                         <p className="text-xs text-muted-foreground">Venc: {formatDate(invoice.due_date)}</p>
                       </div>
                       {getStatusBadge(invoice.status)}
@@ -259,7 +252,7 @@ export function InvoicesPage() {
               {Object.entries(taxSummary).map(([tax, value]) => (
                 <div key={tax} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-accent/30 transition-corporate">
                   <span className="text-sm text-muted-foreground uppercase">{tax}</span>
-                  <span className="text-sm font-medium text-foreground">{formatCurrency(value)}</span>
+                  <span className="text-sm font-medium text-foreground">{formatCurrencyBR(value)}</span>
                 </div>
               ))}
             </div>
@@ -267,7 +260,7 @@ export function InvoicesPage() {
             <div className="pt-4 border-t border-border">
               <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-lg">
                 <span className="text-sm font-semibold text-foreground">Total Estimado</span>
-                <span className="text-lg font-bold text-warning">{formatCurrency(totalTax)}</span>
+                <span className="text-lg font-bold text-warning">{formatCurrencyBR(totalTax)}</span>
               </div>
             </div>
 

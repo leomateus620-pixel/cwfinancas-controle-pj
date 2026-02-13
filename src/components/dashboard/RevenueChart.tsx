@@ -13,15 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { TrendBadge } from "@/components/ui/trend-badge";
 import { useTransactions } from "@/hooks/useTransactions";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-};
+import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -52,7 +44,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
               />
               <span className="text-muted-foreground text-xs">{dataKeyLabels[entry.dataKey] || entry.dataKey}:</span>
               <span className="font-semibold text-sm text-foreground">
-                {formatCurrency(entry.value)}
+                {formatCurrencyBR(entry.value)}
               </span>
             </div>
           ))}
@@ -188,7 +180,7 @@ export function RevenueChart() {
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-                  tickFormatter={formatCurrency}
+                  tickFormatter={formatCompactBR}
                   dx={-8}
                 />
                 <Tooltip content={<CustomTooltip />} />

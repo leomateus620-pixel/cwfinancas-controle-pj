@@ -20,20 +20,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-
-function formatBRL(value: number): string {
-  if (Math.abs(value) >= 1_000_000) {
-    return `R$ ${(value / 1_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}mi`;
-  }
-  if (Math.abs(value) >= 10_000) {
-    return `R$ ${(value / 1_000).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 1 })}k`;
-  }
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatFullBRL(value: number): string {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
+import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
 export default function HomePage() {
   const data = useHomeDashboard();
@@ -56,7 +43,7 @@ export default function HomePage() {
     }
 
     if (data.receivables > 0) {
-      list.push(`Você tem ${formatFullBRL(data.receivables)} em contas a receber pendentes.`);
+      list.push(`Você tem ${formatCurrencyBR(data.receivables)} em contas a receber pendentes.`);
     }
 
     if (list.length === 0) {
@@ -111,7 +98,7 @@ export default function HomePage() {
               <div className="md:col-span-2">
                 <HomeKPICard
                   label="Caixa Atual"
-                  value={formatBRL(data.currentBalance)}
+                  value={formatCompactBR(data.currentBalance)}
                   icon={<Wallet className="w-5 h-5 text-blue-600" />}
                   tooltip="Saldo líquido: total de receitas menos despesas de todas as transações importadas."
                   href="/cash-flow"
@@ -122,7 +109,7 @@ export default function HomePage() {
               </div>
               <HomeKPICard
                 label="Entradas do Mês"
-                value={formatBRL(data.monthIncome)}
+                value={formatCompactBR(data.monthIncome)}
                 icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
                 tooltip="Soma de todas as receitas registradas no mês corrente."
                 href="/income"
@@ -131,7 +118,7 @@ export default function HomePage() {
               />
               <HomeKPICard
                 label="Saídas do Mês"
-                value={formatBRL(data.monthExpense)}
+                value={formatCompactBR(data.monthExpense)}
                 icon={<TrendingDown className="w-5 h-5 text-red-600" />}
                 tooltip="Soma de todas as despesas registradas no mês corrente."
                 href="/expenses"
@@ -141,7 +128,7 @@ export default function HomePage() {
 
               <HomeKPICard
                 label="Resultado do Mês"
-                value={formatBRL(data.monthResult)}
+                value={formatCompactBR(data.monthResult)}
                 icon={<BarChart3 className="w-5 h-5 text-blue-600" />}
                 tooltip="Diferença entre entradas e saídas do mês corrente."
                 href="/overview"
@@ -151,7 +138,7 @@ export default function HomePage() {
               />
               <HomeKPICard
                 label="Contas a Receber"
-                value={formatBRL(data.receivables)}
+                value={formatCompactBR(data.receivables)}
                 icon={<Clock className="w-5 h-5 text-amber-600" />}
                 tooltip="Valor total de faturas com status pendente."
                 href="/invoices"
@@ -159,7 +146,7 @@ export default function HomePage() {
               />
               <HomeKPICard
                 label="Contas a Pagar"
-                value={formatBRL(data.payables)}
+                value={formatCompactBR(data.payables)}
                 icon={<CreditCard className="w-5 h-5 text-orange-600" />}
                 tooltip="Despesas futuras programadas."
                 href="/expenses"
