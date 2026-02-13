@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { cn } from "@/lib/utils";
-
+import { formatCurrencyBR } from "@/lib/currency";
 // Dados de exemplo - Balanço Patrimonial
 const assets = {
   current: [
@@ -38,13 +38,6 @@ const equity = [
   { name: "Lucros Acumulados", value: 63000 },
 ];
 
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(value);
-};
 
 const calculateTotal = (items: Array<{ value: number }>) => {
   return items.reduce((acc, item) => acc + item.value, 0);
@@ -91,7 +84,7 @@ function BalanceItem({ name, value, isTotal, colorClass, index = 0 }: BalanceIte
         colorClass || "text-foreground",
         !isTotal && "group-hover:scale-105"
       )}>
-        {formatCurrency(value)}
+        {formatCurrencyBR(value)}
       </span>
     </div>
   );
@@ -226,7 +219,7 @@ export function BalanceSheetPage() {
               <div className="flex items-center justify-between py-4 px-4 rounded-xl bg-primary/10">
                 <span className="text-sm font-bold text-foreground">TOTAL DO ATIVO</span>
                 <span className="text-lg font-bold text-primary tabular-nums">
-                  {formatCurrency(totalAssets)}
+                  {formatCurrencyBR(totalAssets)}
                 </span>
               </div>
             </div>
@@ -295,7 +288,7 @@ export function BalanceSheetPage() {
               <div className="flex items-center justify-between py-4 px-4 rounded-xl bg-muted/60">
                 <span className="text-sm font-bold text-foreground">TOTAL PASSIVO + PL</span>
                 <span className="text-lg font-bold text-foreground tabular-nums">
-                  {formatCurrency(totalLiabilitiesAndEquity)}
+                  {formatCurrencyBR(totalLiabilitiesAndEquity)}
                 </span>
               </div>
             </div>

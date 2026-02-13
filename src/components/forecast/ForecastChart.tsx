@@ -11,14 +11,7 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import type { ForecastMonthly } from "@/hooks/useForecast";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
 const MONTH_LABELS: Record<string, string> = {
   "01": "Jan", "02": "Fev", "03": "Mar", "04": "Abr",
@@ -140,7 +133,7 @@ export function ForecastChart({ forecastData }: Props) {
               axisLine={false}
               tickLine={false}
               tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
-              tickFormatter={formatCurrency}
+              tickFormatter={formatCompactBR}
             />
             <Tooltip
               content={({ active, payload, label }) => {
@@ -153,17 +146,17 @@ export function ForecastChart({ forecastData }: Props) {
                     <p className="font-semibold text-[#0a1940] mb-1">{label}</p>
                     {real != null && (
                       <p className="text-foreground">
-                        Real: <span className="font-semibold">{formatCurrency(real)}</span>
+                        Real: <span className="font-semibold">{formatCurrencyBR(real)}</span>
                       </p>
                     )}
                     {prev != null && (
                       <>
                         <p className="text-success">
-                          Previsto: <span className="font-semibold">{formatCurrency(prev)}</span>
+                          Previsto: <span className="font-semibold">{formatCurrencyBR(prev)}</span>
                         </p>
                         {data?.otimista != null && (
                           <p className="text-muted-foreground text-xs mt-1">
-                            Banda: {formatCurrency(data.pessimista)} – {formatCurrency(data.otimista)}
+                            Banda: {formatCurrencyBR(data.pessimista)} – {formatCurrencyBR(data.otimista)}
                           </p>
                         )}
                       </>

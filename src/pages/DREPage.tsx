@@ -8,11 +8,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useDRE } from "@/hooks/useDRE";
 import { useGoogleSheets } from "@/hooks/useGoogleSheets";
+import { formatCurrencyBR } from "@/lib/currency";
 
 
 function formatBRL(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+  return formatCurrencyBR(value);
 }
 
 function formatPercent(value: number | null | undefined): string {

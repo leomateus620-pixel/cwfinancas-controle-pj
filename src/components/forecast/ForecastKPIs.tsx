@@ -1,13 +1,6 @@
 import { TrendingUp, TrendingDown, Target, AlertCircle, Shield } from "lucide-react";
 import type { ForecastMonthly } from "@/hooks/useForecast";
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
+import { formatCurrencyBR } from "@/lib/currency";
 
 interface Props {
   realMonths: ForecastMonthly[];
@@ -40,7 +33,7 @@ export function ForecastKPIs({ realMonths, forecastMonths, confidence }: Props) 
   const kpis = [
     {
       title: "Receita Prevista (Trimestre)",
-      value: formatCurrency(receitaQ),
+      value: formatCurrencyBR(receitaQ),
       change: trendPct,
       changeLabel: "tendência recente",
       icon: <TrendingUp className="w-5 h-5 text-success" />,

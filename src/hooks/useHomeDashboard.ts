@@ -4,16 +4,13 @@ import { useTransactions } from "./useTransactions";
 import { useInvoices } from "./useInvoices";
 import { useSyncStatus } from "./useSyncStatus";
 import { format, startOfMonth, endOfMonth, subMonths, subDays, parseISO, isValid, differenceInDays, addDays } from "date-fns";
+import { formatCurrencyBR } from "@/lib/currency";
 
 function getGreeting(): string {
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) return "Bom dia";
   if (hour >= 12 && hour < 18) return "Boa tarde";
   return "Boa noite";
-}
-
-function formatBRL(value: number): string {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 export interface HomeDashboardAlert {
@@ -212,7 +209,7 @@ export function useHomeDashboard(): HomeDashboardData {
         list.push({
           id: "invoices-due",
           title: "Faturas vencendo",
-          description: `${dueSoon.length} fatura${dueSoon.length > 1 ? "s" : ""} vence${dueSoon.length > 1 ? "m" : ""} nos próximos 7 dias — ${formatBRL(total)} em aberto.`,
+          description: `${dueSoon.length} fatura${dueSoon.length > 1 ? "s" : ""} vence${dueSoon.length > 1 ? "m" : ""} nos próximos 7 dias — ${formatCurrencyBR(total)} em aberto.`,
           priority: "medium",
           iconName: "Clock",
         });

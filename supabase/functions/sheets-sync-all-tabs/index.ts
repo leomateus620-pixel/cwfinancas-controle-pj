@@ -809,7 +809,7 @@ Deno.serve(async (req) => {
           batch.push({
             user_id: userId,
             description: description || "Sem descrição",
-            amount,
+            amount: Math.round(amount * 100) / 100,
             date: finalDate,
             type,
             category,

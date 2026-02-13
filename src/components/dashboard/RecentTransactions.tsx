@@ -2,14 +2,7 @@ import { ArrowUpRight, ArrowDownLeft, Loader2, FileQuestion } from "lucide-react
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useTransactions } from "@/hooks/useTransactions";
-
-const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(Math.abs(value));
-};
+import { formatCurrencyBR } from "@/lib/currency";
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("pt-BR", {
@@ -89,7 +82,7 @@ export function RecentTransactions() {
                   )}
                 >
                   {transaction.type === "income" ? "+" : "-"}
-                  {formatCurrency(Number(transaction.amount))}
+                  {formatCurrencyBR(Math.abs(Number(transaction.amount)))}
                 </span>
               </div>
             ))}

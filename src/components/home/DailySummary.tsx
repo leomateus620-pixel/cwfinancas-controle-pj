@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { GlassCard } from "./GlassCard";
 import { LineChart, Line, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts";
+import { formatCurrencyBR } from "@/lib/currency";
 
 interface DailySummaryProps {
   dailyTrend: Array<{ date: string; value: number }>;
@@ -69,7 +70,7 @@ export function DailySummary({ dailyTrend, insights, delay = 0 }: DailySummaryPr
                   boxShadow: "0 4px 12px rgba(15,23,42,0.08)",
                 }}
                 formatter={(v: number) => [
-                  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
+                  formatCurrencyBR(v),
                   "Saldo"
                 ]}
                 labelFormatter={(l: string) => {
