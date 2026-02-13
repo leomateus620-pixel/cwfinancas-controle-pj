@@ -168,16 +168,14 @@ export function ExpensesPage() {
         <KPICard
           title="Total de Despesas"
           value={formatCurrency(totals.expense)}
-          change={-5.2}
-          changeLabel="vs mês anterior"
+          changeLabel="no período selecionado"
           icon={<CreditCard className="w-5 h-5 text-destructive" />}
           trend="down"
         />
         <KPICard
           title="Maior Categoria"
           value={topCategory}
-          change={3.1}
-          changeLabel="do total"
+          changeLabel="categoria principal"
           icon={<Building2 className="w-5 h-5 text-primary" />}
           trend="neutral"
         />

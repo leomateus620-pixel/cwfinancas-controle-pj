@@ -49,13 +49,21 @@ export interface HomeDashboardData {
 
 export function useHomeDashboard(): HomeDashboardData {
   const { profile, isLoading: profileLoading } = useProfile();
-  const { transactions, isLoading: txLoading, totals: allTotals } = useTransactions();
+
+  const now = new Date();
+  // Home always shows current month — bypass global date filter with explicit dates
+  const homeStart = format(startOfMonth(now), "yyyy-MM-dd");
+  const homeEnd = format(endOfMonth(now), "yyyy-MM-dd");
+
+  const { transactions, isLoading: txLoading, totals: allTotals } = useTransactions({
+    startDate: homeStart,
+    endDate: homeEnd,
+  });
   const { invoices, isLoading: invLoading, summary: invSummary } = useInvoices();
   const { connections, isLoading: syncLoading } = useSyncStatus();
 
-  const now = new Date();
-  const currentMonthStart = format(startOfMonth(now), "yyyy-MM-dd");
-  const currentMonthEnd = format(endOfMonth(now), "yyyy-MM-dd");
+  const currentMonthStart = homeStart;
+  const currentMonthEnd = homeEnd;
   const prevMonthStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
   const prevMonthEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
 

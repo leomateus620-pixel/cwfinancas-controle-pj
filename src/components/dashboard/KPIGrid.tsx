@@ -6,27 +6,27 @@ import {
   Loader2,
 } from "lucide-react";
 import { KPICard } from "./KPICard";
-import { useTransactions } from "@/hooks/useTransactions";
+import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
 import { useMemo } from "react";
 
 export function KPIGrid() {
-  const { transactions, isLoading, totals } = useTransactions();
+  const {
+    currentIncome,
+    currentExpense,
+    currentBalance,
+    incomeChange,
+    expenseChange,
+    balanceChange,
+    margin,
+    marginChange,
+    isLoading,
+  } = usePeriodMetrics();
 
   const kpiData = useMemo(() => {
-    const income = totals.income || 0;
-    const expense = totals.expense || 0;
-    const profit = income - expense;
-    const margin = income > 0 ? (profit / income) * 100 : 0;
-
-    const incomeChange = transactions.length > 0 ? 12.5 : 0;
-    const profitChange = transactions.length > 0 ? 8.2 : 0;
-    const expenseChange = transactions.length > 0 ? 3.4 : 0;
-    const marginChange = transactions.length > 0 ? 5.2 : 0;
-
     return [
       {
         title: "Receita Total",
-        value: income,
+        value: currentIncome,
         prefix: "R$ ",
         change: incomeChange,
         trend: "up" as const,
@@ -35,16 +35,16 @@ export function KPIGrid() {
       },
       {
         title: "Lucro Líquido",
-        value: profit,
+        value: currentBalance,
         prefix: "R$ ",
-        change: profitChange,
-        trend: profit >= 0 ? "up" as const : "down" as const,
+        change: balanceChange,
+        trend: currentBalance >= 0 ? "up" as const : "down" as const,
         icon: <TrendingUp className="w-5 h-5" />,
-        valueColor: profit >= 0 ? "success" as const : "danger" as const,
+        valueColor: currentBalance >= 0 ? "success" as const : "danger" as const,
       },
       {
         title: "Despesas Totais",
-        value: expense,
+        value: currentExpense,
         prefix: "R$ ",
         change: expenseChange,
         trend: "down" as const,
@@ -62,7 +62,7 @@ export function KPIGrid() {
         decimals: 1,
       },
     ];
-  }, [transactions, totals]);
+  }, [currentIncome, currentExpense, currentBalance, incomeChange, expenseChange, balanceChange, margin, marginChange]);
 
   if (isLoading) {
     return (
@@ -89,6 +89,7 @@ export function KPIGrid() {
           prefix={kpi.prefix}
           suffix={kpi.suffix}
           change={kpi.change}
+          changeLabel="vs período anterior"
           trend={kpi.trend}
           icon={kpi.icon}
           valueColor={kpi.valueColor}
