@@ -1,95 +1,88 @@
 
 
-# Corrigir Listagem de Planilhas Compartilhadas no Google Drive
+# Correcao Definitiva: Planilhas Compartilhadas Nao Aparecem
 
-## Diagnostico
+## Causa Raiz Identificada
 
-Apos analisar o codigo, identifiquei **3 problemas** que impedem a listagem de planilhas compartilhadas:
+O problema NAO esta na query do Drive API (que ja esta correta com `supportsAllDrives`, `includeItemsFromAllDrives`, sem filtro de owner). O problema esta no **fluxo OAuth**.
 
-### Problema 1: Scope OAuth insuficiente
-O arquivo `google-sheets-auth/index.ts` (linha 59) usa o scope `drive.metadata.readonly`. Este scope pode nao retornar arquivos "Compartilhados comigo" que o usuario nao adicionou ao "Meu Drive". O scope correto para listar todos os arquivos acessiveis e `drive.readonly`.
+Ao verificar o banco de dados, confirmei:
 
-### Problema 2: Backend sem suporte a busca
-A edge function `google-list-sheets` nao aceita parametro de busca (`searchTerm`). O usuario nao consegue filtrar planilhas por nome, dificultando encontrar uma planilha recente entre muitas.
+```text
+Usuario ae3ae0d0: scope = "drive.metadata.readonly spreadsheets.readonly"  (ANTIGO - sem drive.readonly)
+Usuario dd7f331a: scope = "drive.metadata.readonly drive.readonly spreadsheets.readonly"  (CORRETO)
+```
 
-### Problema 3: Frontend sem busca, sem paginacao, sem refresh
-O modal `SpreadsheetSelectorModal` nao tem:
-- Campo de busca
-- Botao "Carregar mais" (paginacao com `nextPageToken`)
-- Botao "Recarregar" para forcar refresh
-- Badge indicando se a planilha e compartilhada
-- Auto-refresh ao abrir o modal (usa `useMutation`, que so dispara manualmente uma vez)
+O scope `drive.metadata.readonly` nao retorna "Compartilhados comigo" que o usuario nao adicionou ao "Meu Drive". O scope `drive.readonly` e necessario para listar TODOS os arquivos acessiveis.
 
-## Solucao
+### Por que o scope antigo persiste?
 
-### Passo 1 -- Corrigir scope OAuth
+No arquivo `google-sheets-auth/index.ts` (linha 72), a logica e:
 
-Alterar o scope de `drive.metadata.readonly` para `drive.readonly` em `google-sheets-auth/index.ts`. Isso garante acesso a listagem de TODOS os arquivos que o usuario pode ver, incluindo "Compartilhados comigo".
+```text
+if (!hasRefreshToken) {
+  authUrl.searchParams.set("prompt", "consent");
+}
+```
 
-**IMPORTANTE**: Usuarios existentes precisarao reconectar a conta Google para obter o novo scope. O sistema detectara isso automaticamente (o token antigo nao tera o scope necessario) e a listagem pode continuar funcionando com o scope antigo -- a diferenca e que com `drive.readonly` a cobertura e garantida.
+Isso significa: se o usuario ja tem um refresh token salvo, ao "reconectar" o Google, o sistema NAO forca a tela de consentimento. O Google reutiliza os scopes antigos e o token novo continua com `drive.metadata.readonly` apenas.
+
+## Solucao (2 correcoes)
+
+### Correcao 1 -- Forcar consent quando scope estiver desatualizado
+
+Alterar `google-sheets-auth/index.ts` para verificar se o scope salvo inclui `drive.readonly`. Se nao incluir, forcar `prompt=consent` mesmo que ja exista refresh token.
+
+Logica:
+
+```text
+const requiredScope = "drive.readonly";
+const hasRequiredScope = tokenData?.scope?.includes(requiredScope);
+
+// Forcar consent se: nao tem refresh token OU nao tem scope necessario
+if (!hasRefreshToken || !hasRequiredScope) {
+  authUrl.searchParams.set("prompt", "consent");
+}
+```
 
 **Arquivo**: `supabase/functions/google-sheets-auth/index.ts`
 
-### Passo 2 -- Adicionar busca e campo `shared` no backend
+### Correcao 2 -- Detectar scope insuficiente e pedir reconexao automaticamente
 
-Modificar `google-list-sheets/index.ts` para:
-- Aceitar parametro `searchTerm` no body
-- Quando presente, adicionar `and name contains '{term}'` ao filtro `q`
-- Adicionar `shared` ao campo `fields` para identificar planilhas compartilhadas
-- Retornar o campo `shared` no response
+Alterar `google-oauth-status/index.ts` para verificar se o scope salvo inclui `drive.readonly`. Se nao incluir, retornar `needs_reauth: true` com mensagem clara.
 
-**Arquivo**: `supabase/functions/google-list-sheets/index.ts`
+No frontend (`GoogleSheetsPage.tsx` ou `useGoogleSheets.ts`), quando `needs_reauth` for detectado, exibir um banner/toast pedindo ao usuario para reconectar, e disparar automaticamente o fluxo de reconexao.
 
-### Passo 3 -- Adicionar busca, paginacao e refresh no modal
-
-Modificar `SpreadsheetSelectorModal.tsx` para:
-- Campo de busca com debounce de 400ms
-- Botao "Recarregar" no topo da lista
-- Botao "Carregar mais" no final da lista (usando `nextPageToken`)
-- Badge "Compartilhada" quando `shared === true`
-- Data de modificacao formatada ao lado do nome
-
-Modificar `useGoogleSheets.ts` para:
-- `listSpreadsheets` aceitar `{ pageToken?, searchTerm? }`
-- Armazenar e acumular resultados para paginacao
-- Retornar `nextPageToken` para o modal
-
-### Passo 4 -- Auto-refresh ao abrir modal
-
-Garantir que sempre que o modal abrir, a lista seja buscada novamente (sem depender de cache antigo). O `useEffect` no modal ja chama `onLoadSpreadsheets` ao abrir, mas o `hasLoadedRef` impede chamadas subsequentes. Ajustar para sempre buscar ao abrir.
+**Arquivos**: `supabase/functions/google-oauth-status/index.ts`, `src/pages/GoogleSheetsPage.tsx`
 
 ## Arquivos modificados
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/google-sheets-auth/index.ts` | Alterar scope para `drive.readonly` |
-| `supabase/functions/google-list-sheets/index.ts` | Adicionar `searchTerm`, campo `shared`, sanitizacao |
-| `src/hooks/useGoogleSheets.ts` | `listSpreadsheets` aceitar searchTerm e pageToken, acumular resultados |
-| `src/components/modals/SpreadsheetSelectorModal.tsx` | Busca, paginacao, refresh, badge compartilhada |
+| `supabase/functions/google-sheets-auth/index.ts` | Verificar scope salvo; forcar `prompt=consent` se `drive.readonly` ausente |
+| `supabase/functions/google-oauth-status/index.ts` | Retornar `needs_reauth` quando scope insuficiente |
+| `src/pages/GoogleSheetsPage.tsx` | Exibir alerta e botao de reconexao quando `needs_reauth` for true |
 
-## Detalhes tecnicos
+## Fluxo apos a correcao
 
-### Query Drive API (backend final)
 ```text
-q: mimeType='application/vnd.google-apps.spreadsheet' and trashed=false [and name contains 'termo']
-fields: files(id,name,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken
-orderBy: modifiedTime desc
-pageSize: 50
-supportsAllDrives: true
-includeItemsFromAllDrives: true
+1. Usuario abre pagina Google Sheets
+2. Backend verifica scope salvo no token
+3. Se scope NAO inclui "drive.readonly":
+   a. Frontend exibe: "Reconecte sua conta Google para acessar todas as planilhas compartilhadas"
+   b. Botao "Reconectar Google" inicia fluxo OAuth com prompt=consent
+   c. Google pede consentimento para o novo scope
+   d. Token atualizado com drive.readonly
+4. Listagem agora retorna TODAS as planilhas (Meu Drive + Compartilhadas)
 ```
 
-### Interface Spreadsheet atualizada
-```text
-interface Spreadsheet {
-  id: string;
-  name: string;
-  modified_time: string;
-  owner?: string;
-  shared?: boolean;
-}
-```
+## O que NAO muda
 
-### Nota sobre reautenticacao
-Apos alterar o scope, usuarios que ja conectaram a conta Google precisarao reconectar para obter o scope `drive.readonly`. O fluxo existente de "Desconectar Google" + "Conectar ao Google" ja suporta isso. Nenhuma mudanca adicional e necessaria -- basta o usuario reconectar.
+- A query do Drive API (`google-list-sheets`) ja esta correta e nao precisa de alteracao
+- O modal de selecao ja tem busca, paginacao e refresh
+- O armazenamento de tokens ja funciona corretamente
+
+## Nota importante
+
+Apos implementar, o usuario atual precisara clicar em "Reconectar Google" UMA VEZ para obter o scope atualizado. Apos isso, todas as planilhas compartilhadas aparecerao automaticamente.
 
