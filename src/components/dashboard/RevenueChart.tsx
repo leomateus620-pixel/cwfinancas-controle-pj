@@ -73,7 +73,7 @@ const renderLegend = () => {
 const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 export function RevenueChart() {
-  const { transactions, isLoading } = useTransactions();
+  const { transactions, isLoading } = useTransactions({ excludeTransfers: true });
 
   const revenueData = useMemo(() => {
     if (!transactions.length) return [];

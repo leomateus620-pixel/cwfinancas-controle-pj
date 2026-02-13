@@ -264,19 +264,19 @@ export function CashFlowPage() {
               <div className="flex flex-col gap-1 p-3 rounded-lg bg-success/5 border border-success/20">
                 <span className="text-xs text-muted-foreground">Entradas (Transferências)</span>
                 <span className="text-lg font-bold text-success">
-                  R$ {totals.totalTransferIn.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  {formatCurrencyBR(totals.totalTransferIn)}
                 </span>
               </div>
               <div className="flex flex-col gap-1 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
                 <span className="text-xs text-muted-foreground">Saídas (Transferências)</span>
                 <span className="text-lg font-bold text-destructive">
-                  R$ {totals.totalTransferOut.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  {formatCurrencyBR(totals.totalTransferOut)}
                 </span>
               </div>
               <div className="flex flex-col gap-1 p-3 rounded-lg bg-muted/50 border border-border">
                 <span className="text-xs text-muted-foreground">Saldo Total (com transferências)</span>
                 <span className="text-lg font-bold text-foreground">
-                  R$ {(totals.netCashFlow + totals.totalTransferIn - totals.totalTransferOut).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  {formatCurrencyBR(totals.netCashFlow + totals.totalTransferIn - totals.totalTransferOut)}
                 </span>
               </div>
             </div>

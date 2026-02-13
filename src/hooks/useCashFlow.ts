@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useTransactions } from "./useTransactions";
+import { usePeriodMetrics } from "./usePeriodMetrics";
 import { format, startOfMonth, subMonths, parseISO, isValid, differenceInMonths, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useDateRange } from "@/contexts/DateRangeContext";
@@ -140,15 +141,16 @@ export function useCashFlow() {
       }));
   }, [transactions]);
 
-  // Calculate totals
+  // Consume totals from usePeriodMetrics (single source of truth)
+  let periodMetrics: { currentIncome: number; currentExpense: number; currentBalance: number; transferIn: number; transferOut: number; isLoading: boolean } | null = null;
+  try {
+    periodMetrics = usePeriodMetrics();
+  } catch {
+    // Outside DateRangeProvider
+  }
+
   const totals = useMemo(() => {
-    const totalInflow = cashFlowData.reduce((sum, d) => sum + d.inflow, 0);
-    const totalOutflow = cashFlowData.reduce((sum, d) => sum + d.outflow, 0);
-    const netCashFlow = totalInflow - totalOutflow;
-    const totalTransferIn = cashFlowData.reduce((sum, d) => sum + d.transferIn, 0);
-    const totalTransferOut = cashFlowData.reduce((sum, d) => sum + d.transferOut, 0);
-    
-    // Calculate trend (comparing last month to previous)
+    // Calculate trend from chart data (comparing last month to previous)
     const lastMonth = cashFlowData[cashFlowData.length - 1];
     const prevMonth = cashFlowData[cashFlowData.length - 2];
     
@@ -156,6 +158,26 @@ export function useCashFlow() {
     if (lastMonth && prevMonth && prevMonth.balance !== 0) {
       trend = ((lastMonth.balance - prevMonth.balance) / Math.abs(prevMonth.balance)) * 100;
     }
+
+    // Use usePeriodMetrics totals when available (single source of truth)
+    if (periodMetrics && !periodMetrics.isLoading) {
+      return {
+        totalInflow: periodMetrics.currentIncome,
+        totalOutflow: periodMetrics.currentExpense,
+        netCashFlow: periodMetrics.currentBalance,
+        trend,
+        currentBalance: cashFlowData.length > 0 ? cashFlowData[cashFlowData.length - 1].cumulativeBalance : 0,
+        totalTransferIn: periodMetrics.transferIn,
+        totalTransferOut: periodMetrics.transferOut,
+      };
+    }
+
+    // Fallback to local calculation if periodMetrics unavailable
+    const totalInflow = cashFlowData.reduce((sum, d) => sum + d.inflow, 0);
+    const totalOutflow = cashFlowData.reduce((sum, d) => sum + d.outflow, 0);
+    const netCashFlow = totalInflow - totalOutflow;
+    const totalTransferIn = cashFlowData.reduce((sum, d) => sum + d.transferIn, 0);
+    const totalTransferOut = cashFlowData.reduce((sum, d) => sum + d.transferOut, 0);
 
     return {
       totalInflow,
@@ -166,7 +188,7 @@ export function useCashFlow() {
       totalTransferIn,
       totalTransferOut,
     };
-  }, [cashFlowData]);
+  }, [cashFlowData, periodMetrics]);
 
   return {
     cashFlowData,
