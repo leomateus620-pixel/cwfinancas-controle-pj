@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +37,33 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
   const data = await response.json();
   const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
   return { access_token: data.access_token, expires_at: expiresAt };
+}
+
+// ============ XLSX Support ============
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+async function getFileMimeType(accessToken: string, fileId: string): Promise<{ mimeType: string; name: string }> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name&supportsAllDrives=true`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to get file info: ${res.status}`);
+  return res.json();
+}
+
+async function downloadXlsxWorkbook(accessToken: string, fileId: string): Promise<any> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to download xlsx: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  return XLSX.read(new Uint8Array(buffer), { type: "array" });
+}
+
+function xlsxSheetToRows(workbook: any, sheetName?: string): string[][] {
+  const target = sheetName || workbook.SheetNames[0];
+  const ws = workbook.Sheets[target];
+  if (!ws) return [];
+  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
 }
 
 /**
@@ -366,19 +394,26 @@ Deno.serve(async (req) => {
         .eq("id", connection_id);
     }
 
-    // Fetch sheet data
-    const range = connection.sheet_name ? `'${connection.sheet_name}'` : "A:Z";
-    const sheetsResponse = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}?majorDimension=ROWS`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    // Detect file type and fetch data
+    const fileInfo = await getFileMimeType(accessToken!, connection.spreadsheet_id);
+    const isXlsx = fileInfo.mimeType === XLSX_MIME;
 
-    if (!sheetsResponse.ok) {
-      throw new Error("Failed to fetch sheet data");
+    let values: string[][];
+    if (isXlsx) {
+      const workbook = await downloadXlsxWorkbook(accessToken!, connection.spreadsheet_id);
+      values = xlsxSheetToRows(workbook, connection.sheet_name || undefined);
+    } else {
+      const range = connection.sheet_name ? `'${connection.sheet_name}'` : "A:Z";
+      const sheetsResponse = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}?majorDimension=ROWS`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!sheetsResponse.ok) {
+        throw new Error("Failed to fetch sheet data");
+      }
+      const sheetsData = await sheetsResponse.json();
+      values = sheetsData.values || [];
     }
-
-    const sheetsData = await sheetsResponse.json();
-    const values: string[][] = sheetsData.values || [];
 
     if (values.length < 1) {
       throw new Error("Sheet is empty");
