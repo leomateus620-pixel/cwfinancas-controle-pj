@@ -1,53 +1,91 @@
 
+# Classificacao de Transferencias Internas (movement_type)
 
-# Correcao de Duplicatas e Consistencia entre Telas
+## Diagnostico
 
-## Diagnostico Confirmado
+Os dados confirmam o problema. O banco tem:
 
-O banco tem **1.486 transacoes**, mas apenas **1.024 sao unicas** (pelo `external_row_key`). Isso significa **462 duplicatas** que inflam os valores em todas as telas.
+| Metrica | Com Transferencias | Operacional (sem transferencias) |
+|---|---|---|
+| Receitas | R$ 522.587,81 | R$ 417.043,65 |
+| Despesas | R$ 506.598,59 | R$ 424.759,82 |
+| Resultado | R$ 15.989,22 | -R$ 7.716,17 |
 
-Apos deduplicacao, os totais corretos sao exatamente:
-- Receitas: R$ 522.587,81
-- Despesas: R$ 506.598,59
+Existem **40 transacoes** classificadas como "Transferencia interna" ou "Transferencia Interna" (case variado) que inflam receitas em ~R$ 105k e despesas em ~R$ 82k. A DRE ignora essas transferencias, gerando divergencia com Dashboard/Receitas/Despesas.
 
-Adicionalmente, existem **26 linhas da aba JAN/25** que nao deveriam ter sido importadas (fora do intervalo Abr-Dez).
+## Solucao
 
-### Causa-raiz
-O `upsert` do Supabase JS nao funciona corretamente com indices unicos parciais (`WHERE external_row_key IS NOT NULL`). O resultado e que as linhas sao inseridas em vez de atualizadas, gerando duplicatas.
+### Passo 1 -- Adicionar coluna `movement_type` + classificar dados existentes
 
-## Solucao em 3 Passos
+Migracao SQL:
+- Adicionar coluna `movement_type TEXT DEFAULT 'INCOME'` na tabela `transactions`
+- Executar UPDATE para classificar automaticamente:
+  - Transacoes com categoria contendo "transferencia", "transferencia interna", "aplicacao", "resgate", "aporte", "movimentacao entre contas" recebem `movement_type = 'TRANSFER'`
+  - Demais mantem `INCOME` ou `EXPENSE` baseado no campo `type` existente
 
-### Passo 1 -- Limpar duplicatas e linhas indevidas (via SQL)
+### Passo 2 -- Atualizar Edge Function `sheets-sync-all-tabs`
 
-1. Deletar as 26 transacoes da aba `JAN/25` (fora do escopo)
-2. Deletar duplicatas mantendo apenas o registro mais recente por `external_row_key`
+Ao importar cada transacao, aplicar deteccao de transferencia:
+- **Por categoria** (prioridade): keywords como "transferencia", "aplicacao", "resgate", "aporte"
+- **Por descricao** (fallback): keywords como "TRANSFERENCIA", "TRANSF", "TED entre contas"
+- Gravar `movement_type` junto com a transacao
 
-Resultado esperado: exatamente 1.024 transacoes no banco.
+### Passo 3 -- Atualizar `usePeriodMetrics` (Dashboard/KPIs)
 
-### Passo 2 -- Corrigir o indice unico para prevenir futuras duplicatas
+Adicionar campo `movement_type` no SELECT e calcular:
+- `currentIncome` = soma apenas `movement_type = 'INCOME'`
+- `currentExpense` = soma apenas `movement_type = 'EXPENSE'`
+- `transferIn` / `transferOut` = soma de `movement_type = 'TRANSFER'`
+- Expor flag `viewMode` (operacional vs movimentacao) para o Dashboard
 
-O problema e que existem 2 indices parciais que nao funcionam com `.upsert()` do Supabase JS. A solucao:
-- Remover os 2 indices parciais existentes
-- Criar 1 indice unico NOT partial (sem clausula WHERE) que funcione com upsert
-- O indice sera: `UNIQUE (user_id, source_sheet_id, external_row_key)` sem condicao WHERE, permitindo que o `onConflict` funcione corretamente
+### Passo 4 -- Atualizar `useTransactions` (Receitas/Despesas)
 
-### Passo 3 -- Ajustar a edge function `sheets-sync-all-tabs`
+Adicionar filtro `movement_type != 'TRANSFER'` nas paginas de Receitas e Despesas, para que transferencias internas nao aparecam nessas listas.
 
-Alterar a chamada de upsert para usar o novo indice sem clausula parcial. O `onConflict` passara a funcionar corretamente, impedindo duplicatas em futuras sincronizacoes.
+### Passo 5 -- Atualizar `useCashFlow` (Fluxo de Caixa)
+
+Separar os dados em 3 blocos:
+- Entradas Operacionais (`movement_type = 'INCOME'`)
+- Saidas Operacionais (`movement_type = 'EXPENSE'`)
+- Transferencias Internas (`movement_type = 'TRANSFER'`) com entradas e saidas separadas
+- Exibir "Saldo Operacional" e "Saldo Total (com transferencias)"
+
+### Passo 6 -- Toggle no Dashboard (OverviewPage)
+
+Adicionar um Switch "Operacional / Movimentacao" no OverviewPage:
+- **Operacional (DRE)**: KPIs usam apenas INCOME/EXPENSE
+- **Movimentacao (Caixa)**: KPIs incluem TRANSFER
+- Card fixo mostrando "Transferencias internas no periodo: R$ X"
+
+### Passo 7 -- Atualizar CashFlowPage
+
+Adicionar secao visual separada para transferencias internas, com totais de entrada e saida de transferencias, alem do saldo operacional vs saldo total.
+
+### Passo 8 -- Atualizar `useHomeDashboard`
+
+Filtrar `movement_type != 'TRANSFER'` nos calculos da Home para que alertas e health score reflitam apenas operacoes reais.
 
 ## Arquivos modificados
 
 | Arquivo | Acao |
 |---|---|
-| Migration SQL | Limpar duplicatas + JAN/25 + recriar indice unico |
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Ajustar upsert para funcionar com novo indice |
+| Migration SQL | Adicionar coluna `movement_type`, classificar dados existentes |
+| `supabase/functions/sheets-sync-all-tabs/index.ts` | Detectar transferencias na importacao |
+| `src/hooks/usePeriodMetrics.ts` | Separar calculos por movement_type, expor transferencias |
+| `src/hooks/useTransactions.ts` | Adicionar filtro opcional `excludeTransfers` |
+| `src/hooks/useCashFlow.ts` | Separar transferencias em bloco proprio |
+| `src/hooks/useHomeDashboard.ts` | Excluir transferencias dos calculos |
+| `src/pages/OverviewPage.tsx` | Toggle Operacional/Movimentacao + card de transferencias |
+| `src/pages/IncomePage.tsx` | Filtrar transferencias (somente receitas operacionais) |
+| `src/pages/ExpensesPage.tsx` | Filtrar transferencias (somente despesas operacionais) |
+| `src/pages/CashFlowPage.tsx` | Secao separada de transferencias internas |
+| `src/components/dashboard/KPIGrid.tsx` | Suportar modo operacional/movimentacao |
 
 ## Resultado esperado
 
-- Banco: exatamente 1.024 transacoes
-- Receitas: R$ 522.587,81
-- Despesas: R$ 506.598,59
-- Resultado: R$ 15.989,22
-- Todas as telas (Dashboard, Receitas, Despesas, Fluxo de Caixa) mostrando os mesmos valores
-- Futuras sincronizacoes nao criarao duplicatas
-
+- **DRE**: Receita R$ 417.043,65 / Despesa R$ 424.759,82 (sem transferencias)
+- **Receitas/Despesas**: Mesmos valores operacionais
+- **Dashboard (Operacional)**: Mesmos valores da DRE
+- **Dashboard (Movimentacao)**: R$ 522.587,81 / R$ 506.598,59 (com transferencias)
+- **Fluxo de Caixa**: Transferencias separadas em bloco proprio
+- Consistencia total entre todas as telas
