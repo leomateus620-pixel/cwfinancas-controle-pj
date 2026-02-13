@@ -30,6 +30,7 @@ interface Spreadsheet {
   name: string;
   modified_time: string;
   owner?: string;
+  shared?: boolean;
 }
 
 interface Sheet {
@@ -182,9 +183,13 @@ export function useGoogleSheets() {
 
   // List spreadsheets from new robust function
   const listSpreadsheets = useMutation({
-    mutationFn: async (pageToken?: string) => {
+    mutationFn: async ({ pageToken, searchTerm }: { pageToken?: string; searchTerm?: string } = {}) => {
+      const body: Record<string, string> = {};
+      if (pageToken) body.pageToken = pageToken;
+      if (searchTerm) body.searchTerm = searchTerm;
+
       const { data, error } = await supabase.functions.invoke("google-list-sheets", {
-        body: pageToken ? { pageToken } : {},
+        body,
       });
 
       if (error) throw error;
@@ -197,7 +202,10 @@ export function useGoogleSheets() {
         throw new Error(data.message || "Erro ao listar planilhas");
       }
       
-      return data.spreadsheets as Spreadsheet[];
+      return {
+        spreadsheets: data.spreadsheets as Spreadsheet[],
+        nextPageToken: data.nextPageToken as string | undefined,
+      };
     },
     onError: (error) => {
       console.error("Error listing spreadsheets:", error);

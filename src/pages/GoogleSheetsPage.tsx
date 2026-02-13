@@ -250,8 +250,8 @@ function GoogleSheetsPageContent() {
   };
 
   // Callbacks for the modal
-  const handleLoadSpreadsheets = useCallback(() => {
-    listSpreadsheets.mutate(undefined);
+  const handleLoadSpreadsheets = useCallback((params?: { searchTerm?: string; pageToken?: string }) => {
+    listSpreadsheets.mutate(params ?? {});
   }, [listSpreadsheets]);
 
   const handleGetSheets = useCallback((spreadsheetId: string) => {
@@ -729,7 +729,8 @@ function GoogleSheetsPageContent() {
       <SpreadsheetSelectorModal 
         open={showSelector}
         onOpenChange={setShowSelector}
-        spreadsheets={listSpreadsheets.data}
+        spreadsheets={listSpreadsheets.data?.spreadsheets}
+        nextPageToken={listSpreadsheets.data?.nextPageToken}
         isLoadingSpreadsheets={listSpreadsheets.isPending}
         onLoadSpreadsheets={handleLoadSpreadsheets}
         onGetSheets={handleGetSheets}

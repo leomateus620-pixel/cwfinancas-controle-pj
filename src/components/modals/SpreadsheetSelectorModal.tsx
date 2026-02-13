@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Dialog, 
   DialogContent, 
@@ -7,6 +7,8 @@ import {
   DialogDescription 
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { 
   FileSpreadsheet, 
   ChevronRight, 
@@ -14,7 +16,10 @@ import {
   Table,
   CheckCircle,
   Calendar,
-  Info
+  Info,
+  Search,
+  RefreshCw,
+  Users
 } from "lucide-react";
 import {
   Select,
@@ -30,6 +35,7 @@ interface Spreadsheet {
   name: string;
   modified_time: string;
   owner?: string;
+  shared?: boolean;
 }
 
 interface Sheet {
@@ -39,16 +45,17 @@ interface Sheet {
 }
 
 interface MonthRange {
-  from: string; // "YYYY-MM"
-  to: string;   // "YYYY-MM"
+  from: string;
+  to: string;
 }
 
 interface SpreadsheetSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   spreadsheets: Spreadsheet[] | undefined;
+  nextPageToken?: string;
   isLoadingSpreadsheets: boolean;
-  onLoadSpreadsheets: () => void;
+  onLoadSpreadsheets: (params?: { searchTerm?: string; pageToken?: string }) => void;
   onGetSheets: (spreadsheetId: string) => void;
   sheetsData: { spreadsheet_name: string; sheets: Sheet[] } | undefined;
   isLoadingSheets: boolean;
@@ -63,7 +70,6 @@ interface SpreadsheetSelectorModalProps {
 
 type Step = "spreadsheets" | "sheets" | "month-range" | "confirm";
 
-// PT-BR month names and abbreviations for tab classification
 const MONTH_FULL: Record<string, number> = {
   janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
   julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
@@ -106,10 +112,20 @@ function detectMonthFromTab(tabName: string): { monthIndex: number; year: number
   return null;
 }
 
+function formatModifiedTime(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
 export function SpreadsheetSelectorModal({ 
   open, 
   onOpenChange,
   spreadsheets,
+  nextPageToken,
   isLoadingSpreadsheets,
   onLoadSpreadsheets,
   onGetSheets,
@@ -124,15 +140,43 @@ export function SpreadsheetSelectorModal({
   const [monthRange, setMonthRange] = useState<MonthRange>({ from: "", to: "" });
   const [detectedMonths, setDetectedMonths] = useState<Array<{ periodKey: string; label: string }>>([]);
   
-  const hasLoadedRef = useRef(false);
+  // Search state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [accumulatedSpreadsheets, setAccumulatedSpreadsheets] = useState<Spreadsheet[]>([]);
+  const [currentNextPageToken, setCurrentNextPageToken] = useState<string | undefined>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLoadMoreRef = useRef(false);
 
+  // When new data arrives, update accumulated list
   useEffect(() => {
-    if (open && step === "spreadsheets" && !spreadsheets && !isLoadingSpreadsheets && !hasLoadedRef.current) {
-      hasLoadedRef.current = true;
-      onLoadSpreadsheets();
+    if (spreadsheets) {
+      if (isLoadMoreRef.current) {
+        // Append for pagination
+        setAccumulatedSpreadsheets(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const newItems = spreadsheets.filter(s => !existingIds.has(s.id));
+          return [...prev, ...newItems];
+        });
+        isLoadMoreRef.current = false;
+      } else {
+        // Replace for fresh load / search
+        setAccumulatedSpreadsheets(spreadsheets);
+      }
+      setCurrentNextPageToken(nextPageToken);
     }
-  }, [open, step, spreadsheets, isLoadingSpreadsheets, onLoadSpreadsheets]);
+  }, [spreadsheets, nextPageToken]);
 
+  // Auto-load on open
+  useEffect(() => {
+    if (open && step === "spreadsheets") {
+      setSearchTerm("");
+      setAccumulatedSpreadsheets([]);
+      isLoadMoreRef.current = false;
+      onLoadSpreadsheets({});
+    }
+  }, [open]);
+
+  // Reset on close
   useEffect(() => {
     if (!open) {
       setStep("spreadsheets");
@@ -140,9 +184,33 @@ export function SpreadsheetSelectorModal({
       setSelectedSheet(null);
       setMonthRange({ from: "", to: "" });
       setDetectedMonths([]);
-      hasLoadedRef.current = false;
+      setSearchTerm("");
+      setAccumulatedSpreadsheets([]);
+      setCurrentNextPageToken(undefined);
     }
   }, [open]);
+
+  // Debounced search
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchTerm(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      isLoadMoreRef.current = false;
+      onLoadSpreadsheets({ searchTerm: value || undefined });
+    }, 400);
+  }, [onLoadSpreadsheets]);
+
+  const handleRefresh = useCallback(() => {
+    isLoadMoreRef.current = false;
+    onLoadSpreadsheets({ searchTerm: searchTerm || undefined });
+  }, [onLoadSpreadsheets, searchTerm]);
+
+  const handleLoadMore = useCallback(() => {
+    if (currentNextPageToken) {
+      isLoadMoreRef.current = true;
+      onLoadSpreadsheets({ searchTerm: searchTerm || undefined, pageToken: currentNextPageToken });
+    }
+  }, [onLoadSpreadsheets, searchTerm, currentNextPageToken]);
 
   // Detect monthly tabs when sheetsData arrives
   useEffect(() => {
@@ -163,7 +231,6 @@ export function SpreadsheetSelectorModal({
       months.sort((a, b) => a.periodKey.localeCompare(b.periodKey));
       setDetectedMonths(months);
 
-      // Smart default: last 6 available months
       if (months.length > 0) {
         const startIdx = Math.max(0, months.length - 6);
         setMonthRange({
@@ -183,7 +250,6 @@ export function SpreadsheetSelectorModal({
   const handleSelectSheet = (sheetName: string | null) => {
     setSelectedSheet(sheetName);
     if (sheetName === null) {
-      // "Todas as Abas" -> go to month-range step
       setStep("month-range");
     } else {
       setStep("confirm");
@@ -192,14 +258,12 @@ export function SpreadsheetSelectorModal({
 
   const handleConfirm = async () => {
     if (!selectedSpreadsheet) return;
-
     await onCreateConnection({
       spreadsheetId: selectedSpreadsheet.id,
       spreadsheetName: selectedSpreadsheet.name,
       sheetName: selectedSheet,
       monthRange: selectedSheet === null ? monthRange : undefined,
     });
-
     onOpenChange(false);
   };
 
@@ -219,6 +283,8 @@ export function SpreadsheetSelectorModal({
       }
     }
   };
+
+  const displayedSpreadsheets = accumulatedSpreadsheets;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -242,45 +308,97 @@ export function SpreadsheetSelectorModal({
         <div className="mt-4">
           {/* Step: Spreadsheets */}
           {step === "spreadsheets" && (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {isLoadingSpreadsheets ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            <div className="space-y-3">
+              {/* Search + Refresh */}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar planilha..."
+                    value={searchTerm}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    className="pl-9"
+                  />
                 </div>
-              ) : spreadsheets?.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Nenhuma planilha encontrada.
-                </p>
-              ) : (
-                spreadsheets?.map((spreadsheet) => (
-                  <button
-                    key={spreadsheet.id}
-                    onClick={() => handleSelectSpreadsheet(spreadsheet)}
-                    className={cn(
-                      "w-full flex items-center justify-between p-4 rounded-xl",
-                      "border border-border/50 hover:border-primary/50",
-                      "hover:bg-accent/50 transition-all duration-200 text-left group"
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-primary/10">
-                        <Table className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground group-hover:text-primary transition-colors">
-                          {spreadsheet.name}
-                        </p>
-                        {spreadsheet.owner && (
-                          <p className="text-xs text-muted-foreground">
-                            {spreadsheet.owner}
-                          </p>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleRefresh}
+                  disabled={isLoadingSpreadsheets}
+                  title="Recarregar lista"
+                >
+                  <RefreshCw className={cn("w-4 h-4", isLoadingSpreadsheets && "animate-spin")} />
+                </Button>
+              </div>
+
+              {/* Spreadsheet list */}
+              <div className="space-y-2 max-h-[350px] overflow-y-auto">
+                {isLoadingSpreadsheets && displayedSpreadsheets.length === 0 ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  </div>
+                ) : displayedSpreadsheets.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">
+                    Nenhuma planilha encontrada.
+                  </p>
+                ) : (
+                  <>
+                    {displayedSpreadsheets.map((spreadsheet) => (
+                      <button
+                        key={spreadsheet.id}
+                        onClick={() => handleSelectSpreadsheet(spreadsheet)}
+                        className={cn(
+                          "w-full flex items-center justify-between p-4 rounded-xl",
+                          "border border-border/50 hover:border-primary/50",
+                          "hover:bg-accent/50 transition-all duration-200 text-left group"
                         )}
-                      </div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                  </button>
-                ))
-              )}
+                      >
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="p-2 rounded-lg bg-primary/10 shrink-0">
+                            <Table className="w-5 h-5 text-primary" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-foreground group-hover:text-primary transition-colors truncate">
+                                {spreadsheet.name}
+                              </p>
+                              {spreadsheet.shared && (
+                                <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0 gap-1">
+                                  <Users className="w-3 h-3" />
+                                  Compartilhada
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              {spreadsheet.owner && <span>{spreadsheet.owner}</span>}
+                              {spreadsheet.owner && spreadsheet.modified_time && <span>•</span>}
+                              {spreadsheet.modified_time && (
+                                <span>{formatModifiedTime(spreadsheet.modified_time)}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                      </button>
+                    ))}
+
+                    {/* Load more */}
+                    {currentNextPageToken && (
+                      <Button
+                        variant="ghost"
+                        className="w-full text-sm"
+                        onClick={handleLoadMore}
+                        disabled={isLoadingSpreadsheets}
+                      >
+                        {isLoadingSpreadsheets ? (
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                        ) : null}
+                        Carregar mais
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 
