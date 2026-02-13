@@ -1,71 +1,95 @@
 
-# Unificacao do Motor de Calculos Financeiros
+
+# Corrigir Listagem de Planilhas Compartilhadas no Google Drive
 
 ## Diagnostico
 
-Apos analise detalhada do codigo, existem **3 problemas concretos** que causam inconsistencias entre telas:
+Apos analisar o codigo, identifiquei **3 problemas** que impedem a listagem de planilhas compartilhadas:
 
-### Problema 1: Graficos do Dashboard incluem transferencias
+### Problema 1: Scope OAuth insuficiente
+O arquivo `google-sheets-auth/index.ts` (linha 59) usa o scope `drive.metadata.readonly`. Este scope pode nao retornar arquivos "Compartilhados comigo" que o usuario nao adicionou ao "Meu Drive". O scope correto para listar todos os arquivos acessiveis e `drive.readonly`.
 
-Os componentes `RevenueChart` e `ExpenseChart` chamam `useTransactions()` **sem** o filtro `excludeTransfers`, fazendo com que transferencias internas inflem os graficos do Dashboard enquanto os KPIs (via `usePeriodMetrics`) as excluem corretamente.
+### Problema 2: Backend sem suporte a busca
+A edge function `google-list-sheets` nao aceita parametro de busca (`searchTerm`). O usuario nao consegue filtrar planilhas por nome, dificultando encontrar uma planilha recente entre muitas.
 
-### Problema 2: Fluxo de Caixa usa fonte de dados independente
+### Problema 3: Frontend sem busca, sem paginacao, sem refresh
+O modal `SpreadsheetSelectorModal` nao tem:
+- Campo de busca
+- Botao "Carregar mais" (paginacao com `nextPageToken`)
+- Botao "Recarregar" para forcar refresh
+- Badge indicando se a planilha e compartilhada
+- Auto-refresh ao abrir o modal (usa `useMutation`, que so dispara manualmente uma vez)
 
-O hook `useCashFlow` faz sua propria query via `useTransactions()` e calcula totais localmente, em vez de consumir `usePeriodMetrics`. Isso cria uma segunda "fonte de verdade" com potencial de divergencia.
+## Solucao
 
-### Problema 3: Formatacao inconsistente no CashFlowPage
+### Passo 1 -- Corrigir scope OAuth
 
-As linhas 267, 273 e 279 do `CashFlowPage.tsx` usam `toLocaleString("pt-BR")` em vez de `formatCurrencyBR()`, violando a padronizacao.
+Alterar o scope de `drive.metadata.readonly` para `drive.readonly` em `google-sheets-auth/index.ts`. Isso garante acesso a listagem de TODOS os arquivos que o usuario pode ver, incluindo "Compartilhados comigo".
 
-## O que ja esta implementado corretamente
+**IMPORTANTE**: Usuarios existentes precisarao reconectar a conta Google para obter o novo scope. O sistema detectara isso automaticamente (o token antigo nao tera o scope necessario) e a listagem pode continuar funcionando com o scope antigo -- a diferenca e que com `drive.readonly` a cobertura e garantida.
 
-- `movement_type` (INCOME/EXPENSE/TRANSFER) no banco e na importacao
-- `usePeriodMetrics` como fonte central com separacao operacional/transferencias
-- `excludeTransfers` nas paginas de Receitas e Despesas
-- Toggle Operacional/Movimentacao no Dashboard
-- `formatCurrencyBR` centralizado em `src/lib/currency.ts`
-- NUMERIC(14,2) com trigger de arredondamento no banco
-- Indice unico para prevenir duplicatas na sincronizacao
+**Arquivo**: `supabase/functions/google-sheets-auth/index.ts`
 
-## Sobre armazenamento em centavos
+### Passo 2 -- Adicionar busca e campo `shared` no backend
 
-O pedido menciona centavos (inteiro). A abordagem atual com NUMERIC(14,2) + trigger de arredondamento e a pratica padrao para BRL e ja garante precisao de 2 casas. Converter para centavos exigiria alterar o schema, todas as queries, todos os hooks, a edge function e a formatacao -- um risco altissimo sem beneficio real. O NUMERIC(14,2) permanece.
+Modificar `google-list-sheets/index.ts` para:
+- Aceitar parametro `searchTerm` no body
+- Quando presente, adicionar `and name contains '{term}'` ao filtro `q`
+- Adicionar `shared` ao campo `fields` para identificar planilhas compartilhadas
+- Retornar o campo `shared` no response
 
-## Solucao (3 correcoes cirurgicas)
+**Arquivo**: `supabase/functions/google-list-sheets/index.ts`
 
-### Correcao 1 -- Graficos do Dashboard excluem transferencias
+### Passo 3 -- Adicionar busca, paginacao e refresh no modal
 
-Alterar `RevenueChart` e `ExpenseChart` para passarem `excludeTransfers: true` na chamada de `useTransactions()`. Isso alinha os graficos com os KPIs que ja usam `usePeriodMetrics`.
+Modificar `SpreadsheetSelectorModal.tsx` para:
+- Campo de busca com debounce de 400ms
+- Botao "Recarregar" no topo da lista
+- Botao "Carregar mais" no final da lista (usando `nextPageToken`)
+- Badge "Compartilhada" quando `shared === true`
+- Data de modificacao formatada ao lado do nome
 
-**Arquivos**: `src/components/dashboard/RevenueChart.tsx`, `src/components/dashboard/ExpenseChart.tsx`
+Modificar `useGoogleSheets.ts` para:
+- `listSpreadsheets` aceitar `{ pageToken?, searchTerm? }`
+- Armazenar e acumular resultados para paginacao
+- Retornar `nextPageToken` para o modal
 
-### Correcao 2 -- CashFlow consome usePeriodMetrics
+### Passo 4 -- Auto-refresh ao abrir modal
 
-Refatorar `useCashFlow` para consumir os dados de `usePeriodMetrics` em vez de fazer query independente. Isso elimina a segunda fonte de verdade e garante que os totais do Fluxo de Caixa sejam identicos aos do Dashboard.
-
-O hook continuara calculando dados mensais (para o grafico) e upcoming payments a partir de `useTransactions`, mas os **totais** (totalInflow, totalOutflow, netCashFlow, transferIn, transferOut) virao de `usePeriodMetrics`.
-
-**Arquivo**: `src/hooks/useCashFlow.ts`
-
-### Correcao 3 -- Formatacao BRL no CashFlowPage
-
-Substituir 3 ocorrencias de `toLocaleString("pt-BR")` por `formatCurrencyBR()` na secao de transferencias do `CashFlowPage.tsx`.
-
-**Arquivo**: `src/pages/CashFlowPage.tsx`
+Garantir que sempre que o modal abrir, a lista seja buscada novamente (sem depender de cache antigo). O `useEffect` no modal ja chama `onLoadSpreadsheets` ao abrir, mas o `hasLoadedRef` impede chamadas subsequentes. Ajustar para sempre buscar ao abrir.
 
 ## Arquivos modificados
 
 | Arquivo | Acao |
 |---|---|
-| `src/components/dashboard/RevenueChart.tsx` | Adicionar `excludeTransfers: true` |
-| `src/components/dashboard/ExpenseChart.tsx` | Adicionar `excludeTransfers: true` |
-| `src/hooks/useCashFlow.ts` | Consumir totais de `usePeriodMetrics` |
-| `src/pages/CashFlowPage.tsx` | Substituir `toLocaleString` por `formatCurrencyBR` |
+| `supabase/functions/google-sheets-auth/index.ts` | Alterar scope para `drive.readonly` |
+| `supabase/functions/google-list-sheets/index.ts` | Adicionar `searchTerm`, campo `shared`, sanitizacao |
+| `src/hooks/useGoogleSheets.ts` | `listSpreadsheets` aceitar searchTerm e pageToken, acumular resultados |
+| `src/components/modals/SpreadsheetSelectorModal.tsx` | Busca, paginacao, refresh, badge compartilhada |
 
-## Resultado esperado
+## Detalhes tecnicos
 
-Todas as telas (Dashboard KPIs, Dashboard graficos, Receitas, Despesas, Fluxo de Caixa) exibirao os mesmos totais operacionais:
-- Receita Operacional: R$ 417.043,65
-- Despesa Operacional: R$ 424.759,82
-- Resultado Operacional: -R$ 7.716,17
-- Transferencias separadas e visiveis apenas no Fluxo de Caixa e no Dashboard (modo Movimentacao)
+### Query Drive API (backend final)
+```text
+q: mimeType='application/vnd.google-apps.spreadsheet' and trashed=false [and name contains 'termo']
+fields: files(id,name,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken
+orderBy: modifiedTime desc
+pageSize: 50
+supportsAllDrives: true
+includeItemsFromAllDrives: true
+```
+
+### Interface Spreadsheet atualizada
+```text
+interface Spreadsheet {
+  id: string;
+  name: string;
+  modified_time: string;
+  owner?: string;
+  shared?: boolean;
+}
+```
+
+### Nota sobre reautenticacao
+Apos alterar o scope, usuarios que ja conectaram a conta Google precisarao reconectar para obter o scope `drive.readonly`. O fluxo existente de "Desconectar Google" + "Conectar ao Google" ja suporta isso. Nenhuma mudanca adicional e necessaria -- basta o usuario reconectar.
+
