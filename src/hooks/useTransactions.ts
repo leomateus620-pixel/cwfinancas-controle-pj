@@ -17,15 +17,17 @@ export interface Transaction {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  movement_type: "INCOME" | "EXPENSE" | "TRANSFER";
 }
 
-export type TransactionInput = Omit<Transaction, "id" | "user_id" | "created_at" | "updated_at">;
+export type TransactionInput = Omit<Transaction, "id" | "user_id" | "created_at" | "updated_at" | "movement_type">;
 
 export function useTransactions(filters?: {
   type?: "income" | "expense";
   startDate?: string;
   endDate?: string;
   category?: string;
+  excludeTransfers?: boolean;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -44,7 +46,7 @@ export function useTransactions(filters?: {
   const effectiveEndDate = filters?.endDate || (globalRange ? format(globalRange.to, "yyyy-MM-dd") : undefined);
 
   const { data: transactions, isLoading, error } = useQuery({
-    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate],
+    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate, filters?.excludeTransfers],
     queryFn: async () => {
       if (!user?.id) return [];
 
@@ -55,6 +57,9 @@ export function useTransactions(filters?: {
 
       if (filters?.type) {
         query = query.eq("type", filters.type);
+      }
+      if (filters?.excludeTransfers) {
+        query = query.neq("movement_type", "TRANSFER");
       }
       if (effectiveStartDate) {
         query = query.gte("date", effectiveStartDate);

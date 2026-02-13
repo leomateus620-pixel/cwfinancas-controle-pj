@@ -57,6 +57,12 @@ export interface PeriodMetrics {
   reconciliation: DREReconciliation[];
   hasReconciliationWarnings: boolean;
   isLoading: boolean;
+  // Transfer metrics
+  transferIn: number;
+  transferOut: number;
+  totalIncome: number;
+  totalExpense: number;
+  totalBalance: number;
 }
 
 function calcChange(current: number, previous: number): number {
@@ -84,7 +90,7 @@ export function usePeriodMetrics(): PeriodMetrics {
       if (!user?.id) return [];
       const { data, error } = await supabase
         .from("transactions")
-        .select("id, type, description, amount, category, date, client_vendor")
+        .select("id, type, description, amount, category, date, client_vendor, movement_type")
         .gte("date", fromStr)
         .lte("date", toStr)
         .order("date", { ascending: false })
@@ -102,7 +108,7 @@ export function usePeriodMetrics(): PeriodMetrics {
       if (!user?.id) return [];
       const { data, error } = await supabase
         .from("transactions")
-        .select("type, amount")
+        .select("type, amount, movement_type")
         .gte("date", prevFromStr)
         .lte("date", prevToStr)
         .limit(5000);
@@ -142,14 +148,26 @@ export function usePeriodMetrics(): PeriodMetrics {
     const txs = currentTx ?? [];
     const prevTxs = previousTx ?? [];
 
-    // Current period
-    const currentIncome = txs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-    const currentExpense = txs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    // Current period - OPERATIONAL only (excludes TRANSFER)
+    const operationalTxs = txs.filter(t => t.movement_type !== "TRANSFER");
+    const currentIncome = operationalTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const currentExpense = operationalTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
     const currentBalance = currentIncome - currentExpense;
 
-    // Previous period
-    const previousIncome = prevTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-    const previousExpense = prevTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    // Transfer totals
+    const transferTxs = txs.filter(t => t.movement_type === "TRANSFER");
+    const transferIn = transferTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const transferOut = transferTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+
+    // All-inclusive totals (for "Movimentação" mode)
+    const totalIncome = txs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const totalExpense = txs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    const totalBalance = totalIncome - totalExpense;
+
+    // Previous period - OPERATIONAL only
+    const prevOperationalTxs = prevTxs.filter(t => t.movement_type !== "TRANSFER");
+    const previousIncome = prevOperationalTxs.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const previousExpense = prevOperationalTxs.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
     const previousBalance = previousIncome - previousExpense;
 
     // Changes
@@ -162,9 +180,9 @@ export function usePeriodMetrics(): PeriodMetrics {
     const prevMargin = previousIncome > 0 ? (previousBalance / previousIncome) * 100 : 0;
     const marginChange = prevMargin !== 0 ? margin - prevMargin : 0;
 
-    // Monthly breakdown
+    // Monthly breakdown (operational only)
     const monthMap = new Map<string, { income: number; expense: number }>();
-    txs.forEach(t => {
+    operationalTxs.forEach(t => {
       const mk = t.date.substring(0, 7); // YYYY-MM from date string
       const entry = monthMap.get(mk) || { income: 0, expense: 0 };
       if (t.type === "income") entry.income += Number(t.amount);
@@ -180,10 +198,10 @@ export function usePeriodMetrics(): PeriodMetrics {
         balance: v.income - v.expense,
       }));
 
-    // Category breakdown
+    // Category breakdown (operational only)
     const incCatMap = new Map<string, number>();
     const expCatMap = new Map<string, number>();
-    txs.forEach(t => {
+    operationalTxs.forEach(t => {
       const map = t.type === "income" ? incCatMap : expCatMap;
       map.set(t.category, (map.get(t.category) || 0) + Number(t.amount));
     });
@@ -199,7 +217,7 @@ export function usePeriodMetrics(): PeriodMetrics {
       expense: toTop5(expCatMap, currentExpense),
     };
 
-    // Recent transactions
+    // Recent transactions (all types)
     const recentTransactions = txs.slice(0, 10).map(t => ({
       id: t.id,
       description: t.description,
@@ -277,6 +295,11 @@ export function usePeriodMetrics(): PeriodMetrics {
       reconciliation,
       hasReconciliationWarnings,
       isLoading: loadingCurrent || loadingPrevious,
+      transferIn,
+      transferOut,
+      totalIncome,
+      totalExpense,
+      totalBalance,
     };
   }, [currentTx, previousTx, drePeriods, loadingCurrent, loadingPrevious]);
 }

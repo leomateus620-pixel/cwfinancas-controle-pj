@@ -80,13 +80,13 @@ export function useHomeDashboard(): HomeDashboardData {
       };
     }
 
-    // Current month
-    const currentMonthTx = transactions.filter(t => t.date >= currentMonthStart && t.date <= currentMonthEnd);
+    // Current month - exclude transfers
+    const currentMonthTx = transactions.filter(t => t.date >= currentMonthStart && t.date <= currentMonthEnd && (t as any).movement_type !== "TRANSFER");
     const monthIncome = currentMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const monthExpense = currentMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    // Previous month
-    const prevMonthTx = transactions.filter(t => t.date >= prevMonthStart && t.date <= prevMonthEnd);
+    // Previous month - exclude transfers
+    const prevMonthTx = transactions.filter(t => t.date >= prevMonthStart && t.date <= prevMonthEnd && (t as any).movement_type !== "TRANSFER");
     const prevMonthIncome = prevMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const prevMonthExpense = prevMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 

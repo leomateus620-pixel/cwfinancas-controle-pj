@@ -9,11 +9,18 @@ import { KPICard } from "./KPICard";
 import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
 import { useMemo } from "react";
 
-export function KPIGrid() {
+interface KPIGridProps {
+  viewMode?: "operational" | "movement";
+}
+
+export function KPIGrid({ viewMode = "operational" }: KPIGridProps) {
   const {
     currentIncome,
     currentExpense,
     currentBalance,
+    totalIncome,
+    totalExpense,
+    totalBalance,
     incomeChange,
     expenseChange,
     balanceChange,
@@ -22,11 +29,17 @@ export function KPIGrid() {
     isLoading,
   } = usePeriodMetrics();
 
+  const isMovement = viewMode === "movement";
+  const income = isMovement ? totalIncome : currentIncome;
+  const expense = isMovement ? totalExpense : currentExpense;
+  const balance = isMovement ? totalBalance : currentBalance;
+  const displayMargin = income > 0 ? (balance / income) * 100 : 0;
+
   const kpiData = useMemo(() => {
     return [
       {
         title: "Receita Total",
-        value: currentIncome,
+        value: income,
         prefix: "R$ ",
         change: incomeChange,
         trend: "up" as const,
@@ -35,16 +48,16 @@ export function KPIGrid() {
       },
       {
         title: "Lucro Líquido",
-        value: currentBalance,
+        value: balance,
         prefix: "R$ ",
         change: balanceChange,
-        trend: currentBalance >= 0 ? "up" as const : "down" as const,
+        trend: balance >= 0 ? "up" as const : "down" as const,
         icon: <TrendingUp className="w-5 h-5" />,
-        valueColor: currentBalance >= 0 ? "success" as const : "danger" as const,
+        valueColor: balance >= 0 ? "success" as const : "danger" as const,
       },
       {
         title: "Despesas Totais",
-        value: currentExpense,
+        value: expense,
         prefix: "R$ ",
         change: expenseChange,
         trend: "down" as const,
@@ -53,16 +66,16 @@ export function KPIGrid() {
       },
       {
         title: "Margem de Lucro",
-        value: margin,
+        value: displayMargin,
         suffix: "%",
         change: marginChange,
-        trend: margin >= 0 ? "up" as const : "down" as const,
+        trend: displayMargin >= 0 ? "up" as const : "down" as const,
         icon: <PiggyBank className="w-5 h-5" />,
-        valueColor: margin >= 30 ? "success" as const : "default" as const,
+        valueColor: displayMargin >= 30 ? "success" as const : "default" as const,
         decimals: 1,
       },
     ];
-  }, [currentIncome, currentExpense, currentBalance, incomeChange, expenseChange, balanceChange, margin, marginChange]);
+  }, [income, expense, balance, incomeChange, expenseChange, balanceChange, displayMargin, marginChange]);
 
   if (isLoading) {
     return (

@@ -449,6 +449,35 @@ interface TransactionRow {
   source_row_number: number;
   external_row_key: string;
   raw_data: Record<string, unknown>;
+  movement_type: string;
+}
+
+// ============ Transfer Detection ============
+
+const TRANSFER_CATEGORY_KEYWORDS = [
+  "transferência interna", "transferencia interna", "transferência", "transferencia",
+  "aplicação", "aplicacao", "resgate", "aporte",
+  "movimentação entre contas", "movimentacao entre contas",
+];
+
+function detectMovementType(category: string, description: string, type: string): string {
+  const catLower = (category || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const descLower = (description || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+  // Check category first (highest priority)
+  for (const kw of TRANSFER_CATEGORY_KEYWORDS) {
+    const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (catLower.includes(kwNorm)) return "TRANSFER";
+  }
+
+  // Fallback: description keywords for inter-account transfers
+  const transferDescKeywords = ["transferencia entre", "transf entre contas", "movimentacao entre"];
+  for (const kw of transferDescKeywords) {
+    const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (descLower.includes(kwNorm)) return "TRANSFER";
+  }
+
+  return type === "income" ? "INCOME" : "EXPENSE";
 }
 
 async function batchUpsertTransactions(
@@ -775,6 +804,8 @@ Deno.serve(async (req) => {
           const rowHash = generateRowHash({ description, amount, date: finalDate, type, category });
           const externalRowKey = `${tab.title}:${rowNumber}:${rowHash}`;
 
+          const movementType = detectMovementType(category, description, type);
+
           batch.push({
             user_id: userId,
             description: description || "Sem descrição",
@@ -790,6 +821,7 @@ Deno.serve(async (req) => {
             source_row_number: rowNumber,
             external_row_key: externalRowKey,
             raw_data: rowObj,
+            movement_type: movementType,
           });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : "Unknown error";

@@ -984,6 +984,7 @@ export type Database = {
           description: string
           external_row_key: string | null
           id: string
+          movement_type: string
           notes: string | null
           raw_data: Json | null
           source: string | null
@@ -1003,6 +1004,7 @@ export type Database = {
           description: string
           external_row_key?: string | null
           id?: string
+          movement_type?: string
           notes?: string | null
           raw_data?: Json | null
           source?: string | null
@@ -1022,6 +1024,7 @@ export type Database = {
           description?: string
           external_row_key?: string | null
           id?: string
+          movement_type?: string
           notes?: string | null
           raw_data?: Json | null
           source?: string | null
