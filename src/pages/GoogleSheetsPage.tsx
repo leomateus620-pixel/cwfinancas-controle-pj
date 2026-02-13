@@ -444,6 +444,31 @@ function GoogleSheetsPageContent() {
         </div>
       </div>
 
+      {/* Reauth banner when scope is insufficient */}
+      {oauthStatus?.needs_reauth && (
+        <Card className="border-warning/50 bg-warning/5">
+          <CardContent className="py-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <ShieldAlert className="w-5 h-5 text-warning shrink-0 mt-0.5 sm:mt-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Permissões desatualizadas</p>
+              <p className="text-xs text-muted-foreground">
+                Reconecte sua conta Google para acessar planilhas compartilhadas com você.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-warning/50 text-warning hover:bg-warning/10"
+              onClick={handleConnect}
+              disabled={isConnecting}
+            >
+              {isConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Reconectar Google
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Connections List */}
       {(connections ?? []).length > 0 ? (
         <div className="grid gap-4">
