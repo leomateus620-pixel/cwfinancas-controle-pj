@@ -38,9 +38,11 @@ import {
 import { useGoogleSheets } from "@/hooks/useGoogleSheets";
 import { useSyncStatus } from "@/hooks/useSyncStatus";
 import { useSyncJobs } from "@/hooks/useSyncJobs";
+import { useSyncAudit } from "@/hooks/useSyncAudit";
 import { SpreadsheetSelectorModal } from "@/components/modals/SpreadsheetSelectorModal";
 import { SyncHistoryTable } from "@/components/sheets/SyncHistoryTable";
 import { SyncErrorList } from "@/components/sheets/SyncErrorList";
+import { SyncAuditTable } from "@/components/sheets/SyncAuditTable";
 import { ProfileStatusCard } from "@/components/sheets/ProfileStatusCard";
 import { StatusIndicator } from "@/components/ui/status-indicator";
 import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorBoundary";
@@ -63,11 +65,15 @@ type PageState = "loading" | "not_connected" | "error" | "success";
 // Sync History Section Component
 function SyncHistorySection() {
   const { runs, stats, isLoading } = useSyncStatus();
+  const { data: audits } = useSyncAudit();
   
   if (isLoading || runs.length === 0) return null;
 
   const lastRun = runs[0];
   const hasErrors = lastRun?.rows_failed > 0;
+
+  // Get audits from the most recent sync job
+  const latestAudits = audits?.slice(0, 20) || [];
 
   return (
     <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
@@ -94,6 +100,10 @@ function SyncHistorySection() {
             errors={lastRun.errors} 
             maxErrors={5}
           />
+        )}
+
+        {latestAudits.length > 0 && (
+          <SyncAuditTable audits={latestAudits} />
         )}
       </CardContent>
     </Card>

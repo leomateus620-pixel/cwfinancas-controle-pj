@@ -12,8 +12,10 @@ const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-const INTERNAL_TIMEOUT_MS = 110_000; // 110s - margin before Supabase 150s limit
-const STALE_HEARTBEAT_MS = 2 * 60 * 1000; // 2 minutes
+const INTERNAL_TIMEOUT_MS = 110_000;
+const STALE_HEARTBEAT_MS = 2 * 60 * 1000;
+const BATCH_READ_SIZE = 500;
+const BATCH_UPSERT_SIZE = 50;
 
 // ============ Tab Router ============
 
@@ -35,6 +37,7 @@ interface ClassifiedTab {
   monthIndex?: number;
   periodKey?: string;
   inferredYear?: number;
+  rowCount?: number;
 }
 
 function classifyTab(tabName: string, defaultYear: number): ClassifiedTab {
@@ -70,6 +73,13 @@ function normalizeYear(yearStr: string): number {
   const num = parseInt(yearStr);
   if (num >= 100) return num;
   return num >= 50 ? 1900 + num : 2000 + num;
+}
+
+// ============ Year Inference ============
+
+function inferYearFromSpreadsheetName(name: string): number | null {
+  const match = name.match(/\b(20\d{2})\b/);
+  return match ? parseInt(match[1]) : null;
 }
 
 // ============ Utility functions ============
@@ -108,6 +118,7 @@ function parseBRL(value: string | number | null | undefined): number | null {
   if (typeof value === "number") return isNaN(value) ? null : value;
   let str = String(value).trim();
   if (!str) return null;
+  // Reject dates
   if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
   if (/^\d{1,2}[\/\-][a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{2,4}$/i.test(str)) return null;
@@ -181,7 +192,7 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
   );
   const orderedPatterns: Array<[string, string[]]> = [
     ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado"]],
-    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description"]],
+    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description", "fornecedor"]],
     ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value"]],
     ["type", ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao"]],
     ["category", ["categoria", "classificacao", "grupo", "centro de custo", "category", "class"]],
@@ -243,16 +254,22 @@ function extractAmount(rowObj: Record<string, unknown>, mapping: Record<string, 
   return { value: null, type: "income" };
 }
 
-function isSkippableRow(rowObj: Record<string, unknown>, description: string): { skip: boolean; reason?: string } {
+// RELAXED: only skip if NO valid date AND description has totalizing keyword, or if it's a repeated header row
+function isSkippableRow(rowObj: Record<string, unknown>, description: string, hasValidDate: boolean): { skip: boolean; reason?: string } {
   const descLower = (description || "").toLowerCase().trim();
-  const totalKeywords = ["total", "subtotal", "saldo", "soma", "acumulado", "resumo", "balanço", "balanco", "sum", "balance"];
-  if (totalKeywords.some(k => descLower.includes(k))) return { skip: true, reason: "total_row" };
+  
+  // Header row detection: if >= 2 column values match known header keywords
   const allValues = Object.values(rowObj).map(v => String(v || "").toLowerCase().trim());
   const headerKeywords = ["data", "date", "valor", "value", "descrição", "descricao", "description", "categoria", "category"];
   const headerMatchCount = headerKeywords.filter(k => allValues.some(v => v === k || v.includes(k))).length;
   if (headerMatchCount >= 2) return { skip: true, reason: "header_row" };
-  const hasAnyContent = allValues.some(v => v && v.length > 0);
-  if (!hasAnyContent) return { skip: true, reason: "empty" };
+
+  // Totalizing row: only skip if NO valid date (real transactions have dates)
+  if (!hasValidDate) {
+    const totalKeywords = ["total", "subtotal", "saldo", "soma", "acumulado", "resumo", "balanço", "balanco", "sum", "balance"];
+    if (totalKeywords.some(k => descLower.includes(k))) return { skip: true, reason: "total_row" };
+  }
+
   return { skip: false };
 }
 
@@ -284,6 +301,58 @@ function parseDate(value: string | number | null | undefined): string | null {
   return null;
 }
 
+function chunks<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+// ============ Paginated Sheet Reading ============
+
+async function readTabPaginated(
+  accessToken: string,
+  spreadsheetId: string,
+  tabTitle: string,
+  tabRowCount: number,
+  requestId: string
+): Promise<string[][]> {
+  const allRows: string[][] = [];
+  let startRow = 1;
+  const maxRow = Math.min(tabRowCount, 10000); // safety cap
+
+  while (startRow <= maxRow) {
+    const endRow = Math.min(startRow + BATCH_READ_SIZE - 1, maxRow);
+    const range = `'${tabTitle}'!A${startRow}:Z${endRow}`;
+    
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!response.ok) {
+      console.error(`[${requestId}] Failed to read range ${range}: ${response.status}`);
+      break;
+    }
+
+    const data = await response.json();
+    const values: string[][] = data.values || [];
+    
+    if (values.length === 0) break; // Empty batch = end of data
+    
+    allRows.push(...values);
+    
+    // If we got fewer rows than requested, we've reached the end
+    if (values.length < BATCH_READ_SIZE) break;
+    
+    startRow = endRow + 1;
+  }
+
+  console.log(`[${requestId}] Tab "${tabTitle}": read ${allRows.length} total rows (rowCount hint: ${tabRowCount})`);
+  return allRows;
+}
+
 // ============ Job Control Helpers ============
 
 // deno-lint-ignore no-explicit-any
@@ -296,7 +365,6 @@ async function checkAndClaimJob(
   mode: string,
   requestId: string
 ): Promise<{ jobId: string } | { error: string; status: number }> {
-  // Check for existing running jobs
   const { data: existingJobs } = await supabase
     .from("sheet_sync_jobs")
     .select("id, heartbeat_at, status")
@@ -311,32 +379,23 @@ async function checkAndClaimJob(
     for (const job of existingJobs) {
       const heartbeatAge = job.heartbeat_at ? now - new Date(job.heartbeat_at).getTime() : Infinity;
       if (heartbeatAge < STALE_HEARTBEAT_MS) {
-        // Job is still alive
         console.log(`[${requestId}] Job ${job.id} is still running (heartbeat ${Math.round(heartbeatAge / 1000)}s ago)`);
         return { error: "already_running", status: 409 };
       } else {
-        // Job is stale, mark as timeout
-        console.log(`[${requestId}] Marking stale job ${job.id} as timeout (heartbeat ${Math.round(heartbeatAge / 1000)}s ago)`);
+        console.log(`[${requestId}] Marking stale job ${job.id} as timeout`);
         await supabase.from("sheet_sync_jobs").update({
-          status: "timeout",
-          finished_at: new Date().toISOString(),
-          error_message: "Job exceeded heartbeat timeout",
-          error_step: "heartbeat_check",
+          status: "timeout", finished_at: new Date().toISOString(),
+          error_message: "Job exceeded heartbeat timeout", error_step: "heartbeat_check",
         }).eq("id", job.id);
       }
     }
   }
 
-  // Create new job
   const { data: newJob, error: jobError } = await supabase
     .from("sheet_sync_jobs")
     .insert({
-      user_id: userId,
-      connection_id: connectionId,
-      mode,
-      status: "running",
-      started_at: new Date().toISOString(),
-      heartbeat_at: new Date().toISOString(),
+      user_id: userId, connection_id: connectionId, mode,
+      status: "running", started_at: new Date().toISOString(), heartbeat_at: new Date().toISOString(),
       progress: { tabs_total: 0, tabs_done: 0, rows_read: 0, rows_imported: 0, current_tab: "" },
       request_id: requestId,
     })
@@ -353,36 +412,118 @@ async function checkAndClaimJob(
 }
 
 async function updateJobHeartbeat(
-  supabase: SupabaseClient,
-  jobId: string,
-  step: string,
-  progress: Record<string, unknown>
+  supabase: SupabaseClient, jobId: string, step: string, progress: Record<string, unknown>
 ): Promise<void> {
   await supabase.from("sheet_sync_jobs").update({
-    heartbeat_at: new Date().toISOString(),
-    progress,
-    error_step: step,
+    heartbeat_at: new Date().toISOString(), progress, error_step: step,
   }).eq("id", jobId);
 }
 
 async function finalizeJob(
-  supabase: SupabaseClient,
-  jobId: string,
-  status: string,
-  errorMessage?: string,
-  errorStep?: string,
-  progress?: Record<string, unknown>
+  supabase: SupabaseClient, jobId: string, status: string,
+  errorMessage?: string, errorStep?: string, progress?: Record<string, unknown>
 ): Promise<void> {
   const update: Record<string, unknown> = {
-    status,
-    finished_at: new Date().toISOString(),
-    heartbeat_at: new Date().toISOString(),
+    status, finished_at: new Date().toISOString(), heartbeat_at: new Date().toISOString(),
   };
   if (errorMessage) update.error_message = errorMessage;
   if (errorStep) update.error_step = errorStep;
   if (progress) update.progress = progress;
-
   await supabase.from("sheet_sync_jobs").update(update).eq("id", jobId);
+}
+
+// ============ Batch Upsert ============
+
+interface TransactionRow {
+  user_id: string;
+  description: string;
+  amount: number;
+  date: string;
+  type: string;
+  category: string;
+  client_vendor: string | null;
+  notes: string;
+  source: string;
+  source_sheet_id: string;
+  source_tab: string;
+  source_row_number: number;
+  external_row_key: string;
+  raw_data: Record<string, unknown>;
+}
+
+async function batchUpsertTransactions(
+  supabase: SupabaseClient,
+  batch: TransactionRow[],
+  userId: string,
+  connectionId: string,
+  requestId: string
+): Promise<{ inserted: number; updated: number; errors: Array<{ row: number; error: string }> }> {
+  if (batch.length === 0) return { inserted: 0, updated: 0, errors: [] };
+
+  let inserted = 0;
+  let updated = 0;
+  const errors: Array<{ row: number; error: string }> = [];
+
+  // Fetch existing keys in one query
+  const batchKeys = batch.map(b => b.external_row_key);
+  const existingSet = new Set<string>();
+  
+  // Query in chunks of 200 to avoid URL length limits
+  for (const keyChunk of chunks(batchKeys, 200)) {
+    const { data: existingRows } = await supabase
+      .from("transactions")
+      .select("external_row_key")
+      .eq("user_id", userId)
+      .eq("source_sheet_id", connectionId)
+      .in("external_row_key", keyChunk);
+    
+    if (existingRows) {
+      for (const row of existingRows) {
+        if (row.external_row_key) existingSet.add(row.external_row_key);
+      }
+    }
+  }
+
+  const toInsert = batch.filter(b => !existingSet.has(b.external_row_key));
+  const toUpdate = batch.filter(b => existingSet.has(b.external_row_key));
+
+  // Insert in chunks
+  for (const chunk of chunks(toInsert, BATCH_UPSERT_SIZE)) {
+    const { error } = await supabase.from("transactions").insert(chunk);
+    if (error) {
+      // If batch fails, try one by one
+      console.warn(`[${requestId}] Batch insert failed (${chunk.length} rows), falling back to individual: ${error.message}`);
+      for (const row of chunk) {
+        const { error: singleErr } = await supabase.from("transactions").insert(row);
+        if (singleErr) {
+          if (singleErr.code === "23505") { updated++; } // duplicate = already exists
+          else { errors.push({ row: row.source_row_number, error: singleErr.message }); }
+        } else { inserted++; }
+      }
+    } else {
+      inserted += chunk.length;
+    }
+  }
+
+  // Update in chunks using upsert
+  for (const chunk of chunks(toUpdate, BATCH_UPSERT_SIZE)) {
+    const { error } = await supabase.from("transactions").upsert(chunk, {
+      onConflict: "user_id,source_sheet_id,external_row_key",
+    });
+    if (error) {
+      console.warn(`[${requestId}] Batch upsert failed (${chunk.length} rows), falling back: ${error.message}`);
+      for (const row of chunk) {
+        const { error: singleErr } = await supabase.from("transactions")
+          .update(row).eq("user_id", userId).eq("source_sheet_id", connectionId).eq("external_row_key", row.external_row_key);
+        if (singleErr) { errors.push({ row: row.source_row_number, error: singleErr.message }); }
+        else { updated++; }
+      }
+    } else {
+      updated += chunk.length;
+    }
+  }
+
+  return { inserted, updated, errors };
 }
 
 // ============ Main handler ============
@@ -431,7 +572,7 @@ Deno.serve(async (req) => {
 
     console.log(`[${requestId}] User: ${userId}, Connection: ${connectionId}, Range: ${JSON.stringify(month_range)}`);
 
-    // ===== JOB CONTROL: Check concurrency & create job =====
+    // ===== JOB CONTROL =====
     const jobResult = await checkAndClaimJob(supabase, userId, connectionId, "ALL_TABS", requestId);
     if ("error" in jobResult) {
       return new Response(JSON.stringify({ error: jobResult.error }), {
@@ -450,14 +591,12 @@ Deno.serve(async (req) => {
     let accessToken = connection.access_token;
     const tokenExpired = !connection.token_expires_at || new Date(connection.token_expires_at) < new Date();
     if (tokenExpired || !accessToken) {
-      console.log(`[${requestId}] step=auth Refreshing token...`);
       const refreshed = await refreshAccessToken(connection.refresh_token);
       accessToken = refreshed.access_token;
       await supabase.from("google_sheet_connections").update({
         access_token: refreshed.access_token, token_expires_at: refreshed.expires_at,
       }).eq("id", connectionId);
     }
-    console.log(`[${requestId}] step=auth OK`);
 
     await supabase.from("google_sheet_connections").update({ sync_status: "syncing" }).eq("id", connectionId);
 
@@ -467,27 +606,35 @@ Deno.serve(async (req) => {
       .insert({ connection_id: connectionId, status: "running", mode: "MANUAL" })
       .select().single();
 
-    // ===== STEP: listTabs =====
+    // ===== STEP: listTabs with metadata (rowCount) =====
     if (Date.now() - startTime > INTERNAL_TIMEOUT_MS) throw new Error("TIMEOUT_INTERNAL");
     await updateJobHeartbeat(supabase, jobId, "listTabs", { tabs_total: 0, tabs_done: 0, rows_read: 0, rows_imported: 0, current_tab: "Listando abas..." });
 
     const metaResponse = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=sheets.properties`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.title,sheets.properties`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     if (!metaResponse.ok) {
       const errText = await metaResponse.text();
-      console.error(`[${requestId}] step=listTabs FAILED:`, errText);
-      throw new Error(`Failed to fetch spreadsheet metadata: ${metaResponse.status}`);
+      throw new Error(`Failed to fetch spreadsheet metadata: ${metaResponse.status} - ${errText}`);
     }
     const metaData = await metaResponse.json();
-    const allSheets: Array<{ properties: { title: string; sheetId: number; index: number } }> = metaData.sheets || [];
-    console.log(`[${requestId}] step=listTabs Found ${allSheets.length} tabs: ${allSheets.map(s => s.properties.title).join(", ")}`);
+    const spreadsheetTitle: string = metaData.properties?.title || "";
+    const allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }> = metaData.sheets || [];
+    console.log(`[${requestId}] Spreadsheet: "${spreadsheetTitle}", Found ${allSheets.length} tabs`);
+
+    // ===== Year inference =====
+    const inferredYear = inferYearFromSpreadsheetName(spreadsheetTitle);
+    const defaultYear = inferredYear || new Date().getFullYear();
+    console.log(`[${requestId}] Year inference: spreadsheet="${spreadsheetTitle}" -> ${inferredYear || "not found"}, using ${defaultYear}`);
 
     // ===== STEP: classifyTabs =====
     if (Date.now() - startTime > INTERNAL_TIMEOUT_MS) throw new Error("TIMEOUT_INTERNAL");
-    const defaultYear = new Date().getFullYear();
-    const classified = allSheets.map(s => classifyTab(s.properties.title, defaultYear));
+    const classified = allSheets.map(s => {
+      const tab = classifyTab(s.properties.title, defaultYear);
+      tab.rowCount = s.properties.gridProperties?.rowCount || 1000;
+      return tab;
+    });
     let monthlyTabs = classified.filter(t => t.route === "MONTHLY_TRANSACTIONS");
 
     if (month_range) {
@@ -495,7 +642,7 @@ Deno.serve(async (req) => {
     }
     monthlyTabs.sort((a, b) => (a.periodKey || "").localeCompare(b.periodKey || ""));
 
-    console.log(`[${requestId}] step=classifyTabs Monthly tabs: ${monthlyTabs.map(t => `${t.title}(${t.periodKey})`).join(", ")}`);
+    console.log(`[${requestId}] Monthly tabs: ${monthlyTabs.map(t => `${t.title}(${t.periodKey},rows=${t.rowCount})`).join(", ")}`);
 
     await updateJobHeartbeat(supabase, jobId, "classifyTabs", {
       tabs_total: monthlyTabs.length, tabs_done: 0, rows_read: 0, rows_imported: 0,
@@ -507,10 +654,11 @@ Deno.serve(async (req) => {
     }
 
     // ===== STEP: process each tab =====
-    const tabResults: Array<{ tab: string; periodKey: string; rowsImported: number; rowsSkipped: number; errors: number }> = [];
     let totalImported = 0;
     let totalSkipped = 0;
     let totalErrors = 0;
+    let totalScanned = 0;
+    let totalWithValue = 0;
     const allErrors: Array<{ tab: string; row: number; error: string }> = [];
 
     for (let tabIdx = 0; tabIdx < monthlyTabs.length; tabIdx++) {
@@ -518,111 +666,160 @@ Deno.serve(async (req) => {
 
       // Timeout check
       if (Date.now() - startTime > INTERNAL_TIMEOUT_MS) {
-        console.log(`[${requestId}] TIMEOUT_INTERNAL at tab ${tabIdx}/${monthlyTabs.length}`);
-        await finalizeJob(supabase, jobId, "timeout", `Timeout after processing ${tabIdx} of ${monthlyTabs.length} tabs`, `readTab(${tab.title})`, {
-          tabs_total: monthlyTabs.length, tabs_done: tabIdx, rows_read: totalImported + totalSkipped + totalErrors, rows_imported: totalImported, current_tab: tab.title,
+        console.log(`[${requestId}] TIMEOUT at tab ${tabIdx}/${monthlyTabs.length}`);
+        await finalizeJob(supabase, jobId, "timeout", `Timeout after ${tabIdx} of ${monthlyTabs.length} tabs`, `readTab(${tab.title})`, {
+          tabs_total: monthlyTabs.length, tabs_done: tabIdx, rows_read: totalScanned, rows_imported: totalImported, current_tab: tab.title,
         });
-        jobId = null; // Prevent double-finalize
-        // Still update sync log and connection
+        jobId = null;
         if (syncLog) {
           await supabase.from("google_sheet_sync_logs").update({
-            rows_processed: totalImported + totalSkipped + totalErrors, rows_imported: totalImported, rows_upserted: totalImported,
+            rows_processed: totalScanned, rows_imported: totalImported, rows_upserted: totalImported,
             rows_skipped: totalSkipped, errors: allErrors.slice(0, 50), completed_at: new Date().toISOString(), status: "partial",
           }).eq("id", syncLog.id);
         }
         await supabase.from("google_sheet_connections").update({ sync_status: "partial", last_sync_at: new Date().toISOString() }).eq("id", connectionId);
 
         return new Response(JSON.stringify({
-          success: false, error: "timeout", tabs_imported: tabIdx, tab_results: tabResults,
-          total_imported: totalImported, total_skipped: totalSkipped, total_errors: totalErrors, errors: allErrors.slice(0, 20),
+          success: false, error: "timeout", tabs_imported: tabIdx,
+          total_imported: totalImported, total_skipped: totalSkipped, total_errors: totalErrors,
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      console.log(`[${requestId}] step=readTab(${tab.title}) [${tabIdx + 1}/${monthlyTabs.length}]`);
+      console.log(`[${requestId}] Processing tab ${tab.title} [${tabIdx + 1}/${monthlyTabs.length}] (rowCount=${tab.rowCount})`);
       await updateJobHeartbeat(supabase, jobId, `readTab(${tab.title})`, {
-        tabs_total: monthlyTabs.length, tabs_done: tabIdx, rows_read: totalImported + totalSkipped + totalErrors, rows_imported: totalImported, current_tab: tab.title,
+        tabs_total: monthlyTabs.length, tabs_done: tabIdx, rows_read: totalScanned, rows_imported: totalImported, current_tab: tab.title,
       });
 
-      const range = `'${tab.title}'!A1:Z1000`;
-      const sheetsResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      // ===== PAGINATED READ =====
+      const allRows = await readTabPaginated(accessToken, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
 
-      if (!sheetsResponse.ok) {
-        console.error(`[${requestId}] Failed to fetch tab ${tab.title}`);
-        allErrors.push({ tab: tab.title, row: 0, error: "Failed to fetch tab data" });
-        totalErrors++;
-        tabResults.push({ tab: tab.title, periodKey: tab.periodKey || "", rowsImported: 0, rowsSkipped: 0, errors: 1 });
+      if (allRows.length < 2) {
+        // Save empty audit
+        await supabase.from("sync_tab_audit").insert({
+          job_id: jobId, user_id: userId, connection_id: connectionId,
+          tab_name: tab.title, period_key: tab.periodKey || null,
+          rows_scanned: 0, rows_with_value: 0, rows_imported: 0, rows_skipped: 0,
+          skip_reasons: { empty_tab: 1 }, errors: [],
+        });
         continue;
       }
 
-      const sheetsData = await sheetsResponse.json();
-      const values: string[][] = sheetsData.values || [];
-
-      if (values.length < 2) {
-        tabResults.push({ tab: tab.title, periodKey: tab.periodKey || "", rowsImported: 0, rowsSkipped: 0, errors: 0 });
-        continue;
-      }
-
-      const headers = values[0];
-      const rows = values.slice(1);
+      const headers = allRows[0];
+      const dataRows = allRows.slice(1);
       const mapping = autoDetectMapping(headers);
-      console.log(`[${requestId}] Tab ${tab.title} mapping: ${JSON.stringify(mapping)}`);
+      console.log(`[${requestId}] Tab ${tab.title}: ${dataRows.length} data rows, mapping: ${JSON.stringify(mapping)}`);
 
-      let tabImported = 0;
+      // ===== Parse all rows into batch =====
+      const batch: TransactionRow[] = [];
+      const skipReasons: Record<string, number> = {};
+      let tabScanned = 0;
+      let tabWithValue = 0;
       let tabSkipped = 0;
-      let tabErrors = 0;
 
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        const rowNumber = rowIndex + 2;
+      for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
+        const row = dataRows[rowIndex];
+        const rowNumber = rowIndex + 2; // 1-indexed, +1 for header
+        tabScanned++;
+
         try {
+          // Build row object
           const rowObj: Record<string, unknown> = {};
           headers.forEach((h, i) => { rowObj[h] = row[i] || ""; });
-          const description = mapping.description ? String(rowObj[mapping.description] || "").trim() : "";
-          const skipCheck = isSkippableRow(rowObj, description);
-          if (skipCheck.skip) { tabSkipped++; continue; }
+
+          // Check if all cells are empty
+          const hasAnyContent = row.some(cell => cell && cell.trim().length > 0);
+          if (!hasAnyContent) {
+            tabSkipped++;
+            skipReasons["empty_row"] = (skipReasons["empty_row"] || 0) + 1;
+            continue;
+          }
+
+          // Extract amount FIRST - this is the primary filter
           const { value: amount, type } = extractAmount(rowObj, mapping);
-          if (amount === null || amount === 0) { tabSkipped++; continue; }
+          if (amount === null) {
+            tabSkipped++;
+            skipReasons["no_value"] = (skipReasons["no_value"] || 0) + 1;
+            continue;
+          }
+
+          tabWithValue++;
+
+          // Parse date
           const dateRaw = mapping.date ? rowObj[mapping.date] : null;
           const date = parseDate(dateRaw as string | number | null);
-          const finalDate = date || new Date().toISOString().split("T")[0];
+
+          // Get description
+          const description = mapping.description ? String(rowObj[mapping.description] || "").trim() : "";
+
+          // RELAXED skip check: pass hasValidDate
+          const skipCheck = isSkippableRow(rowObj, description, !!date);
+          if (skipCheck.skip) {
+            tabSkipped++;
+            tabWithValue--; // Don't count as "with value" if skipped
+            skipReasons[skipCheck.reason || "unknown"] = (skipReasons[skipCheck.reason || "unknown"] || 0) + 1;
+            continue;
+          }
+
+          // Use tab's periodKey to infer date if not found
+          const finalDate = date || (tab.periodKey ? `${tab.periodKey}-01` : new Date().toISOString().split("T")[0]);
           const category = mapping.category ? String(rowObj[mapping.category] || "").trim() || "Geral" : "Geral";
           const clientVendor = mapping.client_vendor ? String(rowObj[mapping.client_vendor] || "").trim() || null : null;
           const rowHash = generateRowHash({ description, amount, date: finalDate, type, category });
           const externalRowKey = `${tab.title}:${rowNumber}:${rowHash}`;
-          const transactionData = {
-            user_id: userId, description: description || "Sem descrição", amount, date: finalDate, type, category,
-            client_vendor: clientVendor, notes: `Importado de: ${connection.spreadsheet_name} > ${tab.title}`,
-            source: "sheets", source_sheet_id: connectionId, source_tab: tab.title,
-            source_row_number: rowNumber, external_row_key: externalRowKey, raw_data: rowObj,
-          };
-          const { data: existing } = await supabase.from("transactions").select("id")
-            .eq("user_id", userId).eq("source_sheet_id", connectionId).eq("external_row_key", externalRowKey).maybeSingle();
-          if (existing) {
-            const { error: updateError } = await supabase.from("transactions").update(transactionData).eq("id", existing.id);
-            if (updateError) { allErrors.push({ tab: tab.title, row: rowNumber, error: updateError.message }); tabErrors++; }
-            else { tabImported++; }
-          } else {
-            const { error: insertError } = await supabase.from("transactions").insert(transactionData);
-            if (insertError) {
-              if (insertError.code === "23505") { tabImported++; }
-              else { allErrors.push({ tab: tab.title, row: rowNumber, error: insertError.message }); tabErrors++; }
-            } else { tabImported++; }
-          }
+
+          batch.push({
+            user_id: userId,
+            description: description || "Sem descrição",
+            amount,
+            date: finalDate,
+            type,
+            category,
+            client_vendor: clientVendor,
+            notes: `Importado de: ${connection.spreadsheet_name} > ${tab.title}`,
+            source: "sheets",
+            source_sheet_id: connectionId!,
+            source_tab: tab.title,
+            source_row_number: rowNumber,
+            external_row_key: externalRowKey,
+            raw_data: rowObj,
+          });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : "Unknown error";
           allErrors.push({ tab: tab.title, row: rowNumber, error: errMsg });
-          tabErrors++;
+          skipReasons["parse_error"] = (skipReasons["parse_error"] || 0) + 1;
         }
       }
 
-      tabResults.push({ tab: tab.title, periodKey: tab.periodKey || "", rowsImported: tabImported, rowsSkipped: tabSkipped, errors: tabErrors });
+      // ===== BATCH UPSERT =====
+      await updateJobHeartbeat(supabase, jobId, `upsert(${tab.title})`, {
+        tabs_total: monthlyTabs.length, tabs_done: tabIdx, rows_read: totalScanned + tabScanned,
+        rows_imported: totalImported, current_tab: `${tab.title} - importando ${batch.length} linhas...`,
+      });
+
+      const upsertResult = await batchUpsertTransactions(supabase, batch, userId, connectionId!, requestId);
+      const tabImported = upsertResult.inserted + upsertResult.updated;
+      const tabErrors = upsertResult.errors.length;
+
+      for (const err of upsertResult.errors) {
+        allErrors.push({ tab: tab.title, row: err.row, error: err.error });
+      }
+
+      // ===== SAVE AUDIT =====
+      await supabase.from("sync_tab_audit").insert({
+        job_id: jobId, user_id: userId, connection_id: connectionId,
+        tab_name: tab.title, period_key: tab.periodKey || null,
+        rows_scanned: tabScanned, rows_with_value: tabWithValue,
+        rows_imported: tabImported, rows_skipped: tabSkipped,
+        skip_reasons: skipReasons, errors: upsertResult.errors.slice(0, 20),
+      });
+
       totalImported += tabImported;
       totalSkipped += tabSkipped;
       totalErrors += tabErrors;
-      console.log(`[${requestId}] Tab ${tab.title}: imported=${tabImported}, skipped=${tabSkipped}, errors=${tabErrors}`);
+      totalScanned += tabScanned;
+      totalWithValue += tabWithValue;
+
+      console.log(`[${requestId}] Tab ${tab.title}: scanned=${tabScanned}, withValue=${tabWithValue}, imported=${tabImported}, skipped=${tabSkipped}, errors=${tabErrors}`);
     }
 
     // ===== Finalize =====
@@ -630,24 +827,26 @@ Deno.serve(async (req) => {
 
     if (syncLog) {
       await supabase.from("google_sheet_sync_logs").update({
-        rows_processed: totalImported + totalSkipped + totalErrors, rows_imported: totalImported, rows_upserted: totalImported,
+        rows_processed: totalScanned, rows_imported: totalImported, rows_upserted: totalImported,
         rows_skipped: totalSkipped, errors: allErrors.slice(0, 50), completed_at: new Date().toISOString(), status: finalStatus,
       }).eq("id", syncLog.id);
     }
 
     await supabase.from("google_sheet_connections").update({ sync_status: finalStatus, last_sync_at: new Date().toISOString() }).eq("id", connectionId);
 
-    // Finalize job as success
     await finalizeJob(supabase, jobId, finalStatus === "error" ? "failed" : "success", undefined, undefined, {
-      tabs_total: monthlyTabs.length, tabs_done: monthlyTabs.length, rows_read: totalImported + totalSkipped + totalErrors, rows_imported: totalImported, current_tab: "Concluído",
+      tabs_total: monthlyTabs.length, tabs_done: monthlyTabs.length,
+      rows_read: totalScanned, rows_imported: totalImported, current_tab: "Concluído",
     });
-    jobId = null; // Prevent double-finalize
+    jobId = null;
 
-    console.log(`[${requestId}] All tabs sync completed: tabs=${monthlyTabs.length}, imported=${totalImported}, skipped=${totalSkipped}, errors=${totalErrors}, duration=${Date.now() - startTime}ms`);
+    console.log(`[${requestId}] DONE: tabs=${monthlyTabs.length}, scanned=${totalScanned}, withValue=${totalWithValue}, imported=${totalImported}, skipped=${totalSkipped}, errors=${totalErrors}, duration=${Date.now() - startTime}ms`);
 
     return new Response(JSON.stringify({
-      success: true, tabs_imported: monthlyTabs.length, tab_results: tabResults,
-      total_imported: totalImported, total_skipped: totalSkipped, total_errors: totalErrors, errors: allErrors.slice(0, 20),
+      success: true, tabs_imported: monthlyTabs.length,
+      total_scanned: totalScanned, total_with_value: totalWithValue,
+      total_imported: totalImported, total_skipped: totalSkipped, total_errors: totalErrors,
+      errors: allErrors.slice(0, 20),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error: unknown) {
@@ -655,7 +854,6 @@ Deno.serve(async (req) => {
     const isTimeout = errorMessage === "TIMEOUT_INTERNAL";
     console.error(`[${requestId}] Error: ${errorMessage}`);
 
-    // Finalize job if it exists
     if (jobId && supabase!) {
       try {
         await finalizeJob(supabase!, jobId, isTimeout ? "timeout" : "failed", errorMessage, "catch_block");
@@ -664,7 +862,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Update connection status
     if (connectionId && supabase!) {
       try {
         await supabase!.from("google_sheet_connections").update({ sync_status: "error" }).eq("id", connectionId);

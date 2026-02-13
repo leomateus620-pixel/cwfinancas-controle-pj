@@ -87,7 +87,8 @@ export function usePeriodMetrics(): PeriodMetrics {
         .select("id, type, description, amount, category, date, client_vendor")
         .gte("date", fromStr)
         .lte("date", toStr)
-        .order("date", { ascending: false });
+        .order("date", { ascending: false })
+        .limit(5000);
       if (error) throw error;
       return data ?? [];
     },
@@ -103,7 +104,8 @@ export function usePeriodMetrics(): PeriodMetrics {
         .from("transactions")
         .select("type, amount")
         .gte("date", prevFromStr)
-        .lte("date", prevToStr);
+        .lte("date", prevToStr)
+        .limit(5000);
       if (error) throw error;
       return data ?? [];
     },
