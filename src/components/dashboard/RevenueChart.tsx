@@ -89,8 +89,8 @@ export function RevenueChart() {
     const monthlyData: Record<string, { receita: number; despesas: number }> = {};
     
     transactions.forEach((t) => {
-      const date = new Date(t.date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, '0')}`;
+      // Use substring to get YYYY-MM directly from date string (avoids timezone/0-indexed bugs)
+      const monthKey = t.date.substring(0, 7);
       
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = { receita: 0, despesas: 0 };
@@ -106,9 +106,10 @@ export function RevenueChart() {
     return Object.entries(monthlyData)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, values]) => {
-        const [year, month] = key.split('-');
+        const [year, monthStr] = key.split('-');
+        const monthIdx = parseInt(monthStr, 10) - 1; // YYYY-MM is 1-indexed
         return {
-          month: `${monthNames[parseInt(month)]}/${year.slice(2)}`,
+          month: `${monthNames[monthIdx] || monthStr}/${year.slice(2)}`,
           receita: values.receita,
           despesas: values.despesas,
         };

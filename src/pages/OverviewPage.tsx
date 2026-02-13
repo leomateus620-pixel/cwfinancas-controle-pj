@@ -4,13 +4,17 @@ import { ExpenseChart } from "@/components/dashboard/ExpenseChart";
 import { ProfitDistributionChart } from "@/components/dashboard/ProfitDistributionChart";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { DataQualityCard } from "@/components/dashboard/DataQualityCard";
-import { Wallet } from "lucide-react";
+import { Wallet, AlertTriangle } from "lucide-react";
 
 import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { TrendBadge } from "@/components/ui/trend-badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
 
 export function OverviewPage() {
+  const { currentBalance, balanceChange, hasReconciliationWarnings, isLoading } = usePeriodMetrics();
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -23,9 +27,18 @@ export function OverviewPage() {
         </div>
       </div>
 
+      {/* DRE Reconciliation Warning */}
+      {hasReconciliationWarnings && (
+        <Alert className="border-warning/50 bg-warning/5">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertDescription className="text-sm text-muted-foreground">
+            Diferença detectada entre transações e DRE neste período. Verifique a reconciliação na página de DRE.
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Hero Balance Card */}
       <CorporateCard className="bg-gradient-to-br from-primary/5 via-card to-card relative overflow-hidden group">
-        {/* Background decorative element */}
         <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-primary/8 to-transparent rounded-full blur-2xl -translate-y-1/2 translate-x-1/4 group-hover:scale-110 transition-transform duration-500" />
         
         <div className="flex items-center gap-4 relative z-10">
@@ -33,20 +46,24 @@ export function OverviewPage() {
             <Wallet className="w-7 h-7 text-primary" />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground font-medium mb-1">Saldo Total da Empresa</p>
+            <p className="text-sm text-muted-foreground font-medium mb-1">Resultado do Período</p>
             <div className="flex items-baseline gap-3">
-              <AnimatedValue
-                value={253412}
-                prefix="R$ "
-                className="text-3xl md:text-4xl tracking-tight"
-                color="primary"
-                format="currency"
-                duration={1800}
-              />
+              {isLoading ? (
+                <span className="text-3xl md:text-4xl tracking-tight text-muted-foreground animate-pulse">...</span>
+              ) : (
+                <AnimatedValue
+                  value={currentBalance}
+                  prefix="R$ "
+                  className="text-3xl md:text-4xl tracking-tight"
+                  color={currentBalance >= 0 ? "primary" : "danger"}
+                  format="currency"
+                  duration={1800}
+                />
+              )}
             </div>
             <div className="flex items-center gap-2 mt-1.5">
-              <TrendBadge value={12.5} size="sm" />
-              <span className="text-xs text-muted-foreground">vs. mês anterior</span>
+              <TrendBadge value={balanceChange} size="sm" />
+              <span className="text-xs text-muted-foreground">vs. período anterior</span>
             </div>
           </div>
         </div>

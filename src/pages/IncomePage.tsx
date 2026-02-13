@@ -172,26 +172,23 @@ export function IncomePage() {
         <KPICard
           title="Receita Total"
           value={formatCurrency(totals.income)}
-          change={15.3}
-          changeLabel="vs mês anterior"
+          changeLabel="no período selecionado"
           icon={<DollarSign className="w-5 h-5 text-success" />}
           trend="up"
         />
         <KPICard
           title="Ticket Médio"
           value={formatCurrency(avgTransaction)}
-          change={8.7}
-          changeLabel="vs mês anterior"
+          changeLabel={`${transactions.length} transações`}
           icon={<ShoppingCart className="w-5 h-5 text-primary" />}
-          trend="up"
+          trend="neutral"
         />
         <KPICard
           title="Maior Fonte"
           value={topCategory}
-          change={12.1}
-          changeLabel="crescimento"
+          changeLabel="categoria principal"
           icon={<Briefcase className="w-5 h-5 text-info" />}
-          trend="up"
+          trend="neutral"
         />
       </div>
 
