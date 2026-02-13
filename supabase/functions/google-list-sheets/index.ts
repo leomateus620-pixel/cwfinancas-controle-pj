@@ -86,7 +86,7 @@ async function listDriveSpreadsheets(
   pageToken?: string,
   searchTerm?: string
 ): Promise<{ files: DriveFile[]; nextPageToken?: string }> {
-  let q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
+  let q = "(mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and trashed=false";
   if (searchTerm) {
     // Sanitize: remove single quotes to prevent query injection
     const sanitized = searchTerm.replace(/'/g, "\\'");
