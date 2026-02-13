@@ -1,61 +1,75 @@
 
-# Correcao Definitiva: Planilhas .xlsx Nao Aparecem na Listagem
+# Correcao: Erro ao Ler Planilhas .xlsx (Preview)
 
 ## Causa Raiz
 
-O problema NAO e de scope OAuth nem de permissoes. Os arquivos que faltam sao **arquivos Excel (.xlsx)** compartilhados via Google Drive, nao planilhas nativas do Google Sheets.
+O erro `"This operation is not supported for this document"` ocorre porque a funcao `google-read-sheet-preview` usa a **Google Sheets API** para ler metadados e dados. Porem, a Sheets API **nao suporta** arquivos `.xlsx` armazenados no Drive -- ela so funciona com planilhas nativas do Google Sheets.
 
-A query atual filtra por:
+Quando o usuario seleciona "Financeiro GR - 2026.xlsx", a funcao tenta chamar:
+```text
+GET https://sheets.googleapis.com/v4/spreadsheets/{id}
 ```
-mimeType='application/vnd.google-apps.spreadsheet'
-```
-
-Isso retorna APENAS planilhas nativas do Google Sheets. Os arquivos .xlsx tem mimeType diferente:
-```
-application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-```
-
-Por isso "Tarifa Zero - Controle Financeiro 2025" (icone verde do Sheets) aparece, mas "Financeiro SAH 2026.xlsx" (icone verde do Excel) nao aparece.
+E recebe: `400 - This operation is not supported for this document`
 
 ## Solucao
 
-Alterar a query do Drive API para incluir AMBOS os tipos de arquivo:
+Modificar `google-read-sheet-preview` para detectar o tipo do arquivo e, quando for `.xlsx`, usar a **Google Drive API** para baixar o arquivo e parsear com a biblioteca **SheetJS (xlsx)** no servidor.
 
+### Fluxo atualizado
+
+```text
+1. Receber spreadsheetId
+2. Consultar Drive API: GET files/{id}?fields=mimeType,name
+3. Se mimeType = 'application/vnd.google-apps.spreadsheet':
+   -> Usar Sheets API (fluxo atual, sem mudanca)
+4. Se mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+   -> Baixar arquivo via Drive API: GET files/{id}?alt=media
+   -> Parsear com SheetJS (xlsx) no edge function
+   -> Extrair lista de abas e primeiras 20 linhas
+   -> Retornar no mesmo formato de resposta
 ```
-(mimeType='application/vnd.google-apps.spreadsheet' OR mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') AND trashed=false
-```
 
-Isso cobrira:
-- Planilhas nativas do Google Sheets
-- Arquivos .xlsx abertos/compartilhados via Google Drive
-
-## Arquivo modificado
+## Arquivos modificados
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/google-list-sheets/index.ts` | Expandir filtro mimeType para incluir .xlsx |
+| `supabase/functions/google-read-sheet-preview/index.ts` | Adicionar deteccao de mimeType e fallback para .xlsx via Drive API + SheetJS |
 
 ## Detalhe tecnico
 
-Na funcao `listDriveSpreadsheets` (linha 89), alterar:
+### 1. Detectar mimeType via Drive API
 
-**Antes:**
-```
-let q = "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false";
+Antes de chamar a Sheets API, consultar o Drive API para saber o tipo do arquivo:
+
+```text
+GET https://www.googleapis.com/drive/v3/files/{id}?fields=mimeType,name
+Authorization: Bearer {token}
 ```
 
-**Depois:**
+### 2. Para arquivos .xlsx: baixar e parsear
+
+- Baixar o conteudo binario:
+```text
+GET https://www.googleapis.com/drive/v3/files/{id}?alt=media
+Authorization: Bearer {token}
 ```
-let q = "(mimeType='application/vnd.google-apps.spreadsheet' or mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') and trashed=false";
+
+- Parsear com SheetJS importado via esm.sh:
+```text
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 ```
+
+- Extrair:
+  - Nome das abas (workbook.SheetNames)
+  - Primeiras 20 linhas da aba selecionada (ou primeira aba)
+  - Retornar no mesmo formato `{ spreadsheet, sheets, preview }` que o fluxo nativo usa
+
+### 3. Resposta identica ao fluxo nativo
+
+O frontend nao precisa de nenhuma alteracao -- a resposta tera o mesmo formato independente de ser Google Sheets nativo ou .xlsx.
 
 ## Impacto
 
-- Nenhuma mudanca no frontend necessaria
-- Nenhuma reconexao OAuth necessaria
-- Os arquivos .xlsx aparecerao imediatamente na proxima abertura do modal
-- A busca por nome tambem cobrira arquivos .xlsx
-
-## Teste
-
-Apos deploy da edge function, abrir o modal "Selecionar Planilha" e verificar que arquivos como "Financeiro SAH 2026.xlsx" e "Controle Financeiro StartSync 2026.xlsx" aparecem na lista.
+- **Frontend**: nenhuma alteracao necessaria
+- **Outras edge functions**: `sheets-sync-all-tabs` e `ai-profile-sheet` tambem precisarao de tratamento similar para .xlsx no futuro, mas o erro imediato e apenas no preview
+- **Seguranca**: sem mudanca, usa mesmo token OAuth do usuario
