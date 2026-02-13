@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +11,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CLIENT_ID")!;
 const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CLIENT_SECRET")!;
+
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const SHEETS_MIME = "application/vnd.google-apps.spreadsheet";
 
 async function refreshAccessToken(
   supabase: any,
@@ -59,12 +63,23 @@ async function refreshAccessToken(
   }
 }
 
+async function getFileMimeType(accessToken: string, fileId: string): Promise<{ mimeType: string; name: string }> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Drive API error: ${response.status} - ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
 async function getSpreadsheetMetadata(accessToken: string, spreadsheetId: string) {
   const response = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   if (!response.ok) {
@@ -81,19 +96,78 @@ async function getSheetValues(
 ): Promise<string[][]> {
   const response = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
-    {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
+    { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Failed to get values for range ${range}:`, errorText);
+    console.error(`Failed to get values for range ${range}:`, await response.text());
     return [];
   }
 
   const data = await response.json();
   return data.values || [];
+}
+
+async function handleNativeSheet(accessToken: string, spreadsheetId: string, sheetName?: string) {
+  const metadata = await getSpreadsheetMetadata(accessToken, spreadsheetId);
+  const spreadsheetName = metadata.properties?.title || "Sem nome";
+  const sheets = (metadata.sheets || []).map((sheet: any) => ({
+    sheet_id: sheet.properties.sheetId,
+    title: sheet.properties.title,
+    index: sheet.properties.index,
+  }));
+
+  const targetSheet = sheetName || sheets[0]?.title || "Sheet1";
+  const previewRange = `'${targetSheet}'!A1:Z20`;
+  let previewValues = await getSheetValues(accessToken, spreadsheetId, previewRange);
+  let usedRange = previewRange;
+
+  if (previewValues.length === 0 && !sheetName && sheets.length > 0) {
+    const fallbackRange = "A1:Z20";
+    previewValues = await getSheetValues(accessToken, spreadsheetId, fallbackRange);
+    usedRange = fallbackRange;
+  }
+
+  return { spreadsheetName, sheets, previewValues, usedRange };
+}
+
+async function handleXlsxFile(accessToken: string, fileId: string, fileName: string, sheetName?: string) {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Drive download error: ${response.status} - ${await response.text()}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const data = new Uint8Array(arrayBuffer);
+  const workbook = XLSX.read(data, { type: "array" });
+
+  const sheets = workbook.SheetNames.map((name: string, index: number) => ({
+    sheet_id: index,
+    title: name,
+    index,
+  }));
+
+  const targetSheet = sheetName || workbook.SheetNames[0] || "Sheet1";
+  const worksheet = workbook.Sheets[targetSheet];
+
+  let previewValues: string[][] = [];
+  if (worksheet) {
+    const jsonRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+    previewValues = jsonRows.slice(0, 20).map((row: any[]) =>
+      row.slice(0, 26).map((cell: any) => (cell != null ? String(cell) : ""))
+    );
+  }
+
+  return {
+    spreadsheetName: fileName || "Sem nome",
+    sheets,
+    previewValues,
+    usedRange: `'${targetSheet}'!A1:Z20`,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -105,15 +179,10 @@ Deno.serve(async (req) => {
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    // Get authorization header
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
-        JSON.stringify({
-          code: "UNAUTHORIZED",
-          message: "Token de autenticação não fornecido",
-          request_id: requestId,
-        }),
+        JSON.stringify({ code: "UNAUTHORIZED", message: "Token de autenticação não fornecido", request_id: requestId }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -123,33 +192,23 @@ Deno.serve(async (req) => {
 
     if (userError || !userData?.user) {
       return new Response(
-        JSON.stringify({
-          code: "UNAUTHORIZED",
-          message: "Usuário não autenticado",
-          request_id: requestId,
-        }),
+        JSON.stringify({ code: "UNAUTHORIZED", message: "Usuário não autenticado", request_id: requestId }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const userId = userData.user.id;
 
-    // Get spreadsheetId from body
     const body = await req.json();
     const { spreadsheetId, sheetName } = body;
 
     if (!spreadsheetId) {
       return new Response(
-        JSON.stringify({
-          code: "INVALID_REQUEST",
-          message: "spreadsheetId é obrigatório",
-          request_id: requestId,
-        }),
+        JSON.stringify({ code: "INVALID_REQUEST", message: "spreadsheetId é obrigatório", request_id: requestId }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Fetch OAuth tokens from database
     const { data: tokenData, error: tokenError } = await supabase
       .from("google_oauth_tokens")
       .select("user_id, access_token, refresh_token, expires_at")
@@ -158,12 +217,7 @@ Deno.serve(async (req) => {
 
     if (tokenError || !tokenData) {
       return new Response(
-        JSON.stringify({
-          code: "NOT_CONNECTED",
-          message: "Conecte sua conta Google primeiro",
-          needs_auth: true,
-          request_id: requestId,
-        }),
+        JSON.stringify({ code: "NOT_CONNECTED", message: "Conecte sua conta Google primeiro", needs_auth: true, request_id: requestId }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -172,61 +226,38 @@ Deno.serve(async (req) => {
     const refreshToken = tokenData.refresh_token;
     const expiresAt = new Date(tokenData.expires_at);
 
-    // Check if token needs refresh
     if (expiresAt < new Date(Date.now() + 5 * 60 * 1000)) {
       const refreshResult = await refreshAccessToken(supabase, userId, refreshToken, requestId);
       if (!refreshResult) {
         return new Response(
-          JSON.stringify({
-            code: "REAUTH_REQUIRED",
-            message: "Sua sessão do Google expirou. Por favor, reconecte sua conta.",
-            needs_auth: true,
-            request_id: requestId,
-          }),
+          JSON.stringify({ code: "REAUTH_REQUIRED", message: "Sua sessão do Google expirou. Por favor, reconecte sua conta.", needs_auth: true, request_id: requestId }),
           { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       accessToken = refreshResult.access_token;
     }
 
-    // Get spreadsheet metadata
-    const metadata = await getSpreadsheetMetadata(accessToken, spreadsheetId);
-    const spreadsheetName = metadata.properties?.title || "Sem nome";
-    const sheets = (metadata.sheets || []).map((sheet: any) => ({
-      sheet_id: sheet.properties.sheetId,
-      title: sheet.properties.title,
-      index: sheet.properties.index,
-    }));
+    // Detect file type via Drive API
+    const fileInfo = await getFileMimeType(accessToken, spreadsheetId);
+    console.log(`[${requestId}] File "${fileInfo.name}" mimeType: ${fileInfo.mimeType}`);
 
-    // Get preview values from the first sheet or specified sheet
-    const targetSheet = sheetName || sheets[0]?.title || "Sheet1";
-    const previewRange = `'${targetSheet}'!A1:Z20`;
-    const values = await getSheetValues(accessToken, spreadsheetId, previewRange);
-
-    // Try fallback if no values
-    let previewValues = values;
-    let usedRange = previewRange;
-    
-    if (previewValues.length === 0 && !sheetName && sheets.length > 0) {
-      // Try without sheet name
-      const fallbackRange = "A1:Z20";
-      previewValues = await getSheetValues(accessToken, spreadsheetId, fallbackRange);
-      usedRange = fallbackRange;
+    let result;
+    if (fileInfo.mimeType === XLSX_MIME) {
+      result = await handleXlsxFile(accessToken, spreadsheetId, fileInfo.name, sheetName);
+    } else {
+      result = await handleNativeSheet(accessToken, spreadsheetId, sheetName);
     }
 
     console.log(`[${requestId}] Successfully fetched preview for ${spreadsheetId}`);
 
     return new Response(
       JSON.stringify({
-        spreadsheet: {
-          id: spreadsheetId,
-          name: spreadsheetName,
-        },
-        sheets,
+        spreadsheet: { id: spreadsheetId, name: result.spreadsheetName },
+        sheets: result.sheets,
         preview: {
-          range: usedRange,
-          values: previewValues,
-          row_count: previewValues.length,
+          range: result.usedRange,
+          values: result.previewValues,
+          row_count: result.previewValues.length,
         },
         request_id: requestId,
       }),
