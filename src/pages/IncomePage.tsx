@@ -61,7 +61,7 @@ export function IncomePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "income" });
+  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "income", excludeTransfers: true });
 
   const filteredData = useMemo(() => {
     return transactions.filter((item) => {

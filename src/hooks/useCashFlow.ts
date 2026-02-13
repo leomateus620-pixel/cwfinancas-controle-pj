@@ -12,6 +12,8 @@ export interface CashFlowDataPoint {
   balance: number;
   cumulativeBalance: number;
   transactionCount: number;
+  transferIn: number;
+  transferOut: number;
 }
 
 export interface UpcomingPayment {
@@ -42,14 +44,14 @@ export function useCashFlow() {
     }
 
     // Group transactions by month within the global range
-    const monthlyData = new Map<string, { inflow: number; outflow: number; count: number }>();
+    const monthlyData = new Map<string, { inflow: number; outflow: number; count: number; transferIn: number; transferOut: number }>();
     
     // Initialize months within range
     const totalMonths = differenceInMonths(rangeTo, rangeFrom) + 1;
     for (let i = 0; i < totalMonths; i++) {
       const monthDate = startOfMonth(addMonths(rangeFrom, i));
       const monthKey = format(monthDate, "yyyy-MM");
-      monthlyData.set(monthKey, { inflow: 0, outflow: 0, count: 0 });
+      monthlyData.set(monthKey, { inflow: 0, outflow: 0, count: 0, transferIn: 0, transferOut: 0 });
     }
 
     // Aggregate transactions
@@ -66,8 +68,15 @@ export function useCashFlow() {
       
       const current = monthlyData.get(monthKey)!;
       const amount = Number(tx.amount) || 0;
+      const movementType = (tx as any).movement_type || (tx.type === "income" ? "INCOME" : "EXPENSE");
       
-      if (tx.type === "income") {
+      if (movementType === "TRANSFER") {
+        if (tx.type === "income") {
+          current.transferIn += amount;
+        } else {
+          current.transferOut += amount;
+        }
+      } else if (tx.type === "income") {
         current.inflow += amount;
       } else {
         current.outflow += amount;
@@ -95,6 +104,8 @@ export function useCashFlow() {
         balance,
         cumulativeBalance,
         transactionCount: data.count,
+        transferIn: data.transferIn,
+        transferOut: data.transferOut,
       });
     }
 
@@ -134,6 +145,8 @@ export function useCashFlow() {
     const totalInflow = cashFlowData.reduce((sum, d) => sum + d.inflow, 0);
     const totalOutflow = cashFlowData.reduce((sum, d) => sum + d.outflow, 0);
     const netCashFlow = totalInflow - totalOutflow;
+    const totalTransferIn = cashFlowData.reduce((sum, d) => sum + d.transferIn, 0);
+    const totalTransferOut = cashFlowData.reduce((sum, d) => sum + d.transferOut, 0);
     
     // Calculate trend (comparing last month to previous)
     const lastMonth = cashFlowData[cashFlowData.length - 1];
@@ -150,6 +163,8 @@ export function useCashFlow() {
       netCashFlow,
       trend,
       currentBalance: cashFlowData.length > 0 ? cashFlowData[cashFlowData.length - 1].cumulativeBalance : 0,
+      totalTransferIn,
+      totalTransferOut,
     };
   }, [cashFlowData]);
 

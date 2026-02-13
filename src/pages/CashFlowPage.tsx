@@ -202,7 +202,7 @@ export function CashFlowPage() {
               <TrendingUp className="w-6 h-6 text-success" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Total de Entradas</p>
+              <p className="text-sm text-muted-foreground font-medium">Entradas Operacionais</p>
               <AnimatedValue
                 value={totals.totalInflow}
                 prefix="R$ "
@@ -222,7 +222,7 @@ export function CashFlowPage() {
               <TrendingDown className="w-6 h-6 text-destructive" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Total de Saídas</p>
+              <p className="text-sm text-muted-foreground font-medium">Saídas Operacionais</p>
               <AnimatedValue
                 value={totals.totalOutflow}
                 prefix="R$ "
@@ -242,7 +242,7 @@ export function CashFlowPage() {
               <ArrowLeftRight className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Saldo Líquido</p>
+              <p className="text-sm text-muted-foreground font-medium">Saldo Operacional</p>
               <AnimatedValue
                 value={totals.netCashFlow}
                 prefix="R$ "
@@ -256,6 +256,41 @@ export function CashFlowPage() {
           </div>
         </CorporateCard>
       </div>
+
+      {/* Transfer Section */}
+      {(totals.totalTransferIn > 0 || totals.totalTransferOut > 0) && (
+        <Card className="border-border/50 shadow-premium-sm">
+          <CardHeader>
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <ArrowLeftRight className="w-5 h-5 text-info" />
+              Transferências Internas
+            </CardTitle>
+            <CardDescription>Movimentações entre contas próprias — não afetam o resultado operacional</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="flex flex-col gap-1 p-3 rounded-lg bg-success/5 border border-success/20">
+                <span className="text-xs text-muted-foreground">Entradas (Transferências)</span>
+                <span className="text-lg font-bold text-success">
+                  R$ {totals.totalTransferIn.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 p-3 rounded-lg bg-destructive/5 border border-destructive/20">
+                <span className="text-xs text-muted-foreground">Saídas (Transferências)</span>
+                <span className="text-lg font-bold text-destructive">
+                  R$ {totals.totalTransferOut.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1 p-3 rounded-lg bg-muted/50 border border-border">
+                <span className="text-xs text-muted-foreground">Saldo Total (com transferências)</span>
+                <span className="text-lg font-bold text-foreground">
+                  R$ {(totals.netCashFlow + totals.totalTransferIn - totals.totalTransferOut).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Gráfico de Fluxo de Caixa */}
       <Card className="glass-premium border-border/50 shadow-premium-md rounded-2xl overflow-hidden relative">

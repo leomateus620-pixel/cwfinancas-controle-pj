@@ -52,7 +52,7 @@ export function ExpensesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
+  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense", excludeTransfers: true });
 
   const filteredData = useMemo(() => {
     return transactions.filter((item) => {
