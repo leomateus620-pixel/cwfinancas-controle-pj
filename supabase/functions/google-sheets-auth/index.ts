@@ -34,8 +34,9 @@ Deno.serve(async (req) => {
         throw new Error("redirect_uri is required");
       }
 
-      // Check if user already has a refresh token (to decide on prompt)
+      // Check if user already has a refresh token and correct scopes
       let hasRefreshToken = false;
+      let hasRequiredScope = false;
       const authHeader = req.headers.get("Authorization");
       
       if (authHeader?.startsWith("Bearer ")) {
@@ -46,11 +47,17 @@ Deno.serve(async (req) => {
         if (userData?.user) {
           const { data: tokenData } = await supabase
             .from("google_oauth_tokens")
-            .select("refresh_token")
+            .select("refresh_token, scope")
             .eq("user_id", userData.user.id)
             .maybeSingle();
           
           hasRefreshToken = !!tokenData?.refresh_token;
+          // Check if stored scope includes drive.readonly (not just drive.metadata.readonly)
+          const storedScope = tokenData?.scope || "";
+          hasRequiredScope = storedScope.includes("drive.readonly") && !storedScope.match(/drive\.metadata\.readonly(?!.*drive\.readonly)/);
+          // More precise: check for the full scope URL or short name
+          hasRequiredScope = storedScope.includes("/auth/drive.readonly") || 
+            (storedScope.includes("drive.readonly") && storedScope.includes("spreadsheets.readonly"));
         }
       }
 
@@ -67,10 +74,10 @@ Deno.serve(async (req) => {
       authUrl.searchParams.set("access_type", "offline");
       authUrl.searchParams.set("include_granted_scopes", "true");
       
-      // Only use prompt=consent if user doesn't have a refresh token
-      // This ensures we get a refresh token on first auth
-      if (!hasRefreshToken) {
+      // Force consent if: no refresh token OR scope is outdated (missing drive.readonly)
+      if (!hasRefreshToken || !hasRequiredScope) {
         authUrl.searchParams.set("prompt", "consent");
+        console.log(`[${requestId}] Forcing consent: hasRefreshToken=${hasRefreshToken}, hasRequiredScope=${hasRequiredScope}`);
       }
 
       return new Response(

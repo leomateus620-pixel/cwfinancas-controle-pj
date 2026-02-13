@@ -84,13 +84,22 @@ Deno.serve(async (req) => {
 
     // Check if token is expired
     const isExpired = new Date(tokenData.expires_at) < new Date();
+
+    // Check if scope includes drive.readonly (not just drive.metadata.readonly)
+    const storedScope = tokenData.scope || "";
+    const hasDriveReadonly = storedScope.includes("/auth/drive.readonly") || 
+      (storedScope.includes("drive.readonly") && storedScope.includes("spreadsheets.readonly"));
+    const needsReauth = !hasDriveReadonly;
     
     return new Response(
       JSON.stringify({
         code: "CONNECTED",
-        message: "Conta Google conectada",
+        message: needsReauth 
+          ? "Permissões insuficientes. Reconecte para acessar planilhas compartilhadas."
+          : "Conta Google conectada",
         connected: true,
         token_expired: isExpired,
+        needs_reauth: needsReauth,
         scope: tokenData.scope,
         connected_at: tokenData.created_at,
         last_updated: tokenData.updated_at,

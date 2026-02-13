@@ -73,6 +73,7 @@ interface OAuthStatus {
   code: string;
   message: string;
   token_expired?: boolean;
+  needs_reauth?: boolean;
 }
 
 export function useGoogleSheets() {
