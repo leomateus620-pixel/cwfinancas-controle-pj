@@ -1,258 +1,263 @@
-import { useState, useCallback } from "react";
-import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, X, Eye, FileUp, Save, Loader2 } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Upload, FileSpreadsheet, CheckCircle2, AlertCircle, FileUp, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import * as XLSX from "xlsx";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { useTransactions } from "@/hooks/useTransactions";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
-interface ParsedData {
+type FlowState = "idle" | "uploading" | "previewing" | "selecting" | "importing" | "success" | "error";
+
+interface TabPreview {
+  title: string;
+  route: "DRE_ONLY" | "MONTHLY_TRANSACTIONS" | "IGNORE";
+  monthIndex?: number;
+  periodKey?: string;
+  rowCount?: number;
   headers: string[];
-  rows: any[][];
-  fileName: string;
+  preview_rows: string[][];
+  mapping: Record<string, string>;
 }
 
-interface ColumnMapping {
-  type: number | null;
-  description: number | null;
-  amount: number | null;
-  category: number | null;
-  date: number | null;
-  client_vendor: number | null;
+interface ImportResult {
+  total_scanned: number;
+  total_imported: number;
+  total_skipped: number;
+  total_errors: number;
+  warnings: Array<{ tab: string; row: number; message: string }>;
+  tab_summary: Array<{ tab: string; route: string; imported: number; skipped: number; errors: number }>;
 }
-
-const defaultMapping: ColumnMapping = {
-  type: null,
-  description: null,
-  amount: null,
-  category: null,
-  date: null,
-  client_vendor: null,
-};
 
 export function UploadPage() {
+  const [flowState, setFlowState] = useState<FlowState>("idle");
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "parsing" | "mapping" | "importing" | "success" | "error">("idle");
-  const [parsedData, setParsedData] = useState<ParsedData | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [columnMapping, setColumnMapping] = useState<ColumnMapping>(defaultMapping);
-  const [importProgress, setImportProgress] = useState(0);
 
+  // Preview state
+  const [tabs, setTabs] = useState<TabPreview[]>([]);
+  const [selectedTabs, setSelectedTabs] = useState<Set<string>>(new Set());
+  const [previewTab, setPreviewTab] = useState<string | null>(null);
+  const [fileName, setFileName] = useState("");
+
+  // Import state
+  const [fileId, setFileId] = useState<string | null>(null);
+  const [filePath, setFilePath] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<Record<string, unknown>>({});
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [showWarnings, setShowWarnings] = useState(false);
+
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { user } = useAuth();
-  const { createTransaction } = useTransactions();
   const { toast } = useToast();
 
-  const processFile = useCallback((file: File) => {
-    if (!file.name.match(/\.(xlsx|xls)$/i)) {
-      setErrorMessage("Por favor, selecione um arquivo Excel válido (.xlsx ou .xls)");
-      setUploadStatus("error");
-      return;
-    }
-
-    setUploadStatus("parsing");
-    setUploadProgress(0);
-
-    const reader = new FileReader();
-    
-    reader.onprogress = (e) => {
-      if (e.lengthComputable) {
-        setUploadProgress((e.loaded / e.total) * 50);
-      }
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
     };
-
-    reader.onload = (e) => {
-      try {
-        setUploadProgress(60);
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        
-        setUploadProgress(80);
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
-        
-        if (jsonData.length < 2) {
-          throw new Error("O arquivo precisa ter pelo menos uma linha de cabeçalho e uma linha de dados");
-        }
-
-        const headers = jsonData[0] as string[];
-        const rows = jsonData.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ""));
-
-        setUploadProgress(100);
-        setParsedData({ headers, rows, fileName: file.name });
-        setColumnMapping(defaultMapping);
-        setUploadStatus("mapping");
-      } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Erro ao processar arquivo");
-        setUploadStatus("error");
-      }
-    };
-
-    reader.onerror = () => {
-      setErrorMessage("Erro ao ler o arquivo");
-      setUploadStatus("error");
-    };
-
-    reader.readAsArrayBuffer(file);
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) processFile(file);
-  }, [processFile]);
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processFile(file);
-  }, [processFile]);
-
-  const resetUpload = () => {
-    setUploadStatus("idle");
-    setParsedData(null);
+  const resetAll = () => {
+    setFlowState("idle");
     setErrorMessage("");
     setUploadProgress(0);
-    setColumnMapping(defaultMapping);
-    setImportProgress(0);
+    setTabs([]);
+    setSelectedTabs(new Set());
+    setPreviewTab(null);
+    setFileName("");
+    setFileId(null);
+    setFilePath(null);
+    setImportProgress({});
+    setImportResult(null);
+    setShowWarnings(false);
+    if (pollingRef.current) clearInterval(pollingRef.current);
   };
 
-  const handleMappingChange = (field: keyof ColumnMapping, value: string) => {
-    setColumnMapping(prev => ({
-      ...prev,
-      [field]: value === "none" ? null : parseInt(value, 10),
-    }));
-  };
-
-  const isValidMapping = () => {
-    return (
-      columnMapping.description !== null &&
-      columnMapping.amount !== null &&
-      columnMapping.date !== null
-    );
-  };
-
-  const parseExcelDate = (value: any): string => {
-    if (typeof value === "number") {
-      // Excel serial date
-      const date = new Date((value - 25569) * 86400 * 1000);
-      return date.toISOString().split("T")[0];
+  // ===== Step 1: Upload file to storage =====
+  const handleFile = useCallback(async (file: File) => {
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+      setErrorMessage("Selecione um arquivo Excel válido (.xlsx ou .xls)");
+      setFlowState("error");
+      return;
     }
-    if (typeof value === "string") {
-      // Try to parse as date string
-      const date = new Date(value);
-      if (!isNaN(date.getTime())) {
-        return date.toISOString().split("T")[0];
-      }
-      // Try DD/MM/YYYY format
-      const parts = value.split("/");
-      if (parts.length === 3) {
-        return `${parts[2]}-${parts[1].padStart(2, "0")}-${parts[0].padStart(2, "0")}`;
-      }
-    }
-    return new Date().toISOString().split("T")[0];
-  };
+    if (!user) return;
 
-  const importData = async () => {
-    if (!parsedData || !user) return;
-
-    setUploadStatus("importing");
-    setImportProgress(0);
+    setFlowState("uploading");
+    setUploadProgress(10);
+    setFileName(file.name);
 
     try {
-      // Record the upload in uploaded_files
-      const { data: uploadRecord, error: uploadError } = await supabase
+      // Upload to storage
+      const path = `${user.id}/${Date.now()}_${file.name}`;
+      setUploadProgress(30);
+
+      const { error: uploadError } = await supabase.storage
+        .from("excel-uploads")
+        .upload(path, file, { upsert: true });
+
+      if (uploadError) throw new Error(`Upload falhou: ${uploadError.message}`);
+      setUploadProgress(50);
+
+      // Create uploaded_files record
+      const { data: record, error: recordError } = await supabase
         .from("uploaded_files")
         .insert({
           user_id: user.id,
-          file_name: parsedData.fileName,
-          status: "processing",
+          file_name: file.name,
+          file_path: path,
+          status: "uploaded",
           rows_imported: 0,
         })
         .select()
         .single();
 
-      if (uploadError) throw uploadError;
+      if (recordError || !record) throw new Error("Falha ao registrar upload");
+      setFileId(record.id);
+      setFilePath(path);
+      setUploadProgress(70);
 
-      let successCount = 0;
-      const totalRows = parsedData.rows.length;
+      // Call Edge Function in preview mode
+      setFlowState("previewing");
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
 
-      // Import transactions in batches
-      const batchSize = 50;
-      for (let i = 0; i < totalRows; i += batchSize) {
-        const batch = parsedData.rows.slice(i, i + batchSize);
-        
-        const transactions = batch.map(row => {
-          const rawAmount = columnMapping.amount !== null ? row[columnMapping.amount] : 0;
-          const amount = Math.abs(parseFloat(String(rawAmount).replace(/[^\d.-]/g, "")) || 0);
-          
-          // Determine type based on type column or amount sign
-          let type: "income" | "expense" = "expense";
-          if (columnMapping.type !== null) {
-            const typeValue = String(row[columnMapping.type]).toLowerCase();
-            type = typeValue.includes("receita") || typeValue.includes("entrada") || typeValue.includes("income") 
-              ? "income" 
-              : "expense";
-          } else if (rawAmount && parseFloat(String(rawAmount).replace(/[^\d.-]/g, "")) > 0) {
-            type = "income";
+      const response = await supabase.functions.invoke("parse-excel-upload", {
+        body: {
+          file_path: path,
+          file_id: record.id,
+          file_name: file.name,
+          mode: "preview",
+        },
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      });
+
+      if (response.error) throw new Error(response.error.message || "Erro no preview");
+      const result = response.data;
+      if (!result?.success) throw new Error(result?.error || "Preview falhou");
+
+      setTabs(result.tabs || []);
+      // Auto-select monthly tabs
+      const monthlyNames = new Set<string>(
+        (result.tabs || [])
+          .filter((t: TabPreview) => t.route === "MONTHLY_TRANSACTIONS")
+          .map((t: TabPreview) => t.title)
+      );
+      setSelectedTabs(monthlyNames);
+
+      // Set first monthly tab as preview
+      const firstMonthly = (result.tabs || []).find((t: TabPreview) => t.route === "MONTHLY_TRANSACTIONS");
+      if (firstMonthly) setPreviewTab(firstMonthly.title);
+
+      setUploadProgress(100);
+      setFlowState("selecting");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Erro inesperado");
+      setFlowState("error");
+    }
+  }, [user]);
+
+  // ===== Step 2: Import selected tabs =====
+  const startImport = async () => {
+    if (!fileId || !filePath || !user) return;
+
+    setFlowState("importing");
+    setImportProgress({});
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+
+      // Start polling for progress
+      pollingRef.current = setInterval(async () => {
+        const { data } = await supabase
+          .from("uploaded_files")
+          .select("progress, status, warnings, tab_summary, rows_imported")
+          .eq("id", fileId)
+          .single();
+
+        if (data) {
+          const progress = data.progress as Record<string, unknown> | null;
+          if (progress) setImportProgress(progress);
+
+          if (data.status === "success" || data.status === "partial" || data.status === "error" || data.status === "timeout") {
+            if (pollingRef.current) clearInterval(pollingRef.current);
           }
-
-          return {
-            user_id: user.id,
-            type,
-            description: columnMapping.description !== null ? String(row[columnMapping.description] || "Sem descrição") : "Sem descrição",
-            amount,
-            category: columnMapping.category !== null ? String(row[columnMapping.category] || "Outros") : "Outros",
-            date: columnMapping.date !== null ? parseExcelDate(row[columnMapping.date]) : new Date().toISOString().split("T")[0],
-            client_vendor: columnMapping.client_vendor !== null ? String(row[columnMapping.client_vendor] || null) : null,
-          };
-        }).filter(t => t.amount > 0);
-
-        if (transactions.length > 0) {
-          const { error: insertError } = await supabase
-            .from("transactions")
-            .insert(transactions);
-
-          if (insertError) throw insertError;
-          successCount += transactions.length;
         }
+      }, 1500);
 
-        setImportProgress(Math.round(((i + batch.length) / totalRows) * 100));
+      const response = await supabase.functions.invoke("parse-excel-upload", {
+        body: {
+          file_path: filePath,
+          file_id: fileId,
+          file_name: fileName,
+          mode: "import",
+          selected_tabs: Array.from(selectedTabs),
+        },
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      });
+
+      if (pollingRef.current) clearInterval(pollingRef.current);
+
+      if (response.error) throw new Error(response.error.message || "Erro na importação");
+      const result = response.data;
+
+      if (!result?.success && !result?.total_imported) {
+        throw new Error(result?.error || "Importação falhou");
       }
 
-      // Update upload record
-      await supabase
-        .from("uploaded_files")
-        .update({
-          status: "success",
-          rows_imported: successCount,
-        })
-        .eq("id", uploadRecord.id);
+      setImportResult(result);
+      setFlowState("success");
 
-      setUploadStatus("success");
       toast({
-        title: "Dados importados com sucesso!",
-        description: `${successCount} transações foram adicionadas ao sistema.`,
+        title: "Importação concluída!",
+        description: `${result.total_imported} transações importadas de ${result.tab_summary?.length || 0} abas.`,
       });
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Erro ao importar dados");
-      setUploadStatus("error");
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      setErrorMessage(err instanceof Error ? err.message : "Erro na importação");
+      setFlowState("error");
     }
   };
+
+  const toggleTab = (title: string) => {
+    setSelectedTabs(prev => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+  }, [handleFile]);
+
+  const progressPercent = (() => {
+    const p = importProgress as { tabs_total?: number; tabs_done?: number; rows_read?: number; rows_imported?: number };
+    if (!p.tabs_total) return 0;
+    return Math.round(((p.tabs_done || 0) / p.tabs_total) * 100);
+  })();
+
+  const currentPreviewTab = tabs.find(t => t.title === previewTab);
 
   return (
     <div className="space-y-6">
@@ -262,11 +267,11 @@ export function UploadPage() {
           Upload de Dados
         </h1>
         <p className="text-muted-foreground mt-1">
-          Importe seus dados financeiros de arquivos Excel.
+          Importe seus dados financeiros de arquivos Excel (.xlsx / .xls).
         </p>
       </div>
-      
-      {/* Área de Upload */}
+
+      {/* Upload Area */}
       <Card className="border-border/50 shadow-premium-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -274,44 +279,30 @@ export function UploadPage() {
             Upload de Excel
           </CardTitle>
           <CardDescription>
-            Arraste e solte seus arquivos .xlsx ou clique para selecionar
+            Arraste e solte ou clique para selecionar. O processamento é feito no servidor.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {uploadStatus === "idle" && (
+          {/* IDLE */}
+          {flowState === "idle" && (
             <div
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
               className={cn(
-                "border-2 border-dashed rounded-2xl p-12 text-center transition-premium cursor-pointer",
-                isDragging 
-                  ? "border-primary bg-primary/5" 
-                  : "border-border hover:border-primary/50 hover:bg-accent/30"
+                "border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer",
+                isDragging ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-accent/30"
               )}
             >
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleFileSelect}
-                className="hidden"
-                id="file-upload"
-              />
+              <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect} className="hidden" id="file-upload" />
               <label htmlFor="file-upload" className="cursor-pointer">
                 <div className="flex flex-col items-center gap-4">
-                  <div className={cn(
-                    "w-16 h-16 rounded-2xl flex items-center justify-center transition-premium",
-                    isDragging ? "bg-primary/20" : "bg-primary/10"
-                  )}>
+                  <div className={cn("w-16 h-16 rounded-2xl flex items-center justify-center", isDragging ? "bg-primary/20" : "bg-primary/10")}>
                     <Upload className={cn("w-8 h-8", isDragging ? "text-primary" : "text-primary/80")} />
                   </div>
                   <div>
-                    <p className="text-foreground font-medium">
-                      {isDragging ? "Solte o arquivo aqui" : "Arraste seu arquivo Excel aqui"}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Suporta arquivos .xlsx e .xls até 10MB
-                    </p>
+                    <p className="text-foreground font-medium">{isDragging ? "Solte o arquivo aqui" : "Arraste seu arquivo Excel aqui"}</p>
+                    <p className="text-sm text-muted-foreground mt-1">Suporta .xlsx e .xls até 20MB</p>
                   </div>
                   <Button variant="outline" className="mt-2">Selecionar Arquivo</Button>
                 </div>
@@ -319,231 +310,246 @@ export function UploadPage() {
             </div>
           )}
 
-          {uploadStatus === "parsing" && (
+          {/* UPLOADING / PREVIEWING */}
+          {(flowState === "uploading" || flowState === "previewing") && (
             <div className="p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <FileSpreadsheet className="w-8 h-8 text-primary animate-pulse" />
               </div>
-              <p className="text-foreground font-medium mb-4">Processando arquivo...</p>
+              <p className="text-foreground font-medium mb-4">
+                {flowState === "uploading" ? "Enviando arquivo..." : "Analisando planilha no servidor..."}
+              </p>
               <Progress value={uploadProgress} className="max-w-xs mx-auto" />
               <p className="text-sm text-muted-foreground mt-2">{uploadProgress.toFixed(0)}%</p>
             </div>
           )}
 
-          {uploadStatus === "importing" && (
+          {/* IMPORTING */}
+          {flowState === "importing" && (
             <div className="p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <Loader2 className="w-8 h-8 text-primary animate-spin" />
               </div>
-              <p className="text-foreground font-medium mb-4">Importando dados...</p>
-              <Progress value={importProgress} className="max-w-xs mx-auto" />
-              <p className="text-sm text-muted-foreground mt-2">{importProgress}%</p>
+              <p className="text-foreground font-medium mb-2">Importando dados...</p>
+              <p className="text-sm text-muted-foreground mb-4">
+                {(importProgress as Record<string, unknown>).current_tab
+                  ? `Aba: ${(importProgress as Record<string, unknown>).current_tab}`
+                  : "Preparando..."}
+              </p>
+              <Progress value={progressPercent} className="max-w-xs mx-auto" />
+              <p className="text-sm text-muted-foreground mt-2">
+                {String((importProgress as Record<string, unknown>).tabs_done ?? 0)}/{String((importProgress as Record<string, unknown>).tabs_total ?? "?")} abas •{" "}
+                {String((importProgress as Record<string, unknown>).rows_imported ?? 0)} linhas importadas
+              </p>
             </div>
           )}
 
-          {uploadStatus === "error" && (
+          {/* ERROR */}
+          {flowState === "error" && (
             <div className="p-12 text-center">
               <div className="w-16 h-16 rounded-2xl bg-destructive/10 flex items-center justify-center mx-auto mb-4">
                 <AlertCircle className="w-8 h-8 text-destructive" />
               </div>
-              <p className="text-foreground font-medium mb-2">Erro no Upload</p>
+              <p className="text-foreground font-medium mb-2">Erro</p>
               <p className="text-sm text-muted-foreground mb-4">{errorMessage}</p>
-              <Button onClick={resetUpload}>Tentar Novamente</Button>
+              <Button onClick={resetAll}>Tentar Novamente</Button>
             </div>
           )}
 
-          {uploadStatus === "success" && (
-            <div className="p-12 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-success/10 flex items-center justify-center mx-auto mb-4">
-                <CheckCircle2 className="w-8 h-8 text-success" />
-              </div>
-              <p className="text-foreground font-medium mb-2">Dados Importados com Sucesso!</p>
-              <p className="text-sm text-muted-foreground mb-4">
-                Seus dados estão disponíveis no dashboard.
-              </p>
-              <Button onClick={resetUpload}>Importar Novo Arquivo</Button>
-            </div>
-          )}
-
-          {uploadStatus === "mapping" && parsedData && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-4 rounded-xl bg-primary/5 border border-primary/20">
-                <div className="flex items-center gap-3">
-                  <FileSpreadsheet className="w-6 h-6 text-primary" />
-                  <div>
-                    <p className="font-medium text-foreground">{parsedData.fileName}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {parsedData.rows.length} linhas • {parsedData.headers.length} colunas
-                    </p>
-                  </div>
+          {/* SUCCESS */}
+          {flowState === "success" && importResult && (
+            <div className="space-y-6">
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-primary" />
                 </div>
-                <Button variant="ghost" size="icon" onClick={resetUpload}>
-                  <X className="w-4 h-4" />
-                </Button>
+                <p className="text-foreground font-medium mb-2">Importação Concluída!</p>
+                <div className="flex justify-center gap-6 mt-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-foreground">{importResult.total_imported}</p>
+                    <p className="text-xs text-muted-foreground">Importadas</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-muted-foreground">{importResult.total_skipped}</p>
+                    <p className="text-xs text-muted-foreground">Ignoradas</p>
+                  </div>
+                  {importResult.total_errors > 0 && (
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-destructive">{importResult.total_errors}</p>
+                      <p className="text-xs text-muted-foreground">Erros</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tab summary */}
+              {importResult.tab_summary && importResult.tab_summary.length > 0 && (
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Aba</TableHead>
+                        <TableHead className="text-right">Importadas</TableHead>
+                        <TableHead className="text-right">Ignoradas</TableHead>
+                        <TableHead className="text-right">Erros</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {importResult.tab_summary.map((s, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">{s.tab}</TableCell>
+                          <TableCell className="text-right">{s.imported}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{s.skipped}</TableCell>
+                          <TableCell className="text-right text-destructive">{s.errors}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {/* Warnings */}
+              {importResult.warnings && importResult.warnings.length > 0 && (
+                <Collapsible open={showWarnings} onOpenChange={setShowWarnings}>
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="w-full justify-between">
+                      <span className="text-sm text-muted-foreground">
+                        {importResult.warnings.length} avisos
+                      </span>
+                      {showWarnings ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="max-h-60 overflow-auto rounded-lg border border-border p-3 space-y-1">
+                      {importResult.warnings.map((w, i) => (
+                        <p key={i} className="text-xs text-muted-foreground">
+                          <span className="font-medium">{w.tab}</span> linha {w.row}: {w.message}
+                        </p>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+
+              <div className="text-center">
+                <Button onClick={resetAll}>Importar Novo Arquivo</Button>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Mapeamento de Colunas */}
-      {parsedData && uploadStatus === "mapping" && (
-        <Card className="border-border/50 shadow-premium-sm">
-          <CardHeader>
-            <CardTitle>Mapeamento de Colunas</CardTitle>
-            <CardDescription>
-              Selecione quais colunas do arquivo correspondem a cada campo
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Tab Selection */}
+      {flowState === "selecting" && tabs.length > 0 && (
+        <>
+          <Card className="border-border/50 shadow-premium-sm">
+            <CardHeader>
+              <CardTitle>Seleção de Abas</CardTitle>
+              <CardDescription>
+                {fileName} — {tabs.length} abas detectadas. Selecione quais importar.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-2">
-                <Label>Descrição *</Label>
-                <Select onValueChange={(v) => handleMappingChange("description", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a coluna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma</SelectItem>
-                    {parsedData.headers.map((header, i) => (
-                      <SelectItem key={i} value={String(i)}>{header || `Coluna ${i + 1}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {tabs.map(tab => {
+                  const isSelected = selectedTabs.has(tab.title);
+                  const isMonthly = tab.route === "MONTHLY_TRANSACTIONS";
+                  const isDre = tab.route === "DRE_ONLY";
+                  const isIgnored = tab.route === "IGNORE";
+
+                  return (
+                    <div
+                      key={tab.title}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-lg border transition-colors cursor-pointer",
+                        isSelected ? "border-primary/50 bg-primary/5" : "border-border",
+                        isIgnored && "opacity-50",
+                      )}
+                      onClick={() => {
+                        if (!isIgnored) toggleTab(tab.title);
+                        setPreviewTab(tab.title);
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          checked={isSelected}
+                          disabled={isIgnored}
+                          onCheckedChange={() => toggleTab(tab.title)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div>
+                          <span className="font-medium text-foreground">{tab.title}</span>
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            {(tab.rowCount || 0) - 1} linhas
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isMonthly && <Badge variant="secondary">{tab.periodKey}</Badge>}
+                        {isDre && <Badge variant="secondary" className="border-accent">DRE</Badge>}
+                        {isIgnored && <Badge variant="outline" className="text-muted-foreground">Ignorada</Badge>}
+                        {Object.keys(tab.mapping || {}).length > 0 && (
+                          <Badge variant="outline" className="text-xs">
+                            {Object.keys(tab.mapping).filter(k => k !== "account").join(", ")}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              <div className="space-y-2">
-                <Label>Valor *</Label>
-                <Select onValueChange={(v) => handleMappingChange("amount", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a coluna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma</SelectItem>
-                    {parsedData.headers.map((header, i) => (
-                      <SelectItem key={i} value={String(i)}>{header || `Coluna ${i + 1}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex justify-between items-center mt-6">
+                <Button variant="outline" onClick={resetAll}>Cancelar</Button>
+                <Button onClick={startImport} disabled={selectedTabs.size === 0}>
+                  Importar {selectedTabs.size} aba{selectedTabs.size !== 1 ? "s" : ""}
+                </Button>
               </div>
+            </CardContent>
+          </Card>
 
-              <div className="space-y-2">
-                <Label>Data *</Label>
-                <Select onValueChange={(v) => handleMappingChange("date", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a coluna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma</SelectItem>
-                    {parsedData.headers.map((header, i) => (
-                      <SelectItem key={i} value={String(i)}>{header || `Coluna ${i + 1}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tipo (Receita/Despesa)</Label>
-                <Select onValueChange={(v) => handleMappingChange("type", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a coluna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Automático (pelo valor)</SelectItem>
-                    {parsedData.headers.map((header, i) => (
-                      <SelectItem key={i} value={String(i)}>{header || `Coluna ${i + 1}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Categoria</Label>
-                <Select onValueChange={(v) => handleMappingChange("category", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a coluna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma (usar "Outros")</SelectItem>
-                    {parsedData.headers.map((header, i) => (
-                      <SelectItem key={i} value={String(i)}>{header || `Coluna ${i + 1}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Cliente/Fornecedor</Label>
-                <Select onValueChange={(v) => handleMappingChange("client_vendor", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a coluna" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhuma</SelectItem>
-                    {parsedData.headers.map((header, i) => (
-                      <SelectItem key={i} value={String(i)}>{header || `Coluna ${i + 1}`}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4">
-              <Button variant="outline" onClick={resetUpload}>Cancelar</Button>
-              <Button onClick={importData} disabled={!isValidMapping()} className="gap-2">
-                <Save className="w-4 h-4" />
-                Importar {parsedData.rows.length} Linhas
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Preview dos Dados */}
-      {parsedData && uploadStatus === "mapping" && (
-        <Card className="border-border/50 shadow-premium-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Eye className="w-5 h-5 text-primary" />
-              Preview dos Dados
-            </CardTitle>
-            <CardDescription>
-              Primeiras 10 linhas do arquivo importado
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-lg border border-border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    {parsedData.headers.map((header, i) => (
-                      <TableHead key={i} className="whitespace-nowrap">{header || `Coluna ${i + 1}`}</TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {parsedData.rows.slice(0, 10).map((row, rowIndex) => (
-                    <TableRow key={rowIndex}>
-                      {parsedData.headers.map((_, colIndex) => (
-                        <TableCell key={colIndex} className="whitespace-nowrap">
-                          {row[colIndex] ?? "-"}
-                        </TableCell>
-                      ))}
-                    </TableRow>
+          {/* Preview Table */}
+          {currentPreviewTab && currentPreviewTab.headers.length > 0 && (
+            <Card className="border-border/50 shadow-premium-sm">
+              <CardHeader>
+                <CardTitle className="text-base">Preview: {currentPreviewTab.title}</CardTitle>
+                <CardDescription>
+                  Mapeamento detectado:{" "}
+                  {Object.entries(currentPreviewTab.mapping || {}).map(([k, v]) => (
+                    <span key={k} className="inline-block mr-2">
+                      <span className="font-medium">{k}</span>→<span className="text-primary">{v}</span>
+                    </span>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-            {parsedData.rows.length > 10 && (
-              <p className="text-sm text-muted-foreground text-center mt-4">
-                Mostrando 10 de {parsedData.rows.length} linhas
-              </p>
-            )}
-          </CardContent>
-        </Card>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-auto max-h-80 rounded-lg border border-border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {currentPreviewTab.headers.map((h, i) => (
+                          <TableHead key={i} className="text-xs whitespace-nowrap">{h || `Col ${i + 1}`}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {currentPreviewTab.preview_rows.map((row, ri) => (
+                        <TableRow key={ri}>
+                          {row.map((cell, ci) => (
+                            <TableCell key={ci} className="text-xs whitespace-nowrap max-w-[200px] truncate">
+                              {cell}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
       )}
     </div>
   );
 }
-
-export default UploadPage;
