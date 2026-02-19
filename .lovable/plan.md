@@ -1,94 +1,164 @@
 
+# Importacao Excel Robusta via Edge Function
 
-# Correcao: Erro de Sincronizacao em Planilhas .xlsx
+## Resumo
 
-## Causa Raiz
+Reescrever completamente o fluxo de importacao Excel para usar uma **Edge Function server-side** que reutiliza toda a logica ja validada do `sheets-sync-all-tabs` (parseBRL, parseDate, autoDetectMapping, detectMovementType, batch upsert com idempotencia).
 
-O mesmo problema do preview: as funcoes de sincronizacao usam a **Google Sheets API** que NAO suporta arquivos `.xlsx`. O erro nos logs confirma:
+O fluxo atual (UploadPage.tsx) faz parse no browser com logica simplificada que corrompe datas e valores. O novo fluxo envia o arquivo para o storage, chama a Edge Function que faz o parse robusto, e o frontend apenas acompanha o progresso.
+
+## Arquitetura
 
 ```text
-"This operation is not supported for this document" (FAILED_PRECONDITION)
+[Browser]                          [Backend]
+   |                                  |
+   |  1. Upload .xlsx to storage      |
+   |  bucket "excel-uploads"          |
+   |--------------------------------->|
+   |                                  |
+   |  2. POST /parse-excel-upload     |
+   |  { file_path, selected_tabs? }   |
+   |--------------------------------->|
+   |                                  |  3. Download from storage
+   |                                  |  4. XLSX.read(cellDates=true)
+   |                                  |  5. Classify tabs (tab router)
+   |                                  |
+   |  (se mode=preview)               |
+   |  <- { tabs[], preview_rows[] }   |
+   |<---------------------------------|
+   |                                  |
+   |  6. POST /parse-excel-upload     |
+   |  { file_path, tabs, mode=import }|
+   |--------------------------------->|
+   |                                  |  7. autoDetectMapping por aba
+   |                                  |  8. parseBRL + parseDate por linha
+   |                                  |  9. detectMovementType
+   |                                  | 10. batch upsert (50/lote)
+   |                                  | 11. Update uploaded_files status
+   |  <- { imported, skipped, warns } |
+   |<---------------------------------|
+   |                                  |
+   | 12. Poll uploaded_files status   |
+   |--------------------------------->|
 ```
 
-Isso afeta **6 edge functions** que chamam `sheets.googleapis.com/v4/spreadsheets/{id}`:
+## Componentes
 
-| Funcao | Uso | Criticidade |
+### 1. Edge Function: `parse-excel-upload`
+
+Nova edge function que recebe o caminho do arquivo no storage e processa server-side.
+
+**Dois modos de operacao:**
+
+- **`preview`**: Faz parse do arquivo, classifica abas (tab router existente), retorna lista de abas com tipo (mensal/DRE/ignorar) + primeiras 10 linhas de preview + mapeamento automatico detectado. NAO importa dados.
+- **`import`**: Recebe abas selecionadas, faz parse completo, aplica normalizer, batch upsert com idempotencia.
+
+**Logica reutilizada de `sheets-sync-all-tabs`:**
+- `parseBRL()` - parse robusto de moeda pt-BR
+- `parseDate()` - parse de datas (serial Excel, dd/mm/yyyy, ISO, fallback)
+- `autoDetectMapping()` - deteccao automatica de colunas
+- `extractAmount()` - suporta coluna unica ou credito/debito separados
+- `isSkippableRow()` - filtra headers repetidos e totalizadores
+- `detectMovementType()` - classifica INCOME/EXPENSE/TRANSFER
+- `classifyTab()` - roteador de abas (mensal vs DRE vs ignorar)
+- `generateRowHash()` + `external_row_key` - idempotencia
+
+**Diferencas do fluxo Google Sheets:**
+- Leitura do arquivo via Supabase Storage (nao Google Drive)
+- `XLSX.read()` com `cellDates: true` para converter datas automaticamente
+- `source = "excel"` em vez de `"sheets"`
+- Sem refresh token / OAuth
+- Job tracking via tabela `uploaded_files` (ja existe)
+
+**Tratamento de erros:**
+- Linha com erro vira warning, nao quebra a importacao
+- So para se o arquivo estiver corrompido (XLSX.read falhar)
+- Retorna contadores detalhados: importadas, ignoradas (valor=0), warnings, erros
+
+### 2. UploadPage.tsx - Reescrita completa
+
+**Novo fluxo de estados:**
+
+```text
+idle -> uploading -> previewing -> selecting_tabs -> importing -> success/error
+```
+
+**Etapa 1 - Upload:** Envia arquivo para bucket `excel-uploads` via Supabase Storage.
+
+**Etapa 2 - Preview:** Chama Edge Function com `mode=preview`. Mostra:
+- Lista de abas classificadas (mensais com checkbox, DRE separado, ignoradas em cinza)
+- Mapeamento automatico detectado para cada aba
+- Preview das primeiras 10 linhas da primeira aba
+
+**Etapa 3 - Selecao de abas:** Usuario escolhe:
+- Quais abas mensais importar (toggle individual ou intervalo)
+- Se importar aba DRE (vai para tabela dre_lines, nao transactions)
+- Confirma mapeamento (pode ajustar se quiser)
+
+**Etapa 4 - Importacao:** Chama Edge Function com `mode=import` + abas selecionadas. Mostra progresso em tempo real via polling da tabela `uploaded_files`.
+
+**Etapa 5 - Resultado:** Mostra resumo detalhado:
+- Total importado / ignorado / warnings / erros
+- Lista de warnings expansivel
+
+### 3. Tabela `uploaded_files` - Ajustes
+
+Adicionar colunas para suportar progresso e detalhes:
+
+| Coluna | Tipo | Descricao |
 |---|---|---|
-| `google-sheets-sync` | Sincroniza aba unica | ALTA (erro reportado) |
-| `sheets-sync-all-tabs` | Sincroniza todas as abas | ALTA |
-| `ai-profile-sheet` | Perfila a planilha com IA | MEDIA |
-| `sheets-preview-mapping` | Preview de mapeamento | MEDIA |
-| `dre-sync` | Sincroniza DRE | MEDIA |
-| `google-list-sheets` | Lista abas de uma planilha | MEDIA |
+| `progress` | jsonb | Progresso detalhado: tabs_total, tabs_done, rows_read, rows_imported |
+| `warnings` | jsonb | Lista de warnings (linhas com problemas menores) |
+| `tab_summary` | jsonb | Resumo por aba: nome, importadas, ignoradas, erros |
 
-## Solucao
+### 4. Config: `supabase/config.toml`
 
-Criar um modulo utilitario compartilhado (inline em cada funcao, pois edge functions nao suportam imports entre pastas) que detecta o tipo do arquivo e usa o caminho correto:
-
-- **Google Sheets nativo** -> Sheets API (fluxo atual)
-- **Excel .xlsx** -> Drive API download + SheetJS parse
-
-### Funcoes auxiliares a adicionar em cada edge function afetada
-
-```text
-1. getFileMimeType(accessToken, fileId)
-   -> GET https://www.googleapis.com/drive/v3/files/{id}?fields=mimeType,name
-   -> Retorna { mimeType, name }
-
-2. downloadAndParseXlsx(accessToken, fileId, sheetName?)
-   -> GET https://www.googleapis.com/drive/v3/files/{id}?alt=media
-   -> XLSX.read(data)
-   -> Retorna { headers, rows, sheetNames }
+Adicionar entrada para nova funcao:
+```toml
+[functions.parse-excel-upload]
+verify_jwt = false
 ```
 
-### Mudancas por funcao
+### 5. Storage RLS
 
-**1. `google-sheets-sync/index.ts`** (prioridade maxima)
-- Antes de chamar a Sheets API (linhas 529-554), verificar mimeType
-- Se `.xlsx`: baixar via Drive API, parsear com SheetJS, extrair headers e rows
-- O restante do processamento (mapping, upsert) permanece identico
+Verificar que o bucket `excel-uploads` permite INSERT e SELECT para usuarios autenticados (policies ja podem existir, mas precisam ser validadas).
 
-**2. `sheets-sync-all-tabs/index.ts`** (prioridade alta)
-- Na funcao que busca metadados (linha 642) e dados (linha 329), adicionar deteccao de mimeType
-- Se `.xlsx`: usar SheetJS para listar abas e ler dados por aba
+## Detalhes tecnicos importantes
 
-**3. `ai-profile-sheet/index.ts`** (prioridade media)
-- Na leitura de metadados (linha 362) e dados (linha 383), adicionar fallback para `.xlsx`
+### Parse de datas com cellDates
 
-**4. `sheets-preview-mapping/index.ts`** (prioridade media)
-- Na leitura de dados (linha 371), adicionar fallback para `.xlsx`
+```text
+XLSX.read(data, { type: "array", cellDates: true })
+```
 
-**5. `dre-sync/index.ts`** (prioridade media)
-- Na leitura de metadados (linha 240) e dados (linha 260), adicionar fallback para `.xlsx`
+Quando `cellDates=true`, o SheetJS converte serials Excel em objetos Date nativos do JS. A funcao `parseDate()` sera ajustada para aceitar objetos Date alem de strings e numeros.
 
-**6. `google-list-sheets/index.ts`** (prioridade media)
-- Na listagem de abas (linha 154), adicionar fallback para `.xlsx`
+### Armazenamento de valores
 
-## Detalhe tecnico
+O sistema atual armazena `amount` como `NUMERIC(14,2)` no banco (nao centavos). Isso ja e o padrao do app. O plano NAO muda para centavos para manter consistencia -- o trigger `validate_amount_precision` ja arredonda para 2 casas.
 
-Cada funcao recebera:
-- `import * as XLSX from "https://esm.sh/xlsx@0.18.5";` no topo
-- Funcao `getFileMimeType()` para detectar o tipo
-- Funcao `readSheetData()` que abstrai a leitura (Sheets API vs Drive+XLSX)
-- Logica condicional no ponto onde a Sheets API e chamada
+Nota: o pedido do usuario mencionava centavos, mas o sistema inteiro ja opera com decimais (ex: 1234.56 no banco = R$ 1.234,56 na tela). Mudar para centavos quebraria todo o app. Manter o padrao atual.
 
-O formato de saida (headers + rows como `string[][]`) sera identico ao da Sheets API, garantindo que nenhuma logica downstream precise mudar.
+### Idempotencia
 
-## Impacto
+`external_row_key = "excel:{file_name}:{tab_name}:{row_number}:{row_hash}"`
 
-- **Frontend**: nenhuma alteracao
-- **Logica de processamento**: nenhuma alteracao (mapping, upsert, auditoria)
-- **Compatibilidade**: planilhas nativas continuam funcionando igual
-- **Novas capacidades**: `.xlsx` compartilhados via Drive passam a sincronizar
+Permite reimportar o mesmo arquivo sem duplicar. Usa upsert com ON CONFLICT.
 
-## Arquivos modificados
+## Arquivos criados/modificados
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/google-sheets-sync/index.ts` | Adicionar deteccao mimeType + fallback SheetJS |
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Adicionar deteccao mimeType + fallback SheetJS |
-| `supabase/functions/ai-profile-sheet/index.ts` | Adicionar deteccao mimeType + fallback SheetJS |
-| `supabase/functions/sheets-preview-mapping/index.ts` | Adicionar deteccao mimeType + fallback SheetJS |
-| `supabase/functions/dre-sync/index.ts` | Adicionar deteccao mimeType + fallback SheetJS |
-| `supabase/functions/google-list-sheets/index.ts` | Adicionar fallback para listar abas de .xlsx |
+| `supabase/functions/parse-excel-upload/index.ts` | **CRIAR** - Edge Function principal |
+| `src/pages/UploadPage.tsx` | **REESCREVER** - Novo fluxo com upload, preview, selecao de abas, progresso |
+| `supabase/config.toml` | Adicionar `[functions.parse-excel-upload]` |
+| Migration SQL | Adicionar colunas `progress`, `warnings`, `tab_summary` na tabela `uploaded_files` |
 
+## Criterios de aceite
+
+1. Importar Excel com milhares de linhas sem leitura errada de data/valor
+2. Receitas + Despesas + Transferencias classificadas corretamente
+3. Aba DRE separada das abas mensais
+4. Sem importacao infinita (timeout controlado)
+5. Reimportar mesmo arquivo nao duplica transacoes
+6. UI mostra progresso real e resumo final detalhado
