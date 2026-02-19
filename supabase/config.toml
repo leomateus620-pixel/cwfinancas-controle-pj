@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.reset-sheet-data]
 verify_jwt = false
+
+[functions.parse-excel-upload]
+verify_jwt = false

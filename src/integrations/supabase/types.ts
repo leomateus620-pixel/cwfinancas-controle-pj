@@ -1052,9 +1052,12 @@ export type Database = {
           file_name: string
           file_path: string | null
           id: string
+          progress: Json | null
           rows_imported: number | null
           status: string
+          tab_summary: Json | null
           user_id: string
+          warnings: Json | null
         }
         Insert: {
           created_at?: string
@@ -1062,9 +1065,12 @@ export type Database = {
           file_name: string
           file_path?: string | null
           id?: string
+          progress?: Json | null
           rows_imported?: number | null
           status?: string
+          tab_summary?: Json | null
           user_id: string
+          warnings?: Json | null
         }
         Update: {
           created_at?: string
@@ -1072,9 +1078,12 @@ export type Database = {
           file_name?: string
           file_path?: string | null
           id?: string
+          progress?: Json | null
           rows_imported?: number | null
           status?: string
+          tab_summary?: Json | null
           user_id?: string
+          warnings?: Json | null
         }
         Relationships: []
       }

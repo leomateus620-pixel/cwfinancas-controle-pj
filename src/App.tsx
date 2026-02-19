@@ -17,7 +17,7 @@ import CashFlowPage from "@/pages/CashFlowPage";
 import DREPage from "@/pages/DREPage";
 import ForecastsPage from "@/pages/ForecastsPage";
 import InvoicesPage from "@/pages/InvoicesPage";
-import UploadPage from "@/pages/UploadPage";
+import { UploadPage } from "@/pages/UploadPage";
 import InsightsPage from "@/pages/InsightsPage";
 import SettingsPage from "@/pages/SettingsPage";
 import GoogleSheetsPage from "@/pages/GoogleSheetsPage";
