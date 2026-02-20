@@ -1,144 +1,98 @@
 
-# Seletor de abas com multi-select (clique para selecionar meses)
+
+# Corrigir ano incorreto na deteccao de abas mensais
 
 ## Problema
 
-Ao clicar em "Todas as Abas", o fluxo atual pede um intervalo de meses (de/ate) que nem sempre funciona corretamente -- especialmente quando o ano inferido da planilha nao bate com o ano do filtro. Alem disso, o usuario nao tem controle granular sobre quais abas importar.
+A funcao `detectMonthFromTab()` no `SpreadsheetSelectorModal.tsx` usa `new Date().getFullYear()` (2026) como ano padrao quando o nome da aba nao contem ano explicito (ex: "Janeiro" em vez de "Janeiro 2025"). Resultado: todas as abas aparecem como "Janeiro 2026", "Fevereiro 2026" etc., mesmo quando os dados sao de 2025.
 
 ## Solucao
 
-Substituir o step "month-range" (selecionar de/ate) por um step de **multi-select visual** onde cada aba mensal detectada aparece como um chip/botao clicavel. O usuario clica nos meses que deseja importar e ve quais estao selecionados (highlight azul). Botoes de atalho "Selecionar Todos" e "Limpar" facilitam a operacao.
+Adicionar um **seletor de ano** ao step "select-tabs". O usuario escolhe o ano (padrao: ano corrente) e os periodKeys e labels sao recalculados automaticamente. Isso resolve o problema sem depender de heuristicas frageis de inferencia.
 
-No backend, ao inves de enviar `month_range: { from, to }`, enviaremos a lista exata de `periodKeys` selecionados, e o edge function filtrara diretamente por esses valores.
-
-## Fluxo do usuario (novo)
-
-```text
-1. Seleciona planilha
-2. Ve lista de abas
-3. Clica "Todas as Abas" (ou seleciona abas individuais -- futuro)
-4. Ve grid de meses detectados com checkboxes/chips clicaveis
-5. Clica nos meses desejados (toggle on/off, highlight azul)
-6. Clica "Continuar"
-7. Confirma e importa
-```
-
-## Arquivos modificados
+## Arquivo modificado
 
 | Arquivo | Acao |
 |---|---|
-| `src/components/modals/SpreadsheetSelectorModal.tsx` | Substituir step "month-range" (selects de/ate) por grid de chips clicaveis com multi-select |
-| `src/hooks/useGoogleSheets.ts` | Alterar `syncAllTabs` e `createConnection` para aceitar `selectedTabs: string[]` (lista de periodKeys) ao inves de `monthRange: {from, to}` |
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Aceitar novo campo `selected_tabs: string[]` no request body e filtrar abas por esse array (com fallback para `month_range` por compatibilidade) |
-| `src/pages/GoogleSheetsPage.tsx` | Atualizar `handleSync` para passar `selectedTabs` da connection ao inves de `monthRange` |
+| `src/components/modals/SpreadsheetSelectorModal.tsx` | Adicionar seletor de ano + recalcular periodKeys quando o ano muda |
 
 ## Detalhes tecnicos
 
-### 1. SpreadsheetSelectorModal -- step "month-range" vira "select-tabs"
-
-Substituir os dois `<Select>` (mes inicial / mes final) por um grid de chips clicaveis:
+### 1. Novo estado para o ano selecionado
 
 ```text
-// Estado: Set de periodKeys selecionados
-const [selectedPeriods, setSelectedPeriods] = useState<Set<string>>(new Set());
+const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+```
 
-// Ao detectar meses, pre-selecionar todos
+### 2. Refatorar detectMonthFromTab para nao definir ano padrao
+
+A funcao passara a retornar `year: null` quando o nome da aba nao contem ano. O ano sera preenchido pelo `selectedYear` no momento da construcao dos `detectedMonths`.
+
+```text
+// detectMonthFromTab retorna year como number | null
+function detectMonthFromTab(tabName: string): { monthIndex: number; year: number | null } | null {
+  // ... regex matching ...
+  // Se match[1] existe, calcula o ano
+  // Senao, retorna year: null
+}
+```
+
+### 3. Recalcular detectedMonths quando selectedYear muda
+
+O useEffect que constroi `detectedMonths` passara a usar `selectedYear` como fallback quando `year` for null:
+
+```text
 useEffect(() => {
-  if (detectedMonths.length > 0) {
-    setSelectedPeriods(new Set(detectedMonths.map(m => m.periodKey)));
+  if (sheetsData?.sheets) {
+    const months = [];
+    for (const sheet of sheetsData.sheets) {
+      const detected = detectMonthFromTab(sheet.title);
+      if (detected) {
+        const year = detected.year ?? selectedYear;
+        const pk = year + "-" + String(detected.monthIndex).padStart(2, "0");
+        months.push({ periodKey: pk, label: MONTH_LABELS[detected.monthIndex] + " " + year, ... });
+      }
+    }
+    // ...
   }
-}, [detectedMonths]);
-
-// Toggle individual
-const togglePeriod = (pk: string) => {
-  setSelectedPeriods(prev => {
-    const next = new Set(prev);
-    next.has(pk) ? next.delete(pk) : next.add(pk);
-    return next;
-  });
-};
-
-// UI: grid 3 colunas com chips
-detectedMonths.map(m => (
-  <button
-    key={m.periodKey}
-    onClick={() => togglePeriod(m.periodKey)}
-    className={cn(
-      "p-3 rounded-xl border text-sm font-medium transition-all",
-      selectedPeriods.has(m.periodKey)
-        ? "border-primary bg-primary/10 text-primary"
-        : "border-border/50 text-muted-foreground hover:border-primary/30"
-    )}
-  >
-    <CheckCircle size if selected /> {m.label}
-  </button>
-))
+}, [sheetsData, selectedYear]);
 ```
 
-Botoes de atalho: "Selecionar Todos" | "Limpar Selecao"
+### 4. Inferir ano inicial a partir do nome da planilha
 
-O `onCreateConnection` passara `selectedTabs: Array.from(selectedPeriods)` ao inves de `monthRange`.
-
-### 2. Interface e hook (useGoogleSheets)
-
-- `createConnection`: trocar campo `monthRange` por `selectedTabs: string[]` no `column_mapping` da connection
-- `syncAllTabs`: trocar `monthRange` por `selectedTabs` no body enviado ao edge function
+Ao selecionar a planilha, tentar extrair o ano do nome (ex: "Controle Financeiro 2025"):
 
 ```text
-// column_mapping salvo na connection:
-{ selected_tabs: ["2026-01", "2026-02"] }
-
-// Body enviado ao edge function:
-{ connection_id: "...", selected_tabs: ["2026-01", "2026-02"] }
+const yearMatch = spreadsheetName.match(/\b(20\d{2})\b/);
+if (yearMatch) setSelectedYear(parseInt(yearMatch[1]));
 ```
 
-### 3. Edge Function (sheets-sync-all-tabs)
+Se nenhum ano for encontrado no nome, manter o ano corrente como padrao.
 
-Adicionar suporte a `selected_tabs` no request:
+### 5. UI do seletor de ano no step "select-tabs"
+
+Acima do grid de meses, adicionar um Select simples:
 
 ```text
-interface SyncAllTabsRequest {
-  connection_id: string;
-  month_range?: { from: string; to: string };   // mantido para compatibilidade
-  selected_tabs?: string[];                       // NOVO: lista exata de periodKeys
-}
-
-// Filtragem:
-if (selected_tabs && selected_tabs.length > 0) {
-  // Comparar pelo mes (MM) para evitar mismatch de ano
-  const selectedMonths = new Set(selected_tabs.map(pk => pk.slice(-2)));
-  monthlyTabs = monthlyTabs.filter(t => {
-    if (!t.monthIndex) return false;
-    return selectedMonths.has(String(t.monthIndex).padStart(2, "0"));
-  });
-} else if (month_range) {
-  // fallback antigo (compatibilidade)
-  ...
-}
+<div className="flex items-center gap-2">
+  <Calendar className="w-4 h-4" />
+  <span>Ano:</span>
+  <Select value={String(selectedYear)} onValueChange={v => setSelectedYear(Number(v))}>
+    <SelectTrigger className="w-28">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      {[currentYear - 2, currentYear - 1, currentYear, currentYear + 1].map(y => (
+        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+      ))}
+    </SelectContent>
+  </Select>
+</div>
 ```
 
-### 4. GoogleSheetsPage -- handleSync
+Isso permite que o usuario rapidamente troque para 2025 e veja todos os meses atualizados.
 
-Atualizar para ler `selected_tabs` do `column_mapping` da connection:
+### 6. Abas que JA possuem ano no nome
 
-```text
-const handleSync = (connection) => {
-  if (connection.data_type === "all_tabs") {
-    const selectedTabs = connection.column_mapping?.selected_tabs;
-    const monthRange = connection.column_mapping?.month_range;
-    syncAllTabs.mutate({
-      connectionId: connection.id,
-      selectedTabs,   // novo
-      monthRange,      // fallback
-    });
-  } else {
-    syncData.mutate(connection.id);
-  }
-};
-```
+Se uma aba se chama "Jan/25", o regex ja extrai `year = 2025`. Nesse caso, o `year` retornado NAO e null, entao o seletor de ano nao afeta essa aba -- ela sempre mostrara 2025 independentemente do seletor.
 
-### 5. Compatibilidade
-
-- Connections existentes que ja tenham `month_range` no `column_mapping` continuarao funcionando via fallback no edge function
-- Novas connections salvarao `selected_tabs` no `column_mapping`
-- O edge function aceita ambos os formatos, priorizando `selected_tabs` quando presente
