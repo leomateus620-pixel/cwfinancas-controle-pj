@@ -79,16 +79,15 @@ const MONTH_LABELS: Record<number, string> = {
   7: "Julho", 8: "Agosto", 9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
 };
 
-function detectMonthFromTab(tabName: string): { monthIndex: number; year: number } | null {
+function detectMonthFromTab(tabName: string): { monthIndex: number; year: number | null } | null {
   const normalized = tabName.trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const defaultYear = new Date().getFullYear();
 
   for (const [name, idx] of Object.entries(MONTH_FULL)) {
     const regex = new RegExp(`^${name}[\\s\\/\\-]*(\\d{2,4})?$`, "i");
     const match = normalized.match(regex);
     if (match) {
-      let year = defaultYear;
+      let year: number | null = null;
       if (match[1]) { const n = parseInt(match[1]); year = n >= 100 ? n : n >= 50 ? 1900 + n : 2000 + n; }
       return { monthIndex: idx, year };
     }
@@ -98,7 +97,7 @@ function detectMonthFromTab(tabName: string): { monthIndex: number; year: number
     const regex = new RegExp(`^${abbr}\\.?[\\s\\/\\-]*(\\d{2,4})?$`, "i");
     const match = normalized.match(regex);
     if (match) {
-      let year = defaultYear;
+      let year: number | null = null;
       if (match[1]) { const n = parseInt(match[1]); year = n >= 100 ? n : n >= 50 ? 1900 + n : 2000 + n; }
       return { monthIndex: idx, year };
     }
@@ -133,7 +132,8 @@ export function SpreadsheetSelectorModal({
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const [selectedPeriods, setSelectedPeriods] = useState<Set<string>>(new Set());
-  const [detectedMonths, setDetectedMonths] = useState<Array<{ periodKey: string; label: string }>>([])
+  const [detectedMonths, setDetectedMonths] = useState<Array<{ periodKey: string; label: string }>>([]);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   
   // Search state
   const [searchTerm, setSearchTerm] = useState("");
@@ -179,6 +179,7 @@ export function SpreadsheetSelectorModal({
       setSelectedSheet(null);
       setSelectedPeriods(new Set());
       setDetectedMonths([]);
+      setSelectedYear(new Date().getFullYear());
       setSearchTerm("");
       setAccumulatedSpreadsheets([]);
       setCurrentNextPageToken(undefined);
@@ -207,19 +208,20 @@ export function SpreadsheetSelectorModal({
     }
   }, [onLoadSpreadsheets, searchTerm, currentNextPageToken]);
 
-  // Detect monthly tabs when sheetsData arrives
+  // Detect monthly tabs when sheetsData or selectedYear changes
   useEffect(() => {
     if (sheetsData?.sheets) {
       const months: Array<{ periodKey: string; label: string; monthIndex: number; year: number }> = [];
       for (const sheet of sheetsData.sheets) {
         const detected = detectMonthFromTab(sheet.title);
         if (detected) {
-          const pk = `${detected.year}-${String(detected.monthIndex).padStart(2, "0")}`;
+          const year = detected.year ?? selectedYear;
+          const pk = `${year}-${String(detected.monthIndex).padStart(2, "0")}`;
           months.push({
             periodKey: pk,
-            label: `${MONTH_LABELS[detected.monthIndex]} ${detected.year}`,
+            label: `${MONTH_LABELS[detected.monthIndex]} ${year}`,
             monthIndex: detected.monthIndex,
-            year: detected.year,
+            year,
           });
         }
       }
@@ -230,10 +232,15 @@ export function SpreadsheetSelectorModal({
         setSelectedPeriods(new Set(months.map(m => m.periodKey)));
       }
     }
-  }, [sheetsData]);
+  }, [sheetsData, selectedYear]);
 
   const handleSelectSpreadsheet = (spreadsheet: { id: string; name: string }) => {
     setSelectedSpreadsheet(spreadsheet);
+    // Try to infer year from spreadsheet name
+    const yearMatch = spreadsheet.name.match(/\b(20\d{2})\b/);
+    if (yearMatch) {
+      setSelectedYear(parseInt(yearMatch[1]));
+    }
     onGetSheets(spreadsheet.id);
     setStep("sheets");
   };
@@ -481,10 +488,20 @@ export function SpreadsheetSelectorModal({
               ) : (
                 <>
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                    <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-primary" />
-                      Meses detectados
-                    </p>
+                      <span className="text-sm font-medium text-foreground">Ano:</span>
+                      <Select value={String(selectedYear)} onValueChange={v => setSelectedYear(Number(v))}>
+                        <SelectTrigger className="w-24 h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[new Date().getFullYear() - 2, new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
+                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="flex gap-2">
                       <Button
                         variant="ghost"
