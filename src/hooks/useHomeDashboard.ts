@@ -65,7 +65,7 @@ export function useHomeDashboard(): HomeDashboardData {
   const { session } = useAuth();
 
   const now = new Date();
-  const homeStart = format(startOfMonth(now), "yyyy-MM-dd");
+  const homeStart = format(subDays(now, 60), "yyyy-MM-dd");
   const homeEnd = format(endOfMonth(now), "yyyy-MM-dd");
 
   const { transactions, isLoading: txLoading, totals: allTotals } = useTransactions({
