@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { useDateRange } from "@/contexts/DateRangeContext";
+
 
 export interface DREPeriod {
   id: string;
@@ -62,21 +62,7 @@ export function useDRE(sheetId?: string) {
     enabled: !!session,
   });
 
-  let globalMonthRange: { from: string; to: string } | null = null;
-  try {
-    const dr = useDateRange();
-    globalMonthRange = dr.monthRange;
-  } catch {
-    // fallback
-  }
-
   const periodOptions = (periods || [])
-    .filter(p => {
-      if (!globalMonthRange) return true;
-      if (p.period_key === "TOTAL") return true;
-      if (p.period_key.startsWith("REVIEW_")) return true;
-      return p.period_key >= globalMonthRange.from && p.period_key <= globalMonthRange.to;
-    })
     .map(p => ({
       key: p.period_key,
       label: p.period_label || p.period_key,
