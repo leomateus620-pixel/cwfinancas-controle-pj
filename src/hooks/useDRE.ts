@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useDateRange } from "@/contexts/DateRangeContext";
 
-interface DREPeriod {
+export interface DREPeriod {
   id: string;
   user_id: string;
   sheet_id: string | null;
@@ -14,9 +14,10 @@ interface DREPeriod {
   validation_status: string;
   validation_notes: string[];
   last_import_at: string;
+  template_type: string;
 }
 
-interface DRELine {
+export interface DRELine {
   id: string;
   period_id: string;
   user_id: string;
@@ -28,6 +29,8 @@ interface DRELine {
   order_index: number;
   is_group: boolean;
   is_subtotal: boolean;
+  nucleo: string | null;
+  section: string | null;
 }
 
 function normalize(text: string): string {
@@ -39,7 +42,6 @@ export function useDRE(sheetId?: string) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch periods
   const {
     data: periods,
     isLoading: isLoadingPeriods,
@@ -60,7 +62,6 @@ export function useDRE(sheetId?: string) {
     enabled: !!session,
   });
 
-  // Filter period options by global date range
   let globalMonthRange: { from: string; to: string } | null = null;
   try {
     const dr = useDateRange();
@@ -73,6 +74,7 @@ export function useDRE(sheetId?: string) {
     .filter(p => {
       if (!globalMonthRange) return true;
       if (p.period_key === "TOTAL") return true;
+      if (p.period_key.startsWith("REVIEW_")) return true;
       return p.period_key >= globalMonthRange.from && p.period_key <= globalMonthRange.to;
     })
     .map(p => ({
@@ -80,9 +82,14 @@ export function useDRE(sheetId?: string) {
       label: p.period_label || p.period_key,
       id: p.id,
       validationStatus: p.validation_status,
+      templateType: p.template_type || "DEFAULT",
     }));
 
-  // Fetch lines for a specific period
+  // Detect active template from periods
+  const activeTemplate = (periods || []).length > 0
+    ? (periods![0].template_type || "DEFAULT")
+    : "DEFAULT";
+
   function useLines(periodId?: string) {
     return useQuery({
       queryKey: ["dre-lines-v2", periodId],
@@ -100,7 +107,6 @@ export function useDRE(sheetId?: string) {
     });
   }
 
-  // Sync mutation
   const syncDRE = useMutation({
     mutationFn: async (connectionId: string) => {
       const { data, error } = await supabase.functions.invoke("dre-sync", {
@@ -114,9 +120,10 @@ export function useDRE(sheetId?: string) {
       queryClient.invalidateQueries({ queryKey: ["dre-periods-v2"] });
       queryClient.invalidateQueries({ queryKey: ["dre-lines-v2"] });
       if (data.success) {
+        const templateLabel = data.template === "LCF_NUCLEO" ? "LCF por Núcleo" : "padrão";
         toast({
           title: "DRE sincronizada",
-          description: `${data.lines_count} linhas importadas em ${data.periods_count} períodos da aba "${data.tab_name}".`,
+          description: `${data.lines_count} linhas importadas em ${data.periods_count} períodos (formato ${templateLabel}).`,
         });
       } else if (!data.found) {
         toast({
@@ -141,8 +148,22 @@ export function useDRE(sheetId?: string) {
     },
   });
 
-  // KPI calculator from lines
-  function calculateKPIs(lines: DRELine[]) {
+  function calculateKPIs(lines: DRELine[], viewMode: "consolidated" | "by_nucleo" = "consolidated") {
+    const filtered = viewMode === "consolidated"
+      ? lines.filter(l => l.nucleo === null)
+      : lines;
+
+    // For DEFAULT template, use original logic
+    if (activeTemplate === "DEFAULT") {
+      return calculateDefaultKPIs(filtered);
+    }
+
+    // LCF template KPIs (consolidated lines only for KPIs)
+    const consolidatedLines = lines.filter(l => l.nucleo === null);
+    return calculateLcfKPIs(consolidatedLines);
+  }
+
+  function calculateDefaultKPIs(lines: DRELine[]) {
     const findSubtotal = (keyword: string) =>
       lines.find(l => l.is_subtotal && normalize(l.line_label).includes(keyword));
 
@@ -156,36 +177,59 @@ export function useDRE(sheetId?: string) {
       return items.reduce((sum, l) => sum + l.value, 0);
     };
 
-    // Faturamento
     const fatGroup = findGroupLine("faturamento");
     const faturamento = fatGroup && fatGroup.value !== 0
       ? fatGroup.value
       : getGroupItemsSum("faturamento");
 
-    // Receita Liquida
     const recLiqLine = findSubtotal("receita liquida");
     const receitaLiquida = recLiqLine
       ? recLiqLine.value
       : faturamento + getGroupItemsSum("deducoe");
 
-    // Despesas Totais
     const despTotalLine = findSubtotal("despesas totais") || findSubtotal("total despesas");
     const despesasTotais = despTotalLine
       ? despTotalLine.value
       : getGroupItemsSum("despesa");
 
-    // Resultado do Mes
     const resultadoLine = findSubtotal("resultado");
     const resultado = resultadoLine
       ? resultadoLine.value
-      : receitaLiquida + despesasTotais; // despesas are negative
+      : receitaLiquida + despesasTotais;
 
-    // Margem Liquida
     const margemLiquida = receitaLiquida !== 0
       ? (resultado / receitaLiquida) * 100
       : null;
 
     return { faturamento, receitaLiquida, despesasTotais, resultado, margemLiquida };
+  }
+
+  function calculateLcfKPIs(lines: DRELine[]) {
+    const findBySection = (section: string) =>
+      lines.find(l => l.section === section && l.is_subtotal);
+
+    const receitaBruta = findBySection("RECEITA_BRUTA");
+    const despesasNucleo = findBySection("DESPESAS_NUCLEO");
+    const despesasEscritorio = findBySection("DESPESAS_ESCRITORIO");
+    const resultado = findBySection("RESULTADO");
+
+    const faturamento = receitaBruta?.value ?? 0;
+    const despesasTotais = (despesasNucleo?.value ?? 0) + (despesasEscritorio?.value ?? 0);
+    const receitaLiquida = faturamento; // In LCF, receita bruta = receita líquida
+    const resultadoVal = resultado?.value ?? (faturamento + despesasTotais);
+
+    const margemLiquida = faturamento !== 0
+      ? (resultadoVal / faturamento) * 100
+      : null;
+
+    return { faturamento, receitaLiquida, despesasTotais, resultado: resultadoVal, margemLiquida };
+  }
+
+  // Get unique nucleos from lines
+  function getNucleos(lines: DRELine[]): string[] {
+    const set = new Set<string>();
+    lines.forEach(l => { if (l.nucleo) set.add(l.nucleo); });
+    return Array.from(set).sort();
   }
 
   const hasData = (periods || []).length > 0;
@@ -197,6 +241,8 @@ export function useDRE(sheetId?: string) {
     useLines,
     syncDRE,
     calculateKPIs,
+    getNucleos,
     hasData,
+    activeTemplate,
   };
 }
