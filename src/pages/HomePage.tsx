@@ -4,8 +4,8 @@ import { HomeKPICard } from "@/components/home/HomeKPICard";
 import { DailySummary } from "@/components/home/DailySummary";
 import { HealthScore } from "@/components/home/HealthScore";
 import { AlertsPanel } from "@/components/home/AlertsPanel";
-import { QuickLinks } from "@/components/home/QuickLinks";
 import { TopCategories } from "@/components/home/TopCategories";
+import { ProfitQuality } from "@/components/home/ProfitQuality";
 import { HomeEmptyState } from "@/components/home/HomeEmptyState";
 import { HomeSkeletonLoading } from "@/components/home/HomeSkeletonLoading";
 import {
@@ -13,14 +13,11 @@ import {
   TrendingUp,
   TrendingDown,
   BarChart3,
-  Clock,
-  CreditCard,
-  ArrowUpDown,
   Hourglass,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
+import { formatCompactBR } from "@/lib/currency";
 
 export default function HomePage() {
   const data = useHomeDashboard();
@@ -40,10 +37,6 @@ export default function HomePage() {
     if (data.topExpenseCategories.length > 0) {
       const top = data.topExpenseCategories[0];
       list.push(`A categoria "${top.name}" concentrou ${Math.round(top.percent)}% das despesas este mês.`);
-    }
-
-    if (data.receivables > 0) {
-      list.push(`Você tem ${formatCurrencyBR(data.receivables)} em contas a receber pendentes.`);
     }
 
     if (list.length === 0) {
@@ -111,7 +104,7 @@ export default function HomePage() {
                 label="Entradas do Mês"
                 value={formatCompactBR(data.monthIncome)}
                 icon={<TrendingUp className="w-5 h-5 text-emerald-600" />}
-                tooltip="Soma de todas as receitas registradas no mês corrente."
+                tooltip="Soma de todas as receitas operacionais registradas no mês corrente."
                 href="/income"
                 valueColor="text-emerald-600"
                 delay={60}
@@ -120,7 +113,7 @@ export default function HomePage() {
                 label="Saídas do Mês"
                 value={formatCompactBR(data.monthExpense)}
                 icon={<TrendingDown className="w-5 h-5 text-red-600" />}
-                tooltip="Soma de todas as despesas registradas no mês corrente."
+                tooltip="Soma de todas as despesas operacionais registradas no mês corrente."
                 href="/expenses"
                 valueColor="text-red-600"
                 delay={120}
@@ -130,19 +123,23 @@ export default function HomePage() {
                 label="Resultado do Mês"
                 value={formatCompactBR(data.monthResult)}
                 icon={<BarChart3 className="w-5 h-5 text-blue-600" />}
-                tooltip="Diferença entre entradas e saídas do mês corrente."
+                tooltip="Diferença entre entradas e saídas operacionais do mês corrente."
                 href="/overview"
                 valueColor={data.monthResult >= 0 ? "text-emerald-600" : "text-red-600"}
                 trend={{ value: data.variationPercent, label: "vs mês anterior" }}
                 delay={180}
               />
-              {data.runwayDays !== null && (
+              {data.runwayDays !== null && data.runwayDays !== 0 && (
                 <HomeKPICard
                   label="Fôlego de Caixa"
-                  value={`${data.runwayDays} dias`}
+                  value={data.runwayDays === null ? "∞" : `${data.runwayDays} dias`}
                   icon={<Hourglass className="w-5 h-5 text-purple-600" />}
-                  tooltip="Estimativa de quantos dias o saldo atual cobre, com base na média de despesas dos últimos 90 dias."
-                  valueColor={data.runwayDays > 60 ? "text-emerald-600" : data.runwayDays > 30 ? "text-amber-600" : "text-red-600"}
+                  tooltip="Estimativa de quantos dias o saldo atual cobre, com base na média de despesas operacionais dos últimos 30 dias."
+                  valueColor={
+                    data.runwayDays === null ? "text-emerald-600" :
+                    data.runwayDays > 60 ? "text-emerald-600" :
+                    data.runwayDays > 30 ? "text-amber-600" : "text-red-600"
+                  }
                   delay={360}
                 />
               )}
@@ -160,6 +157,9 @@ export default function HomePage() {
               <HealthScore
                 score={data.healthScore}
                 factors={data.healthFactors}
+                trendLabel={data.trendLabel}
+                trendPercent={data.trendPercent}
+                runwayDays={data.runwayDays}
                 delay={480}
               />
             </div>
@@ -168,7 +168,11 @@ export default function HomePage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <TopCategories categories={data.topExpenseCategories} delay={540} />
               <AlertsPanel alerts={data.alerts} delay={600} />
-              <QuickLinks delay={660} />
+              <ProfitQuality
+                value={data.profitQuality}
+                prevValue={data.profitQualityPrev}
+                delay={660}
+              />
             </div>
           </div>
         )}

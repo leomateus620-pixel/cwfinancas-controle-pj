@@ -3,7 +3,10 @@ import { useProfile } from "./useProfile";
 import { useTransactions } from "./useTransactions";
 import { useInvoices } from "./useInvoices";
 import { useSyncStatus } from "./useSyncStatus";
-import { format, startOfMonth, endOfMonth, subMonths, subDays, parseISO, isValid, differenceInDays, addDays } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { format, startOfMonth, endOfMonth, subMonths, subDays, addDays } from "date-fns";
 import { formatCurrencyBR } from "@/lib/currency";
 
 function extractCompanyFromSheet(name?: string): string | null {
@@ -39,8 +42,6 @@ export interface HomeDashboardData {
   monthIncome: number;
   monthExpense: number;
   monthResult: number;
-  receivables: number;
-  payables: number;
   variationPercent: number;
   variationValue: number;
   runwayDays: number | null;
@@ -49,6 +50,11 @@ export interface HomeDashboardData {
   dailyTrend: Array<{ date: string; value: number }>;
   healthScore: number;
   healthFactors: Array<{ label: string; score: number; weight: number }>;
+  trendLabel: string;
+  trendPercent: number;
+  profitQuality: number | null;
+  profitQualityPrev: number | null;
+  profitQualityHistory: Array<{ month: string; value: number }>;
   isLoading: boolean;
   hasData: boolean;
   hasSyncConnection: boolean;
@@ -56,9 +62,9 @@ export interface HomeDashboardData {
 
 export function useHomeDashboard(): HomeDashboardData {
   const { profile, isLoading: profileLoading } = useProfile();
+  const { session } = useAuth();
 
   const now = new Date();
-  // Home always shows current month — bypass global date filter with explicit dates
   const homeStart = format(startOfMonth(now), "yyyy-MM-dd");
   const homeEnd = format(endOfMonth(now), "yyyy-MM-dd");
 
@@ -66,13 +72,54 @@ export function useHomeDashboard(): HomeDashboardData {
     startDate: homeStart,
     endDate: homeEnd,
   });
-  const { invoices, isLoading: invLoading, summary: invSummary } = useInvoices();
+  const { invoices, isLoading: invLoading } = useInvoices();
   const { connections, isLoading: syncLoading } = useSyncStatus();
 
   const currentMonthStart = homeStart;
   const currentMonthEnd = homeEnd;
   const prevMonthStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
   const prevMonthEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
+
+  // Fetch DRE data for profit quality
+  const { data: dreData, isLoading: dreLoading } = useQuery({
+    queryKey: ["home-dre-profit-quality"],
+    queryFn: async () => {
+      // Get last 12 months of DRE periods
+      const twelveMonthsAgo = format(subMonths(now, 12), "yyyy-MM");
+      const currentMonth = format(now, "yyyy-MM");
+
+      const { data: periods, error: pErr } = await supabase
+        .from("dre_periods")
+        .select("id, period_key, period_label")
+        .gte("period_key", twelveMonthsAgo)
+        .lte("period_key", currentMonth)
+        .neq("period_key", "TOTAL")
+        .order("period_key", { ascending: true });
+
+      if (pErr || !periods || periods.length === 0) return null;
+
+      const periodIds = periods.map(p => p.id);
+      const { data: lines, error: lErr } = await supabase
+        .from("dre_lines")
+        .select("period_id, line_label, value, is_subtotal, is_group, group_label")
+        .in("period_id", periodIds);
+
+      if (lErr || !lines) return null;
+
+      // For each period, find "resultado" (lucro líquido)
+      const results: Array<{ periodKey: string; lucroLiquido: number }> = [];
+      for (const period of periods) {
+        const pLines = lines.filter(l => l.period_id === period.id);
+        const normalize = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const resultLine = pLines.find(l => l.is_subtotal && normalize(l.line_label).includes("resultado"));
+        if (resultLine) {
+          results.push({ periodKey: period.period_key, lucroLiquido: resultLine.value });
+        }
+      }
+      return results;
+    },
+    enabled: !!session,
+  });
 
   const computed = useMemo(() => {
     if (!transactions || transactions.length === 0) {
@@ -83,7 +130,11 @@ export function useHomeDashboard(): HomeDashboardData {
         prevMonthExpense: 0,
         topExpenseCategories: [] as Array<{ name: string; value: number; percent: number }>,
         dailyTrend: [] as Array<{ date: string; value: number }>,
-        payables: 0,
+        // For trend: last 30d vs prev 30d
+        last30Income: 0,
+        last30Expense: 0,
+        prev30Income: 0,
+        prev30Expense: 0,
       };
     }
 
@@ -97,13 +148,13 @@ export function useHomeDashboard(): HomeDashboardData {
     const prevMonthIncome = prevMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const prevMonthExpense = prevMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    // Top 3 expense categories
+    // Top 5 expense categories
     const categoryMap = new Map<string, number>();
     currentMonthTx.filter(t => t.type === "expense").forEach(t => {
       categoryMap.set(t.category, (categoryMap.get(t.category) || 0) + Number(t.amount));
     });
     const sortedCats = Array.from(categoryMap.entries()).sort((a, b) => b[1] - a[1]);
-    const topExpenseCategories = sortedCats.slice(0, 3).map(([name, value]) => ({
+    const topExpenseCategories = sortedCats.slice(0, 5).map(([name, value]) => ({
       name,
       value,
       percent: monthExpense > 0 ? (value / monthExpense) * 100 : 0,
@@ -112,12 +163,10 @@ export function useHomeDashboard(): HomeDashboardData {
     // Daily trend (last 30 days cumulative balance)
     const thirtyDaysAgo = subDays(now, 30);
     const dailyMap = new Map<string, number>();
-    // Init all days
     for (let i = 0; i <= 30; i++) {
       const d = format(addDays(thirtyDaysAgo, i), "yyyy-MM-dd");
       dailyMap.set(d, 0);
     }
-    // Sum by day
     transactions.forEach(t => {
       const d = t.date;
       if (d >= format(thirtyDaysAgo, "yyyy-MM-dd") && d <= format(now, "yyyy-MM-dd")) {
@@ -125,7 +174,6 @@ export function useHomeDashboard(): HomeDashboardData {
         dailyMap.set(d, (dailyMap.get(d) || 0) + val);
       }
     });
-    // Cumulative
     const dailyTrend: Array<{ date: string; value: number }> = [];
     let cumulative = 0;
     const sortedDays = Array.from(dailyMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
@@ -134,13 +182,21 @@ export function useHomeDashboard(): HomeDashboardData {
       dailyTrend.push({ date, value: cumulative });
     }
 
-    // Payables: future expenses
+    // Trend: last 30 days vs prev 30 days (operational only)
     const today = format(now, "yyyy-MM-dd");
-    const payables = transactions
-      .filter(t => t.type === "expense" && t.date > today)
-      .reduce((s, t) => s + Number(t.amount), 0);
+    const d30ago = format(subDays(now, 30), "yyyy-MM-dd");
+    const d60ago = format(subDays(now, 60), "yyyy-MM-dd");
 
-    return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, dailyTrend, payables };
+    const opTx = transactions.filter(t => (t as any).movement_type !== "TRANSFER");
+    const last30 = opTx.filter(t => t.date >= d30ago && t.date <= today);
+    const prev30 = opTx.filter(t => t.date >= d60ago && t.date < d30ago);
+
+    const last30Income = last30.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const last30Expense = last30.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+    const prev30Income = prev30.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+    const prev30Expense = prev30.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+
+    return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, dailyTrend, last30Income, last30Expense, prev30Income, prev30Expense };
   }, [transactions, currentMonthStart, currentMonthEnd, prevMonthStart, prevMonthEnd]);
 
   const currentBalance = allTotals.balance;
@@ -149,44 +205,152 @@ export function useHomeDashboard(): HomeDashboardData {
   const variationValue = monthResult - prevMonthResult;
   const variationPercent = prevMonthResult !== 0 ? (variationValue / Math.abs(prevMonthResult)) * 100 : 0;
 
-  // Runway
-  const last90Income = useMemo(() => {
+  // Runway (fôlego) - use last 30 days of operational expenses
+  const avgDailyExpense = useMemo(() => {
     if (!transactions) return 0;
-    const d90 = format(subDays(now, 90), "yyyy-MM-dd");
-    return transactions.filter(t => t.type === "expense" && t.date >= d90).reduce((s, t) => s + Number(t.amount), 0);
+    const d30 = format(subDays(now, 30), "yyyy-MM-dd");
+    const today = format(now, "yyyy-MM-dd");
+    const opExpenses = transactions.filter(
+      t => t.type === "expense" && t.date >= d30 && t.date <= today && (t as any).movement_type !== "TRANSFER"
+    );
+    const totalExpense = opExpenses.reduce((s, t) => s + Number(t.amount), 0);
+    // Count days with data
+    const daysWithData = new Set(opExpenses.map(t => t.date)).size;
+    return daysWithData > 0 ? Math.abs(totalExpense) / daysWithData : 0;
   }, [transactions]);
 
-  const avgDailyExpense = last90Income / 90;
-  const runwayDays = avgDailyExpense > 0 ? Math.round(currentBalance / avgDailyExpense) : null;
+  const runwayDays = useMemo(() => {
+    if (currentBalance <= 0) return 0;
+    if (avgDailyExpense === 0 && currentBalance > 0) return null; // infinity
+    return Math.round(currentBalance / avgDailyExpense);
+  }, [currentBalance, avgDailyExpense]);
 
-  const receivables = invSummary.pendingValue;
+  // Trend calculation
+  const { trendLabel, trendPercent } = useMemo(() => {
+    const last30Result = computed.last30Income - computed.last30Expense;
+    const prev30Result = computed.prev30Income - computed.prev30Expense;
+    let pct = 0;
+    if (prev30Result !== 0) {
+      pct = ((last30Result - prev30Result) / Math.abs(prev30Result)) * 100;
+    }
+    let label = "Estável";
+    if (pct > 5) label = "Melhorando";
+    else if (pct < -5) label = "Piorando";
+    return { trendLabel: label, trendPercent: Math.round(pct * 10) / 10 };
+  }, [computed]);
 
-  // Health score
+  // Health score: 3 factors (40/40/20)
   const healthFactors = useMemo(() => {
+    // 1) Resultado operacional (40)
     const margin = computed.monthIncome > 0 ? (monthResult / computed.monthIncome) * 100 : 0;
-    const marginScore = margin > 20 ? 25 : margin > 10 ? 15 : margin > 0 ? 10 : 0;
+    let resultScore: number;
+    if (margin > 20) resultScore = 40;
+    else if (margin > 10) resultScore = 25;
+    else if (margin > 0) resultScore = 15;
+    else resultScore = 0;
 
-    const runwayScore = runwayDays === null ? 12 : runwayDays > 90 ? 25 : runwayDays > 60 ? 20 : runwayDays > 30 ? 10 : 0;
+    // 2) Fôlego de caixa (40)
+    let runwayScore: number;
+    if (runwayDays === null) runwayScore = 40; // infinity
+    else if (runwayDays > 90) runwayScore = 40;
+    else if (runwayDays > 60) runwayScore = 30;
+    else if (runwayDays > 30) runwayScore = 15;
+    else runwayScore = 5;
 
-    const receivablesRatio = computed.monthIncome > 0 ? (receivables / computed.monthIncome) * 100 : 0;
-    const receivablesScore = receivablesRatio < 30 ? 25 : receivablesRatio < 50 ? 15 : 5;
-
-    const trendScore = variationPercent > 5 ? 25 : variationPercent > 0 ? 15 : variationPercent > -10 ? 10 : 0;
+    // 3) Tendência (20)
+    let trendScoreVal: number;
+    if (trendPercent > 5) trendScoreVal = 20;
+    else if (trendPercent >= -5) trendScoreVal = 12;
+    else trendScoreVal = 4;
 
     return [
-      { label: "Margem de lucro", score: marginScore, weight: 25 },
-      { label: "Fôlego de caixa", score: runwayScore, weight: 25 },
-      { label: "Contas a receber", score: receivablesScore, weight: 25 },
-      { label: "Tendência", score: trendScore, weight: 25 },
+      { label: "Resultado operacional", score: resultScore, weight: 40 },
+      { label: "Fôlego de caixa", score: runwayScore, weight: 40 },
+      { label: "Tendência", score: trendScoreVal, weight: 20 },
     ];
-  }, [computed.monthIncome, monthResult, runwayDays, receivables, variationPercent]);
+  }, [computed.monthIncome, monthResult, runwayDays, trendPercent]);
 
   const healthScore = healthFactors.reduce((s, f) => s + f.score, 0);
+
+  // Profit Quality: (Fluxo de Caixa Operacional / Lucro Líquido DRE) * 100
+  const { profitQuality, profitQualityPrev, profitQualityHistory } = useMemo(() => {
+    if (!dreData || dreData.length === 0) {
+      return { profitQuality: null, profitQualityPrev: null, profitQualityHistory: [] };
+    }
+
+    const currentPeriodKey = format(now, "yyyy-MM");
+    const prevPeriodKey = format(subMonths(now, 1), "yyyy-MM");
+
+    // Current month operational cash flow
+    const opCashFlowCurrent = computed.monthIncome - computed.monthExpense;
+    const currentDRE = dreData.find(d => d.periodKey === currentPeriodKey);
+    const prevDRE = dreData.find(d => d.periodKey === prevPeriodKey);
+
+    let pq: number | null = null;
+    if (currentDRE && currentDRE.lucroLiquido !== 0) {
+      pq = (opCashFlowCurrent / currentDRE.lucroLiquido) * 100;
+    }
+
+    // Previous month: use prevMonthIncome/prevMonthExpense
+    let pqPrev: number | null = null;
+    if (prevDRE && prevDRE.lucroLiquido !== 0) {
+      const prevOpCF = computed.prevMonthIncome - computed.prevMonthExpense;
+      pqPrev = (prevOpCF / prevDRE.lucroLiquido) * 100;
+    }
+
+    // History for sparkline
+    const history: Array<{ month: string; value: number }> = [];
+    for (const d of dreData) {
+      if (d.lucroLiquido !== 0) {
+        // For months other than current, we'd need their transaction data
+        // but we only have current+prev loaded. Use DRE only for history placeholder.
+        // For simplicity, just show what we have from DRE as the quality indicator
+        history.push({ month: d.periodKey, value: 0 }); // placeholder
+      }
+    }
+
+    return { profitQuality: pq, profitQualityPrev: pqPrev, profitQualityHistory: history };
+  }, [dreData, computed]);
 
   // Alerts
   const alerts = useMemo(() => {
     const list: HomeDashboardAlert[] = [];
 
+    // 1) Fôlego baixo
+    if (runwayDays !== null && runwayDays < 30) {
+      list.push({
+        id: "runway-low",
+        title: "Fôlego baixo",
+        description: `Fôlego de caixa: apenas ${runwayDays} dias restantes.`,
+        priority: "high",
+        iconName: "AlertTriangle",
+      });
+    }
+
+    // 2) Concentração de despesas
+    if (computed.topExpenseCategories.length > 0 && computed.topExpenseCategories[0].percent > 40) {
+      list.push({
+        id: "category-concentration",
+        title: "Concentração de despesas",
+        description: `A categoria "${computed.topExpenseCategories[0].name}" concentrou ${Math.round(computed.topExpenseCategories[0].percent)}% das despesas.`,
+        priority: "medium",
+        iconName: "Info",
+      });
+    }
+
+    // 3) Queda de receita (>20% vs 30d anteriores)
+    if (computed.prev30Income > 0 && computed.last30Income < computed.prev30Income * 0.8) {
+      const pct = Math.round((1 - computed.last30Income / computed.prev30Income) * 100);
+      list.push({
+        id: "income-down",
+        title: "Queda na receita",
+        description: `Receita caiu ${pct}% nos últimos 30 dias vs período anterior.`,
+        priority: "high",
+        iconName: "TrendingDown",
+      });
+    }
+
+    // 4) Despesas em alta (>10% vs mês anterior)
     if (computed.prevMonthExpense > 0 && computed.monthExpense > computed.prevMonthExpense * 1.1) {
       const pct = Math.round(((computed.monthExpense / computed.prevMonthExpense) - 1) * 100);
       list.push({
@@ -195,17 +359,6 @@ export function useHomeDashboard(): HomeDashboardData {
         description: `Despesas ${pct}% acima do mês anterior — revise seus gastos.`,
         priority: "high",
         iconName: "TrendingUp",
-      });
-    }
-
-    if (computed.prevMonthIncome > 0 && computed.monthIncome < computed.prevMonthIncome * 0.85) {
-      const pct = Math.round((1 - computed.monthIncome / computed.prevMonthIncome) * 100);
-      list.push({
-        id: "income-down",
-        title: "Queda na receita",
-        description: `Receita caiu ${pct}% este mês — acompanhe de perto.`,
-        priority: "high",
-        iconName: "TrendingDown",
       });
     }
 
@@ -226,34 +379,13 @@ export function useHomeDashboard(): HomeDashboardData {
       }
     }
 
-    if (runwayDays !== null && runwayDays < 30) {
-      list.push({
-        id: "runway-low",
-        title: "Fôlego baixo",
-        description: `Fôlego de caixa: apenas ${runwayDays} dias restantes.`,
-        priority: "high",
-        iconName: "AlertTriangle",
-      });
-    }
-
-    // Category concentration
-    if (computed.topExpenseCategories.length > 0 && computed.topExpenseCategories[0].percent > 40) {
-      list.push({
-        id: "category-concentration",
-        title: "Concentração de despesas",
-        description: `A categoria "${computed.topExpenseCategories[0].name}" concentrou ${Math.round(computed.topExpenseCategories[0].percent)}% das despesas.`,
-        priority: "low",
-        iconName: "Info",
-      });
-    }
-
     return list.sort((a, b) => {
       const order = { high: 0, medium: 1, low: 2 };
       return order[a.priority] - order[b.priority];
     });
   }, [computed, invoices, runwayDays]);
 
-  const isLoading = profileLoading || txLoading || invLoading || syncLoading;
+  const isLoading = profileLoading || txLoading || invLoading || syncLoading || dreLoading;
   const hasData = (transactions?.length ?? 0) > 0;
   const hasSyncConnection = (connections?.length ?? 0) > 0;
   const lastSyncAt = connections?.[0]?.last_sync_at ?? null;
@@ -266,8 +398,6 @@ export function useHomeDashboard(): HomeDashboardData {
     monthIncome: computed.monthIncome,
     monthExpense: computed.monthExpense,
     monthResult,
-    receivables,
-    payables: computed.payables,
     variationPercent,
     variationValue,
     runwayDays,
@@ -276,6 +406,11 @@ export function useHomeDashboard(): HomeDashboardData {
     dailyTrend: computed.dailyTrend,
     healthScore,
     healthFactors,
+    trendLabel,
+    trendPercent,
+    profitQuality,
+    profitQualityPrev,
+    profitQualityHistory,
     isLoading,
     hasData,
     hasSyncConnection,
