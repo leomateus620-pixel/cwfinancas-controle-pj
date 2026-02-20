@@ -164,8 +164,10 @@ export type Database = {
           is_group: boolean | null
           is_subtotal: boolean | null
           line_label: string
+          nucleo: string | null
           order_index: number
           period_id: string
+          section: string | null
           source_cell: string | null
           source_tab: string | null
           updated_at: string | null
@@ -179,8 +181,10 @@ export type Database = {
           is_group?: boolean | null
           is_subtotal?: boolean | null
           line_label: string
+          nucleo?: string | null
           order_index: number
           period_id: string
+          section?: string | null
           source_cell?: string | null
           source_tab?: string | null
           updated_at?: string | null
@@ -194,8 +198,10 @@ export type Database = {
           is_group?: boolean | null
           is_subtotal?: boolean | null
           line_label?: string
+          nucleo?: string | null
           order_index?: number
           period_id?: string
+          section?: string | null
           source_cell?: string | null
           source_tab?: string | null
           updated_at?: string | null
@@ -268,6 +274,7 @@ export type Database = {
           period_key: string
           period_label: string | null
           sheet_id: string | null
+          template_type: string | null
           updated_at: string | null
           user_id: string
           validation_notes: Json | null
@@ -281,6 +288,7 @@ export type Database = {
           period_key: string
           period_label?: string | null
           sheet_id?: string | null
+          template_type?: string | null
           updated_at?: string | null
           user_id: string
           validation_notes?: Json | null
@@ -294,6 +302,7 @@ export type Database = {
           period_key?: string
           period_label?: string | null
           sheet_id?: string | null
+          template_type?: string | null
           updated_at?: string | null
           user_id?: string
           validation_notes?: Json | null
@@ -305,6 +314,50 @@ export type Database = {
             columns: ["sheet_id"]
             isOneToOne: false
             referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dre_validation_issues: {
+        Row: {
+          actual_cents: number | null
+          created_at: string | null
+          details_json: Json | null
+          diff_cents: number | null
+          expected_cents: number | null
+          id: string
+          period_id: string
+          rule_code: string
+          user_id: string
+        }
+        Insert: {
+          actual_cents?: number | null
+          created_at?: string | null
+          details_json?: Json | null
+          diff_cents?: number | null
+          expected_cents?: number | null
+          id?: string
+          period_id: string
+          rule_code: string
+          user_id: string
+        }
+        Update: {
+          actual_cents?: number | null
+          created_at?: string | null
+          details_json?: Json | null
+          diff_cents?: number | null
+          expected_cents?: number | null
+          id?: string
+          period_id?: string
+          rule_code?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dre_validation_issues_period_id_fkey"
+            columns: ["period_id"]
+            isOneToOne: false
+            referencedRelation: "dre_periods"
             referencedColumns: ["id"]
           },
         ]
