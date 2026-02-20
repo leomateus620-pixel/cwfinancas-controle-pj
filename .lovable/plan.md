@@ -1,87 +1,54 @@
 
+# Corrigir: DRE nao exibe dados por causa do filtro global de datas
 
-# Corrigir KPIs da DRE LCF: Resultado e Despesas Consistentes
+## Problema Encontrado
 
-## Problema Principal
+A pagina DRE nao mostra nenhum dado apesar da importacao ter sido bem-sucedida (188 linhas, 1 periodo).
 
-O parser LCF marca TODAS as linhas contendo "resultado" com a mesma secao `RESULTADO`. Na planilha LCF existem pelo menos duas linhas de resultado:
-
-1. **"Resultado antes das despesas escritorio"** -- resultado parcial (receita - despesas nucleo apenas)
-2. **"RESULTADO antes das participacoes e reserva"** -- resultado FINAL (apos todas as despesas)
-
-Como `findBySection("RESULTADO")` retorna o PRIMEIRO match, o KPI "Resultado do Mes" mostra o valor ANTES do escritorio, enquanto "Despesas Totais" ja INCLUI escritorio. Isso gera inconsistencia.
+**Causa raiz:** O hook `useDRE.ts` filtra os periodos disponiveis usando o `globalMonthRange` do contexto de datas. O usuario tem o filtro global configurado para **Fevereiro 2026** (2026-02-01 a 2026-02-28), mas o unico periodo DRE importado e **Janeiro 2026** (`period_key: "2026-01"`). Como `"2026-01" < "2026-02"`, o periodo e excluido pelo filtro e `periodOptions` fica vazio -- sem seletor de periodo, sem linhas, sem KPIs.
 
 ## Solucao
 
-Criar secoes distintas no parser para diferenciar os dois tipos de resultado:
+Remover o filtro `globalMonthRange` do hook `useDRE`. A DRE e um demonstrativo financeiro independente -- cada periodo (mes) e selecionado pelo proprio dropdown da pagina DRE, nao pelo filtro global do dashboard.
 
-| Rotulo na planilha | Secao atual | Secao corrigida |
-|---|---|---|
-| "Resultado antes das despesas escritorio" | RESULTADO | RESULTADO_PRE_ESCRITORIO |
-| "RESULTADO antes das participacoes e reserva" | RESULTADO | RESULTADO_FINAL |
-| Qualquer outro "resultado" generico | RESULTADO | RESULTADO |
-
-O KPI "Resultado do Mes" passara a usar `RESULTADO_FINAL` (prioridade) ou fallback para `RESULTADO`.
-
-## Arquivos Modificados
+## Arquivo Modificado
 
 | Arquivo | Acao |
 |---|---|
-| `supabase/functions/dre-sync/index.ts` | Corrigir `detectSection()` para diferenciar RESULTADO_PRE_ESCRITORIO vs RESULTADO_FINAL |
-| `src/hooks/useDRE.ts` | Corrigir `calculateLcfKPIs()` para buscar RESULTADO_FINAL |
+| `src/hooks/useDRE.ts` | Remover a logica de filtragem por `globalMonthRange` nos `periodOptions` |
 
-## Detalhes Tecnicos
+## Detalhe Tecnico
 
-### 1. Edge Function: `detectSection()` (linha ~290)
-
-```text
-// ANTES:
-if (n.includes("resultado")) return "RESULTADO";
-
-// DEPOIS:
-if (n.includes("resultado") && n.includes("antes") && n.includes("despesas") && n.includes("escritorio")) 
-  return "RESULTADO_PRE_ESCRITORIO";
-if (n.includes("resultado") && n.includes("participac")) 
-  return "RESULTADO_FINAL";
-if (n.includes("resultado")) 
-  return "RESULTADO";
-```
-
-A ordem importa: regras mais especificas primeiro.
-
-### 2. Edge Function: `validateDreLcf()` (linha ~446)
-
-Ajustar a validacao para usar `RESULTADO_FINAL` na reconciliacao:
+No arquivo `src/hooks/useDRE.ts`, linhas 65-79, o codigo atual:
 
 ```text
-// Buscar resultado final (prioridade) ou fallback generico
-const resultado = findBySection("RESULTADO_FINAL") || findBySection("RESULTADO");
+let globalMonthRange = null;
+try {
+  const dr = useDateRange();
+  globalMonthRange = dr.monthRange;
+} catch { }
+
+const periodOptions = (periods || [])
+  .filter(p => {
+    if (!globalMonthRange) return true;
+    if (p.period_key === "TOTAL") return true;
+    if (p.period_key.startsWith("REVIEW_")) return true;
+    return p.period_key >= globalMonthRange.from && p.period_key <= globalMonthRange.to;
+  })
+  .map(...)
 ```
 
-Adicionar validacao extra:
-- `resultado_final` deve ser aproximadamente igual a `receita_bruta + despesas_nucleo + despesas_escritorio` (tolerancia 0.01)
-
-### 3. Hook: `calculateLcfKPIs()` (linha ~207)
+Sera simplificado para remover o filtro, mostrando TODOS os periodos importados no dropdown da DRE:
 
 ```text
-// ANTES:
-const resultado = findBySection("RESULTADO");
-
-// DEPOIS:
-const resultado = findBySection("RESULTADO_FINAL") || findBySection("RESULTADO");
+const periodOptions = (periods || [])
+  .map(p => ({
+    key: p.period_key,
+    label: p.period_label || p.period_key,
+    id: p.id,
+    validationStatus: p.validation_status,
+    templateType: p.template_type || "DEFAULT",
+  }));
 ```
 
-Isso garante que o KPI "Resultado do Mes" use o resultado APOS escritorio, consistente com "Despesas Totais" que ja soma escritorio.
-
-### 4. Validacao dos valores esperados
-
-Com a correcao, para "DRE Jan26":
-- Faturamento (RECEITA_BRUTA subtotal consolidado) = 69.384,18
-- Despesas nucleo (DESPESAS_NUCLEO subtotal consolidado) = valor negativo
-- Despesas escritorio (DESPESAS_ESCRITORIO subtotal) = valor negativo  
-- Despesas Totais = despesas_nucleo + despesas_escritorio = -16.421,84
-- Resultado (RESULTADO_FINAL subtotal consolidado) = 52.962,34
-- Margem = 52.962,34 / 69.384,18 * 100 = 76,33%
-
-A reconciliacao verifica: 69.384,18 + (-16.421,84) = 52.962,34 (ok, diff = 0)
-
+A chamada a `useDateRange()` e a variavel `globalMonthRange` serao removidas do hook.
