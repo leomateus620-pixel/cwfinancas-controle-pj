@@ -6,6 +6,16 @@ import { useSyncStatus } from "./useSyncStatus";
 import { format, startOfMonth, endOfMonth, subMonths, subDays, parseISO, isValid, differenceInDays, addDays } from "date-fns";
 import { formatCurrencyBR } from "@/lib/currency";
 
+function extractCompanyFromSheet(name?: string): string | null {
+  if (!name) return null;
+  let clean = name.replace(/\.(xlsx?|csv)$/i, "");
+  clean = clean.replace(/^financeiro\s*/i, "");
+  clean = clean.replace(/\s*[-–]\s*\d{4}\s*$/, "");
+  clean = clean.replace(/\s+\d{4}\s*$/, "");
+  clean = clean.trim();
+  return clean || null;
+}
+
 function getGreeting(): string {
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) return "Bom dia";
@@ -250,7 +260,7 @@ export function useHomeDashboard(): HomeDashboardData {
 
   return {
     greeting: getGreeting(),
-    companyName: profile?.company_name || "Sua Empresa",
+    companyName: extractCompanyFromSheet(connections?.[0]?.spreadsheet_name) || profile?.company_name || "Sua Empresa",
     lastSyncAt,
     currentBalance,
     monthIncome: computed.monthIncome,
