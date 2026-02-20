@@ -211,7 +211,7 @@ export function useDRE(sheetId?: string) {
     const receitaBruta = findBySection("RECEITA_BRUTA");
     const despesasNucleo = findBySection("DESPESAS_NUCLEO");
     const despesasEscritorio = findBySection("DESPESAS_ESCRITORIO");
-    const resultado = findBySection("RESULTADO");
+    const resultado = findBySection("RESULTADO_FINAL") || findBySection("RESULTADO");
 
     const faturamento = receitaBruta?.value ?? 0;
     const despesasTotais = (despesasNucleo?.value ?? 0) + (despesasEscritorio?.value ?? 0);
