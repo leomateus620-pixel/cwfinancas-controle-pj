@@ -261,13 +261,13 @@ export function useGoogleSheets() {
       spreadsheetName,
       sheetName,
       dataType,
-      monthRange,
+      selectedTabs,
     }: {
       spreadsheetId: string;
       spreadsheetName: string;
       sheetName: string | null;
       dataType?: string;
-      monthRange?: MonthRange;
+      selectedTabs?: string[];
     }) => {
       if (!session?.user?.id) {
         throw new Error("Not authenticated");
@@ -286,8 +286,8 @@ export function useGoogleSheets() {
       // Determine data_type and store month_range in column_mapping
       const isAllTabs = sheetName === null;
       const finalDataType = dataType || (isAllTabs ? "all_tabs" : "transactions");
-      const columnMapping = isAllTabs && monthRange 
-        ? JSON.parse(JSON.stringify({ month_range: monthRange }))
+      const columnMapping = isAllTabs && selectedTabs 
+        ? JSON.parse(JSON.stringify({ selected_tabs: selectedTabs }))
         : {};
 
       const { data, error } = await supabase
@@ -373,9 +373,9 @@ export function useGoogleSheets() {
 
   // Sync all tabs (monthly transactions only) - fire-and-forget with job tracking
   const syncAllTabs = useMutation({
-    mutationFn: async ({ connectionId, monthRange }: { connectionId: string; monthRange?: MonthRange }) => {
+    mutationFn: async ({ connectionId, selectedTabs, monthRange }: { connectionId: string; selectedTabs?: string[]; monthRange?: MonthRange }) => {
       const { data, error } = await supabase.functions.invoke("sheets-sync-all-tabs", {
-        body: { connection_id: connectionId, month_range: monthRange },
+        body: { connection_id: connectionId, selected_tabs: selectedTabs, month_range: monthRange },
       });
 
       // If we get a 409 (already_running), show specific message
