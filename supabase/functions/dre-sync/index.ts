@@ -296,6 +296,8 @@ function detectSection(label: string): string | null {
   if (n.includes("receita bruta")) return "RECEITA_BRUTA";
   if (n.includes("sobra de cada nucleo") || n.includes("sobra")) return "SOBRA";
   if (n.includes("lucro distribuido") || n.includes("distribuicao")) return "DISTRIBUICAO";
+  if (n.includes("resultado") && n.includes("antes") && n.includes("despesas") && n.includes("escritorio")) return "RESULTADO_PRE_ESCRITORIO";
+  if (n.includes("resultado") && n.includes("participac")) return "RESULTADO_FINAL";
   if (n.includes("resultado")) return "RESULTADO";
   return null;
 }
@@ -454,11 +456,12 @@ function validateDreLcf(lines: LcfParsedLine[], _periodKey: string | null): Vali
 
   const receitaBruta = findBySection("RECEITA_BRUTA");
   const despesasNucleo = findBySection("DESPESAS_NUCLEO");
-  const resultado = findBySection("RESULTADO");
+  const despesasEscritorio = findBySection("DESPESAS_ESCRITORIO");
+  const resultado = findBySection("RESULTADO_FINAL") || findBySection("RESULTADO");
 
-  // Check: Resultado ~= Receita Bruta - Despesas Nucleo
+  // Check: Resultado Final ~= Receita Bruta + Despesas Nucleo + Despesas Escritorio
   if (receitaBruta && despesasNucleo && resultado) {
-    const expected = receitaBruta.value + despesasNucleo.value; // despesas are negative
+    const expected = receitaBruta.value + despesasNucleo.value + (despesasEscritorio?.value ?? 0); // despesas are negative
     const diff = Math.abs(resultado.value - expected);
     if (diff > 0.01) {
       issues.push({
@@ -476,7 +479,7 @@ function validateDreLcf(lines: LcfParsedLine[], _periodKey: string | null): Vali
     const nLines = lines.filter(l => l.nucleo === nucleoName);
     const nReceita = nLines.find(l => l.section === "RECEITA_BRUTA" && l.isSubtotal);
     const nDespesa = nLines.find(l => l.section === "DESPESAS_NUCLEO" && l.isSubtotal);
-    const nResultado = nLines.find(l => l.section === "RESULTADO" && l.isSubtotal);
+    const nResultado = nLines.find(l => l.section === "RESULTADO_FINAL" && l.isSubtotal) || nLines.find(l => l.section === "RESULTADO" && l.isSubtotal);
 
     if (nReceita && nDespesa && nResultado) {
       const expected = nReceita.value + nDespesa.value;
