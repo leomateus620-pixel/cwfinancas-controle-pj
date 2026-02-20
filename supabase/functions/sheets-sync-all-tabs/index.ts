@@ -824,10 +824,10 @@ Deno.serve(async (req) => {
         try {
           // Build row object
           const rowObj: Record<string, unknown> = {};
-          headers.forEach((h, i) => { rowObj[h] = row[i] || ""; });
+          headers.forEach((h, i) => { rowObj[String(h)] = row[i] ?? ""; });
 
           // Check if all cells are empty
-          const hasAnyContent = row.some(cell => cell && cell.trim().length > 0);
+          const hasAnyContent = row.some(cell => cell !== null && cell !== undefined && String(cell).trim().length > 0);
           if (!hasAnyContent) {
             tabSkipped++;
             skipReasons["empty_row"] = (skipReasons["empty_row"] || 0) + 1;
