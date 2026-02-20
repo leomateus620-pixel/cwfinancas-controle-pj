@@ -1,57 +1,87 @@
 
 
-# Restringir Home ao mês vigente com comparação via query separada
+# Corrigir KPIs da DRE LCF: Resultado e Despesas Consistentes
 
-## Problema
+## Problema Principal
 
-O `homeStart` foi alterado para buscar 60 dias de transações, mas o requisito é que a Home exiba SOMENTE dados do mês corrente (ex: 1 Fev - 28 Fev). A comparação "% vs mês anterior" ainda precisa funcionar.
+O parser LCF marca TODAS as linhas contendo "resultado" com a mesma secao `RESULTADO`. Na planilha LCF existem pelo menos duas linhas de resultado:
 
-## Solução
+1. **"Resultado antes das despesas escritorio"** -- resultado parcial (receita - despesas nucleo apenas)
+2. **"RESULTADO antes das participacoes e reserva"** -- resultado FINAL (apos todas as despesas)
 
-Usar DUAS chamadas `useTransactions` no hook `useHomeDashboard.ts`:
+Como `findBySection("RESULTADO")` retorna o PRIMEIRO match, o KPI "Resultado do Mes" mostra o valor ANTES do escritorio, enquanto "Despesas Totais" ja INCLUI escritorio. Isso gera inconsistencia.
 
-1. **Query principal (mês corrente):** `startOfMonth(now)` até `endOfMonth(now)` -- alimenta KPIs, categorias, alertas
-2. **Query secundária (mês anterior):** `startOfMonth(subMonths(now, 1))` até `endOfMonth(subMonths(now, 1))` -- alimenta apenas a variação % e comparações
+## Solucao
 
-O `dailyTrend` (sparkline de 30 dias) continuará usando os dados combinados das duas queries, pois os últimos 30 dias podem cruzar dois meses.
+Criar secoes distintas no parser para diferenciar os dois tipos de resultado:
 
-## Arquivo modificado
+| Rotulo na planilha | Secao atual | Secao corrigida |
+|---|---|---|
+| "Resultado antes das despesas escritorio" | RESULTADO | RESULTADO_PRE_ESCRITORIO |
+| "RESULTADO antes das participacoes e reserva" | RESULTADO | RESULTADO_FINAL |
+| Qualquer outro "resultado" generico | RESULTADO | RESULTADO |
 
-| Arquivo | Ação |
+O KPI "Resultado do Mes" passara a usar `RESULTADO_FINAL` (prioridade) ou fallback para `RESULTADO`.
+
+## Arquivos Modificados
+
+| Arquivo | Acao |
 |---|---|
-| `src/hooks/useHomeDashboard.ts` | Separar em duas queries de transações: mês atual e mês anterior |
+| `supabase/functions/dre-sync/index.ts` | Corrigir `detectSection()` para diferenciar RESULTADO_PRE_ESCRITORIO vs RESULTADO_FINAL |
+| `src/hooks/useDRE.ts` | Corrigir `calculateLcfKPIs()` para buscar RESULTADO_FINAL |
 
-## Detalhes técnicos
+## Detalhes Tecnicos
 
-### Mudanças no hook
+### 1. Edge Function: `detectSection()` (linha ~290)
 
 ```text
-// ANTES (uma query de 60 dias):
-const homeStart = format(subDays(now, 60), "yyyy-MM-dd");
-const { transactions, totals } = useTransactions({ startDate: homeStart, endDate: homeEnd });
+// ANTES:
+if (n.includes("resultado")) return "RESULTADO";
 
-// DEPOIS (duas queries separadas):
-const currStart = format(startOfMonth(now), "yyyy-MM-dd");
-const currEnd = format(endOfMonth(now), "yyyy-MM-dd");
-const prevStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
-const prevEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
-
-const { transactions: currTx, totals } = useTransactions({ startDate: currStart, endDate: currEnd });
-const { transactions: prevTx } = useTransactions({ startDate: prevStart, endDate: prevEnd });
+// DEPOIS:
+if (n.includes("resultado") && n.includes("antes") && n.includes("despesas") && n.includes("escritorio")) 
+  return "RESULTADO_PRE_ESCRITORIO";
+if (n.includes("resultado") && n.includes("participac")) 
+  return "RESULTADO_FINAL";
+if (n.includes("resultado")) 
+  return "RESULTADO";
 ```
 
-### Ajustes nos cálculos
+A ordem importa: regras mais especificas primeiro.
 
-- **KPIs do mês (Entradas, Saídas, Resultado):** usam apenas `currTx`
-- **Variação % vs mês anterior:** usa `prevTx` para calcular `prevMonthIncome`, `prevMonthExpense`, `prevMonthResult`
-- **Trend 30d vs 30d:** combina `currTx` + `prevTx` (ambas queries juntas cobrem ~60 dias)
-- **dailyTrend sparkline:** combina `currTx` + `prevTx` para montar os últimos 30 dias
-- **Runway (fôlego):** usa `currTx` + `prevTx` combinados para média de despesas dos últimos 30 dias
-- **currentBalance (totals.balance):** vem da query do mês corrente via `allTotals`
-- **Alertas:** mantêm a mesma lógica, apenas trocando a fonte de dados
+### 2. Edge Function: `validateDreLcf()` (linha ~446)
 
-### O que NÃO muda
+Ajustar a validacao para usar `RESULTADO_FINAL` na reconciliacao:
 
-- Interface `HomeDashboardData` permanece idêntica
-- Nenhum componente de UI precisa ser alterado
-- A página `HomePage.tsx` não é tocada
+```text
+// Buscar resultado final (prioridade) ou fallback generico
+const resultado = findBySection("RESULTADO_FINAL") || findBySection("RESULTADO");
+```
+
+Adicionar validacao extra:
+- `resultado_final` deve ser aproximadamente igual a `receita_bruta + despesas_nucleo + despesas_escritorio` (tolerancia 0.01)
+
+### 3. Hook: `calculateLcfKPIs()` (linha ~207)
+
+```text
+// ANTES:
+const resultado = findBySection("RESULTADO");
+
+// DEPOIS:
+const resultado = findBySection("RESULTADO_FINAL") || findBySection("RESULTADO");
+```
+
+Isso garante que o KPI "Resultado do Mes" use o resultado APOS escritorio, consistente com "Despesas Totais" que ja soma escritorio.
+
+### 4. Validacao dos valores esperados
+
+Com a correcao, para "DRE Jan26":
+- Faturamento (RECEITA_BRUTA subtotal consolidado) = 69.384,18
+- Despesas nucleo (DESPESAS_NUCLEO subtotal consolidado) = valor negativo
+- Despesas escritorio (DESPESAS_ESCRITORIO subtotal) = valor negativo  
+- Despesas Totais = despesas_nucleo + despesas_escritorio = -16.421,84
+- Resultado (RESULTADO_FINAL subtotal consolidado) = 52.962,34
+- Margem = 52.962,34 / 69.384,18 * 100 = 76,33%
+
+A reconciliacao verifica: 69.384,18 + (-16.421,84) = 52.962,34 (ok, diff = 0)
+
