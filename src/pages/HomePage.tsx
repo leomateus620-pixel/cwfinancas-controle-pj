@@ -129,20 +129,18 @@ export default function HomePage() {
                 trend={{ value: data.variationPercent, label: "vs mês anterior" }}
                 delay={180}
               />
-              {data.runwayDays !== null && data.runwayDays !== 0 && (
-                <HomeKPICard
-                  label="Fôlego de Caixa"
-                  value={data.runwayDays === null ? "∞" : `${data.runwayDays} dias`}
-                  icon={<Hourglass className="w-5 h-5 text-purple-600" />}
-                  tooltip="Estimativa de quantos dias o saldo atual cobre, com base na média de despesas operacionais dos últimos 30 dias."
-                  valueColor={
-                    data.runwayDays === null ? "text-emerald-600" :
-                    data.runwayDays > 60 ? "text-emerald-600" :
-                    data.runwayDays > 30 ? "text-amber-600" : "text-red-600"
-                  }
-                  delay={360}
-                />
-              )}
+              <HomeKPICard
+                label="Fôlego de Caixa"
+                value={data.runwayDays === null ? "Infinito" : `${data.runwayDays} dias`}
+                icon={<Hourglass className="w-5 h-5 text-purple-600" />}
+                tooltip="Estimativa de quantos dias o saldo atual cobre, com base na média de despesas operacionais dos últimos 30 dias."
+                valueColor={
+                  data.runwayDays === null ? "text-emerald-600" :
+                  data.runwayDays > 60 ? "text-emerald-600" :
+                  data.runwayDays > 30 ? "text-amber-600" : "text-red-600"
+                }
+                delay={360}
+              />
             </div>
 
             {/* Middle row: Summary + Health */}
