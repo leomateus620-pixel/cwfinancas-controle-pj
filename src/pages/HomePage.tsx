@@ -136,22 +136,6 @@ export default function HomePage() {
                 trend={{ value: data.variationPercent, label: "vs mês anterior" }}
                 delay={180}
               />
-              <HomeKPICard
-                label="Contas a Receber"
-                value={formatCompactBR(data.receivables)}
-                icon={<Clock className="w-5 h-5 text-amber-600" />}
-                tooltip="Valor total de faturas com status pendente."
-                href="/invoices"
-                delay={240}
-              />
-              <HomeKPICard
-                label="Contas a Pagar"
-                value={formatCompactBR(data.payables)}
-                icon={<CreditCard className="w-5 h-5 text-orange-600" />}
-                tooltip="Despesas futuras programadas."
-                href="/expenses"
-                delay={300}
-              />
               {data.runwayDays !== null && (
                 <HomeKPICard
                   label="Fôlego de Caixa"
