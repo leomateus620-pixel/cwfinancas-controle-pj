@@ -65,20 +65,21 @@ export function useHomeDashboard(): HomeDashboardData {
   const { session } = useAuth();
 
   const now = new Date();
-  const homeStart = format(subDays(now, 60), "yyyy-MM-dd");
-  const homeEnd = format(endOfMonth(now), "yyyy-MM-dd");
+  const currStart = format(startOfMonth(now), "yyyy-MM-dd");
+  const currEnd = format(endOfMonth(now), "yyyy-MM-dd");
+  const prevStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
+  const prevEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
 
-  const { transactions, isLoading: txLoading, totals: allTotals } = useTransactions({
-    startDate: homeStart,
-    endDate: homeEnd,
+  const { transactions: currTx, isLoading: txLoading, totals: allTotals } = useTransactions({
+    startDate: currStart,
+    endDate: currEnd,
+  });
+  const { transactions: prevTx, isLoading: prevTxLoading } = useTransactions({
+    startDate: prevStart,
+    endDate: prevEnd,
   });
   const { invoices, isLoading: invLoading } = useInvoices();
   const { connections, isLoading: syncLoading } = useSyncStatus();
-
-  const currentMonthStart = homeStart;
-  const currentMonthEnd = homeEnd;
-  const prevMonthStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
-  const prevMonthEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
 
   // Fetch DRE data for profit quality
   const { data: dreData, isLoading: dreLoading } = useQuery({
@@ -121,34 +122,21 @@ export function useHomeDashboard(): HomeDashboardData {
     enabled: !!session,
   });
 
-  const computed = useMemo(() => {
-    if (!transactions || transactions.length === 0) {
-      return {
-        monthIncome: 0,
-        monthExpense: 0,
-        prevMonthIncome: 0,
-        prevMonthExpense: 0,
-        topExpenseCategories: [] as Array<{ name: string; value: number; percent: number }>,
-        dailyTrend: [] as Array<{ date: string; value: number }>,
-        // For trend: last 30d vs prev 30d
-        last30Income: 0,
-        last30Expense: 0,
-        prev30Income: 0,
-        prev30Expense: 0,
-      };
-    }
+  // Combine both queries for trend/runway calculations
+  const allTx = useMemo(() => [...(currTx || []), ...(prevTx || [])], [currTx, prevTx]);
 
-    // Current month - exclude transfers
-    const currentMonthTx = transactions.filter(t => t.date >= currentMonthStart && t.date <= currentMonthEnd && (t as any).movement_type !== "TRANSFER");
+  const computed = useMemo(() => {
+    // Current month KPIs - use only currTx
+    const currentMonthTx = (currTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
     const monthIncome = currentMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const monthExpense = currentMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    // Previous month - exclude transfers
-    const prevMonthTx = transactions.filter(t => t.date >= prevMonthStart && t.date <= prevMonthEnd && (t as any).movement_type !== "TRANSFER");
+    // Previous month - use only prevTx
+    const prevMonthTx = (prevTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
     const prevMonthIncome = prevMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const prevMonthExpense = prevMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    // Top 5 expense categories
+    // Top 5 expense categories (current month only)
     const categoryMap = new Map<string, number>();
     currentMonthTx.filter(t => t.type === "expense").forEach(t => {
       categoryMap.set(t.category, (categoryMap.get(t.category) || 0) + Number(t.amount));
@@ -160,14 +148,14 @@ export function useHomeDashboard(): HomeDashboardData {
       percent: monthExpense > 0 ? (value / monthExpense) * 100 : 0,
     }));
 
-    // Daily trend (last 30 days cumulative balance)
+    // Daily trend (last 30 days cumulative) - combine both queries
     const thirtyDaysAgo = subDays(now, 30);
     const dailyMap = new Map<string, number>();
     for (let i = 0; i <= 30; i++) {
       const d = format(addDays(thirtyDaysAgo, i), "yyyy-MM-dd");
       dailyMap.set(d, 0);
     }
-    transactions.forEach(t => {
+    allTx.forEach(t => {
       const d = t.date;
       if (d >= format(thirtyDaysAgo, "yyyy-MM-dd") && d <= format(now, "yyyy-MM-dd")) {
         const val = t.type === "income" ? Number(t.amount) : -Number(t.amount);
@@ -182,12 +170,12 @@ export function useHomeDashboard(): HomeDashboardData {
       dailyTrend.push({ date, value: cumulative });
     }
 
-    // Trend: last 30 days vs prev 30 days (operational only)
+    // Trend: last 30 days vs prev 30 days (combine both queries)
     const today = format(now, "yyyy-MM-dd");
     const d30ago = format(subDays(now, 30), "yyyy-MM-dd");
     const d60ago = format(subDays(now, 60), "yyyy-MM-dd");
 
-    const opTx = transactions.filter(t => (t as any).movement_type !== "TRANSFER");
+    const opTx = allTx.filter(t => (t as any).movement_type !== "TRANSFER");
     const last30 = opTx.filter(t => t.date >= d30ago && t.date <= today);
     const prev30 = opTx.filter(t => t.date >= d60ago && t.date < d30ago);
 
@@ -197,7 +185,7 @@ export function useHomeDashboard(): HomeDashboardData {
     const prev30Expense = prev30.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
     return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, dailyTrend, last30Income, last30Expense, prev30Income, prev30Expense };
-  }, [transactions, currentMonthStart, currentMonthEnd, prevMonthStart, prevMonthEnd]);
+  }, [currTx, prevTx, allTx]);
 
   const currentBalance = allTotals.balance;
   const monthResult = computed.monthIncome - computed.monthExpense;
@@ -207,17 +195,16 @@ export function useHomeDashboard(): HomeDashboardData {
 
   // Runway (fôlego) - use last 30 days of operational expenses
   const avgDailyExpense = useMemo(() => {
-    if (!transactions) return 0;
+    if (allTx.length === 0) return 0;
     const d30 = format(subDays(now, 30), "yyyy-MM-dd");
     const today = format(now, "yyyy-MM-dd");
-    const opExpenses = transactions.filter(
+    const opExpenses = allTx.filter(
       t => t.type === "expense" && t.date >= d30 && t.date <= today && (t as any).movement_type !== "TRANSFER"
     );
     const totalExpense = opExpenses.reduce((s, t) => s + Number(t.amount), 0);
-    // Count days with data
     const daysWithData = new Set(opExpenses.map(t => t.date)).size;
     return daysWithData > 0 ? Math.abs(totalExpense) / daysWithData : 0;
-  }, [transactions]);
+  }, [allTx]);
 
   const runwayDays = useMemo(() => {
     if (currentBalance <= 0) return 0;
@@ -385,8 +372,8 @@ export function useHomeDashboard(): HomeDashboardData {
     });
   }, [computed, invoices, runwayDays]);
 
-  const isLoading = profileLoading || txLoading || invLoading || syncLoading || dreLoading;
-  const hasData = (transactions?.length ?? 0) > 0;
+  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading;
+  const hasData = (currTx?.length ?? 0) > 0;
   const hasSyncConnection = (connections?.length ?? 0) > 0;
   const lastSyncAt = connections?.[0]?.last_sync_at ?? null;
 
