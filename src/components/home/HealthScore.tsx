@@ -1,10 +1,14 @@
 import { GlassCard } from "./GlassCard";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 interface HealthScoreProps {
   score: number;
   factors: Array<{ label: string; score: number; weight: number }>;
+  trendLabel: string;
+  trendPercent: number;
+  runwayDays: number | null;
   delay?: number;
 }
 
@@ -29,9 +33,22 @@ function getStrokeColor(score: number) {
   return "#dc2626";
 }
 
-export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
+function getTrendIcon(label: string) {
+  if (label === "Melhorando") return TrendingUp;
+  if (label === "Piorando") return TrendingDown;
+  return Minus;
+}
+
+function getTrendColor(label: string) {
+  if (label === "Melhorando") return "text-emerald-600";
+  if (label === "Piorando") return "text-red-600";
+  return "text-muted-foreground";
+}
+
+export function HealthScore({ score, factors, trendLabel, trendPercent, runwayDays, delay = 0 }: HealthScoreProps) {
   const circumference = 2 * Math.PI * 45;
   const offset = circumference - (score / 100) * circumference;
+  const TrendIcon = getTrendIcon(trendLabel);
 
   return (
     <div
@@ -45,8 +62,8 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
             <TooltipTrigger asChild>
               <button className="text-muted-foreground/50 hover:text-muted-foreground transition-colors text-xs">ⓘ</button>
             </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[260px] text-xs">
-              Score composto por margem de lucro, fôlego de caixa, contas a receber e tendência mensal. Cada fator vale até 25 pontos.
+            <TooltipContent side="top" className="max-w-[280px] text-xs">
+              Score composto por resultado operacional (40 pts), fôlego de caixa (40 pts) e tendência mensal (20 pts).
             </TooltipContent>
           </Tooltip>
         </div>
@@ -82,8 +99,21 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
           </div>
         </div>
 
+        {/* Trend indicator */}
+        <div className="flex items-center justify-center gap-1.5 mt-2 mb-3">
+          <TrendIcon className={cn("w-3.5 h-3.5", getTrendColor(trendLabel))} />
+          <span className={cn("text-xs font-medium", getTrendColor(trendLabel))}>
+            {trendLabel}
+          </span>
+          {trendPercent !== 0 && (
+            <span className="text-muted-foreground/60 text-[10px] tabular-nums">
+              ({trendPercent > 0 ? "+" : ""}{trendPercent}%)
+            </span>
+          )}
+        </div>
+
         {/* Factors */}
-        <div className="mt-4 space-y-2">
+        <div className="space-y-2">
           {factors.map((f, i) => (
             <div key={i} className="flex items-center justify-between">
               <span className="text-muted-foreground text-[11px]">{f.label}</span>
@@ -104,6 +134,24 @@ export function HealthScore({ score, factors, delay = 0 }: HealthScoreProps) {
             </div>
           ))}
         </div>
+
+        {/* Runway display */}
+        {runwayDays !== undefined && (
+          <div className="mt-3 pt-3 border-t border-foreground/5">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground text-[11px]">Fôlego</span>
+              <span className={cn(
+                "text-xs font-semibold tabular-nums",
+                runwayDays === null ? "text-emerald-600" :
+                runwayDays === 0 ? "text-red-600" :
+                runwayDays > 60 ? "text-emerald-600" :
+                runwayDays > 30 ? "text-amber-600" : "text-red-600"
+              )}>
+                {runwayDays === null ? "∞" : `${runwayDays} dias`}
+              </span>
+            </div>
+          </div>
+        )}
       </GlassCard>
     </div>
   );
