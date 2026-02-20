@@ -44,11 +44,6 @@ interface Sheet {
   index: number;
 }
 
-interface MonthRange {
-  from: string;
-  to: string;
-}
-
 interface SpreadsheetSelectorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -63,12 +58,12 @@ interface SpreadsheetSelectorModalProps {
     spreadsheetId: string;
     spreadsheetName: string;
     sheetName: string | null;
-    monthRange?: MonthRange;
+    selectedTabs?: string[];
   }) => Promise<void>;
   isCreatingConnection: boolean;
 }
 
-type Step = "spreadsheets" | "sheets" | "month-range" | "confirm";
+type Step = "spreadsheets" | "sheets" | "select-tabs" | "confirm";
 
 const MONTH_FULL: Record<string, number> = {
   janeiro: 1, fevereiro: 2, marco: 3, março: 3, abril: 4, maio: 5, junho: 6,
@@ -137,8 +132,8 @@ export function SpreadsheetSelectorModal({
   const [step, setStep] = useState<Step>("spreadsheets");
   const [selectedSpreadsheet, setSelectedSpreadsheet] = useState<{ id: string; name: string } | null>(null);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
-  const [monthRange, setMonthRange] = useState<MonthRange>({ from: "", to: "" });
-  const [detectedMonths, setDetectedMonths] = useState<Array<{ periodKey: string; label: string }>>([]);
+  const [selectedPeriods, setSelectedPeriods] = useState<Set<string>>(new Set());
+  const [detectedMonths, setDetectedMonths] = useState<Array<{ periodKey: string; label: string }>>([])
   
   // Search state
   const [searchTerm, setSearchTerm] = useState("");
@@ -182,7 +177,7 @@ export function SpreadsheetSelectorModal({
       setStep("spreadsheets");
       setSelectedSpreadsheet(null);
       setSelectedSheet(null);
-      setMonthRange({ from: "", to: "" });
+      setSelectedPeriods(new Set());
       setDetectedMonths([]);
       setSearchTerm("");
       setAccumulatedSpreadsheets([]);
@@ -232,11 +227,7 @@ export function SpreadsheetSelectorModal({
       setDetectedMonths(months);
 
       if (months.length > 0) {
-        const startIdx = Math.max(0, months.length - 6);
-        setMonthRange({
-          from: months[startIdx].periodKey,
-          to: months[months.length - 1].periodKey,
-        });
+        setSelectedPeriods(new Set(months.map(m => m.periodKey)));
       }
     }
   }, [sheetsData]);
@@ -250,10 +241,18 @@ export function SpreadsheetSelectorModal({
   const handleSelectSheet = (sheetName: string | null) => {
     setSelectedSheet(sheetName);
     if (sheetName === null) {
-      setStep("month-range");
+      setStep("select-tabs");
     } else {
       setStep("confirm");
     }
+  };
+
+  const togglePeriod = (pk: string) => {
+    setSelectedPeriods(prev => {
+      const next = new Set(prev);
+      next.has(pk) ? next.delete(pk) : next.add(pk);
+      return next;
+    });
   };
 
   const handleConfirm = async () => {
@@ -262,7 +261,7 @@ export function SpreadsheetSelectorModal({
       spreadsheetId: selectedSpreadsheet.id,
       spreadsheetName: selectedSpreadsheet.name,
       sheetName: selectedSheet,
-      monthRange: selectedSheet === null ? monthRange : undefined,
+      selectedTabs: selectedSheet === null ? Array.from(selectedPeriods) : undefined,
     });
     onOpenChange(false);
   };
@@ -271,12 +270,12 @@ export function SpreadsheetSelectorModal({
     if (step === "sheets") {
       setStep("spreadsheets");
       setSelectedSpreadsheet(null);
-    } else if (step === "month-range") {
+    } else if (step === "select-tabs") {
       setStep("sheets");
       setSelectedSheet(null);
     } else if (step === "confirm") {
       if (selectedSheet === null) {
-        setStep("month-range");
+        setStep("select-tabs");
       } else {
         setStep("sheets");
         setSelectedSheet(null);
@@ -294,13 +293,13 @@ export function SpreadsheetSelectorModal({
             <FileSpreadsheet className="w-5 h-5 text-primary" />
             {step === "spreadsheets" && "Selecionar Planilha"}
             {step === "sheets" && "Selecionar Aba"}
-            {step === "month-range" && "Selecionar Período"}
+            {step === "select-tabs" && "Selecionar Meses"}
             {step === "confirm" && "Confirmar Conexão"}
           </DialogTitle>
           <DialogDescription>
             {step === "spreadsheets" && "Escolha a planilha que deseja conectar."}
             {step === "sheets" && "Escolha a aba com os dados financeiros."}
-            {step === "month-range" && "Selecione o intervalo de meses para importar transações."}
+            {step === "select-tabs" && "Clique nos meses que deseja importar."}
             {step === "confirm" && "Revise e confirme a conexão."}
           </DialogDescription>
         </DialogHeader>
@@ -466,8 +465,8 @@ export function SpreadsheetSelectorModal({
             </div>
           )}
 
-          {/* Step: Month Range */}
-          {step === "month-range" && (
+          {/* Step: Select Tabs */}
+          {step === "select-tabs" && (
             <div className="space-y-5">
               <div className="text-sm text-muted-foreground px-1">
                 Planilha: <span className="font-medium text-foreground">{selectedSpreadsheet?.name}</span>
@@ -481,43 +480,49 @@ export function SpreadsheetSelectorModal({
                 </div>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                        <Calendar className="w-4 h-4 text-primary" />
-                        Mês inicial
-                      </label>
-                      <Select value={monthRange.from} onValueChange={(v) => setMonthRange(prev => ({ ...prev, from: v }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {detectedMonths.map((m) => (
-                            <SelectItem key={m.periodKey} value={m.periodKey}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-primary" />
+                      Meses detectados
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => setSelectedPeriods(new Set(detectedMonths.map(m => m.periodKey)))}
+                      >
+                        Selecionar Todos
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => setSelectedPeriods(new Set())}
+                      >
+                        Limpar
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-foreground flex items-center gap-1.5">
-                        <Calendar className="w-4 h-4 text-primary" />
-                        Mês final
-                      </label>
-                      <Select value={monthRange.to} onValueChange={(v) => setMonthRange(prev => ({ ...prev, to: v }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {detectedMonths.filter(m => m.periodKey >= monthRange.from).map((m) => (
-                            <SelectItem key={m.periodKey} value={m.periodKey}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 max-h-[250px] overflow-y-auto">
+                    {detectedMonths.map((m) => (
+                      <button
+                        key={m.periodKey}
+                        onClick={() => togglePeriod(m.periodKey)}
+                        className={cn(
+                          "p-3 rounded-xl border text-sm font-medium transition-all flex items-center gap-2 justify-center",
+                          selectedPeriods.has(m.periodKey)
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border/50 text-muted-foreground hover:border-primary/30"
+                        )}
+                      >
+                        {selectedPeriods.has(m.periodKey) && (
+                          <CheckCircle className="w-4 h-4 shrink-0" />
+                        )}
+                        {m.label}
+                      </button>
+                    ))}
                   </div>
 
                   <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 flex items-start gap-2">
@@ -528,8 +533,7 @@ export function SpreadsheetSelectorModal({
                   </div>
 
                   <p className="text-xs text-muted-foreground">
-                    {detectedMonths.length} aba(s) mensal(is) detectada(s) •{" "}
-                    {detectedMonths.filter(m => m.periodKey >= monthRange.from && m.periodKey <= monthRange.to).length} selecionada(s)
+                    {detectedMonths.length} aba(s) mensal(is) detectada(s) • {selectedPeriods.size} selecionada(s)
                   </p>
                 </>
               )}
@@ -540,7 +544,7 @@ export function SpreadsheetSelectorModal({
                 </Button>
                 <Button
                   onClick={() => setStep("confirm")}
-                  disabled={!monthRange.from || !monthRange.to || detectedMonths.length === 0}
+                  disabled={selectedPeriods.size === 0 || detectedMonths.length === 0}
                   className="flex-1"
                 >
                   Continuar
@@ -567,13 +571,13 @@ export function SpreadsheetSelectorModal({
                     <p className="font-medium text-foreground">{selectedSheet || "Todas as abas (mensais)"}</p>
                   </div>
                 </div>
-                {selectedSheet === null && monthRange.from && monthRange.to && (
+                {selectedSheet === null && selectedPeriods.size > 0 && (
                   <div className="flex items-center gap-3">
                     <CheckCircle className="w-5 h-5 text-success" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Período</p>
+                      <p className="text-sm text-muted-foreground">Meses selecionados</p>
                       <p className="font-medium text-foreground">
-                        {detectedMonths.find(m => m.periodKey === monthRange.from)?.label} → {detectedMonths.find(m => m.periodKey === monthRange.to)?.label}
+                        {selectedPeriods.size} mês(es): {detectedMonths.filter(m => selectedPeriods.has(m.periodKey)).map(m => m.label).join(", ")}
                       </p>
                     </div>
                   </div>

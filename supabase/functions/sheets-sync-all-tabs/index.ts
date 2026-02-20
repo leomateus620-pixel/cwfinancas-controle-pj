@@ -588,6 +588,7 @@ async function batchUpsertTransactions(
 interface SyncAllTabsRequest {
   connection_id: string;
   month_range?: { from: string; to: string };
+  selected_tabs?: string[];
 }
 
 Deno.serve(async (req) => {
@@ -623,11 +624,11 @@ Deno.serve(async (req) => {
     const userId = claimsData.user.id;
     const body: SyncAllTabsRequest = await req.json();
     connectionId = body.connection_id;
-    const { month_range } = body;
+    const { month_range, selected_tabs } = body;
 
     if (!connectionId) throw new Error("connection_id is required");
 
-    console.log(`[${requestId}] User: ${userId}, Connection: ${connectionId}, Range: ${JSON.stringify(month_range)}`);
+    console.log(`[${requestId}] User: ${userId}, Connection: ${connectionId}, SelectedTabs: ${JSON.stringify(selected_tabs)}, Range: ${JSON.stringify(month_range)}`);
 
     // ===== JOB CONTROL =====
     const jobResult = await checkAndClaimJob(supabase, userId, connectionId, "ALL_TABS", requestId);
@@ -721,11 +722,16 @@ Deno.serve(async (req) => {
     });
     let monthlyTabs = classified.filter(t => t.route === "MONTHLY_TRANSACTIONS");
 
-    if (month_range) {
-      // Compare by month only (MM part) to avoid year mismatch between
-      // the UI's date range (e.g. 2026-04) and the spreadsheet's inferred year (e.g. 2025-04)
-      const rangeFromMonth = month_range.from.slice(-2); // "04"
-      const rangeToMonth = month_range.to.slice(-2);     // "12"
+    // Filter by selected_tabs (new) or month_range (legacy fallback)
+    if (selected_tabs && selected_tabs.length > 0) {
+      const selectedMonths = new Set(selected_tabs.map(pk => pk.slice(-2)));
+      monthlyTabs = monthlyTabs.filter(t => {
+        if (!t.monthIndex) return false;
+        return selectedMonths.has(String(t.monthIndex).padStart(2, "0"));
+      });
+    } else if (month_range) {
+      const rangeFromMonth = month_range.from.slice(-2);
+      const rangeToMonth = month_range.to.slice(-2);
       monthlyTabs = monthlyTabs.filter(t => {
         if (!t.periodKey || !t.monthIndex) return false;
         const tabMonth = String(t.monthIndex).padStart(2, "0");

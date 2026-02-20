@@ -212,8 +212,10 @@ function GoogleSheetsPageContent() {
 
   const handleSync = (connection: { id: string; sheet_name: string | null; data_type: string; column_mapping: Record<string, string> }) => {
     if (connection.sheet_name === null && connection.data_type === "all_tabs") {
-      const monthRange = (connection.column_mapping as Record<string, unknown>)?.month_range as { from: string; to: string } | undefined;
-      syncAllTabs.mutate({ connectionId: connection.id, monthRange });
+      const mapping = connection.column_mapping as Record<string, unknown>;
+      const selectedTabs = mapping?.selected_tabs as string[] | undefined;
+      const monthRange = mapping?.month_range as { from: string; to: string } | undefined;
+      syncAllTabs.mutate({ connectionId: connection.id, selectedTabs, monthRange });
     } else {
       syncData.mutate(connection.id);
     }
@@ -262,7 +264,7 @@ function GoogleSheetsPageContent() {
     spreadsheetId: string;
     spreadsheetName: string;
     sheetName: string | null;
-    monthRange?: { from: string; to: string };
+    selectedTabs?: string[];
   }) => {
     await createConnection.mutateAsync(params);
   }, [createConnection]);
