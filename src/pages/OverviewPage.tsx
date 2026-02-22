@@ -5,6 +5,7 @@ import { ProfitDistributionChart } from "@/components/dashboard/ProfitDistributi
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { DataQualityCard } from "@/components/dashboard/DataQualityCard";
 import { Wallet, AlertTriangle, ArrowLeftRight } from "lucide-react";
+import { formatCurrencyBR } from "@/lib/currency";
 
 import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
@@ -105,10 +106,10 @@ export function OverviewPage() {
               <p className="text-sm font-medium text-foreground">Transferências internas no período</p>
               <div className="flex gap-6 mt-1">
                 <span className="text-xs text-muted-foreground">
-                  Entradas: <span className="font-semibold text-success">R$ {transferIn.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  Entradas: <span className="font-semibold text-success">{formatCurrencyBR(transferIn)}</span>
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  Saídas: <span className="font-semibold text-destructive">R$ {transferOut.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                  Saídas: <span className="font-semibold text-destructive">{formatCurrencyBR(transferOut)}</span>
                 </span>
               </div>
             </div>
