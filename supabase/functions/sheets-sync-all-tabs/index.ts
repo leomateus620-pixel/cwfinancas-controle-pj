@@ -91,6 +91,12 @@ function generateRowHash(content: Record<string, unknown>): string {
   return hash.digest("hex").slice(0, 12);
 }
 
+// ============ Safe string coercion for xlsx values ============
+function safeStr(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  return String(val);
+}
+
 // ============ XLSX Support ============
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -144,7 +150,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
 function parseBRL(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return isNaN(value) ? null : value;
-  let str = String(value).trim();
+  let str = safeStr(value).trim();
   if (!str) return null;
   // Reject dates
   if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return null;
@@ -168,7 +174,8 @@ function parseBRL(value: string | number | null | undefined): number | null {
   let normalized = str;
   if (lastComma > lastDot) {
     normalized = str.replace(/\./g, "").replace(",", ".");
-  } else if (lastDot > lastComma) {
+  } else if (lastDot > lastComma && lastComma >= 0) {
+    // "1,234.56" -> dot is decimal
     normalized = str.replace(/,/g, "");
   } else if (lastComma >= 0 && lastDot === -1) {
     if (commaCount === 1) {
@@ -178,13 +185,17 @@ function parseBRL(value: string | number | null | undefined): number | null {
       normalized = str.replace(/,/g, "");
     }
   } else if (lastDot >= 0 && lastComma === -1) {
-    if (dotCount === 1) {
-      const afterDot = str.split(".")[1];
-      if (afterDot && afterDot.length === 3 && str.split(".")[0].length <= 3) {
+    if (dotCount >= 2) {
+      // "1.234.567" -> all dots are thousand separators
+      normalized = str.replace(/\./g, "");
+    } else {
+      // Single dot: check if after-dot part has exactly 3 digits (thousand sep)
+      const afterDot = str.substring(lastDot + 1);
+      if (/^\d{3}$/.test(afterDot)) {
+        // "100.000" -> thousand separator (regardless of before-dot length)
         normalized = str.replace(".", "");
       }
-    } else {
-      normalized = str.replace(/\./g, "");
+      // else "123.45" -> decimal, leave as-is
     }
   }
   const num = parseFloat(normalized);
@@ -195,7 +206,7 @@ function parseBRL(value: string | number | null | undefined): number | null {
 
 function looksLikeDate(value: unknown): boolean {
   if (value === null || value === undefined) return false;
-  const str = String(value).trim();
+  const str = safeStr(value).trim();
   if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return true;
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return true;
   if (/^\d{1,2}[\/\-][a-zA-Záéíóúâêîôûãõ]+[\/\-]\d{2,4}$/i.test(str)) return true;
@@ -212,21 +223,74 @@ function normalizeRowKeys(rowObj: Record<string, unknown>): Record<string, unkno
   return normalized;
 }
 
+// ============ Dynamic Header Detection ============
+
+const HEADER_KEYWORDS = [
+  "data", "date", "dt", "vencimento", "competencia", "emissao", "lancado",
+  "descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "description",
+  "valor", "montante", "quantia", "vlr", "amount", "value",
+  "tipo", "natureza", "d/c", "type", "operacao",
+  "categoria", "classificacao", "grupo", "centro de custo", "category",
+  "cliente", "fornecedor", "razao social", "empresa", "parceiro", "favorecido",
+  "credito", "entrada", "receita", "credit", "recebido", "recebimento",
+  "debito", "saida", "despesa", "debit", "pago", "pagamento",
+  "conta", "banco", "account", "nome", "razao",
+];
+
+function detectHeaderRow(rows: unknown[][]): number {
+  if (rows.length === 0) return 0;
+  const scanLimit = Math.min(rows.length, 20);
+  let bestRow = 0;
+  let bestScore = 0;
+
+  for (let i = 0; i < scanLimit; i++) {
+    const row = rows[i];
+    if (!row || !Array.isArray(row)) continue;
+
+    // Count non-empty string-like cells
+    const nonEmpty = row.filter(c => c !== null && c !== undefined && safeStr(c).trim().length > 0).length;
+    if (nonEmpty < 2) continue;
+
+    // Count how many cells match header keywords
+    let keywordMatches = 0;
+    for (const cell of row) {
+      const cellNorm = safeStr(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (!cellNorm) continue;
+      for (const kw of HEADER_KEYWORDS) {
+        if (cellNorm === kw || cellNorm.includes(kw)) {
+          keywordMatches++;
+          break;
+        }
+      }
+    }
+
+    // Score = keyword matches * 10 + non-empty cells (prefer rows with more header keywords)
+    const score = keywordMatches * 10 + nonEmpty;
+    if (keywordMatches >= 2 && score > bestScore) {
+      bestScore = score;
+      bestRow = i;
+    }
+  }
+
+  return bestRow;
+}
+
 function autoDetectMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   const usedColumnIndices = new Set<number>();
   const normalizedHeaders = headers.map(h =>
-    (h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+    safeStr(h).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   );
   const orderedPatterns: Array<[string, string[]]> = [
-    ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado"]],
-    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description", "fornecedor"]],
-    ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value"]],
-    ["type", ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao"]],
-    ["category", ["categoria", "classificacao", "grupo", "centro de custo", "category", "class"]],
-    ["client_vendor", ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "favorecido"]],
-    ["credit", ["credito", "entrada", "receita", "credit", "recebido", "recebimento"]],
-    ["debit", ["debito", "saida", "despesa", "debit", "pago", "pagamento"]],
+    ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado", "dt pagamento", "data pagamento", "data lancamento"]],
+    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description", "fornecedor", "desc.", "hist.", "descr"]],
+    ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value", "vlr total", "valor total", "total"]],
+    ["type", ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao", "tipo de lancamento", "tipo lancamento"]],
+    ["category", ["categoria", "classificacao", "grupo", "centro de custo", "category", "class", "plano de contas", "conta contabil"]],
+    ["client_vendor", ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "favorecido", "nome", "razao", "sacado", "pagador", "beneficiario"]],
+    ["credit", ["credito", "entrada", "receita", "credit", "recebido", "recebimento", "vlr credito", "valor credito"]],
+    ["debit", ["debito", "saida", "despesa", "debit", "pago", "pagamento", "vlr debito", "valor debito"]],
+    ["account", ["conta", "banco", "account", "conta bancaria", "instituicao"]],
   ];
   for (const [field, keywords] of orderedPatterns) {
     for (let i = 0; i < normalizedHeaders.length; i++) {
@@ -237,7 +301,10 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
         if (header === k) return true;
         const regex = new RegExp(`\\b${k}\\b`);
         if (regex.test(header)) return true;
-        if (header.startsWith(k) && k.length >= 3) return true;
+        // Partial match: header starts with keyword (min 3 chars)
+        if (k.length >= 3 && header.startsWith(k)) return true;
+        // Partial match: keyword starts with header (min 3 chars)
+        if (header.length >= 3 && k.startsWith(header)) return true;
         return false;
       });
       if (matched) {
@@ -260,7 +327,7 @@ function extractAmount(rowObj: Record<string, unknown>, mapping: Record<string, 
         if (mapping.type) {
           const typeRaw = nRow[mapping.type] ?? nRow[mapping.type.trim()];
           if (typeRaw) {
-            const typeValue = String(typeRaw).toLowerCase().trim();
+            const typeValue = safeStr(typeRaw).toLowerCase().trim();
             if (["entrada", "receita", "credito", "crédito", "c", "r", "+"].some(k => typeValue.includes(k))) return { value: Math.abs(parsed), type: "income" };
             if (["saida", "saída", "despesa", "debito", "débito", "d", "-"].some(k => typeValue.includes(k))) return { value: Math.abs(parsed), type: "expense" };
           }
@@ -284,33 +351,33 @@ function extractAmount(rowObj: Record<string, unknown>, mapping: Record<string, 
 
 // RELAXED: only skip if NO valid date AND description has totalizing keyword, or if it's a repeated header row
 function isSkippableRow(rowObj: Record<string, unknown>, description: string, hasValidDate: boolean): { skip: boolean; reason?: string } {
-  const descLower = (description || "").toLowerCase().trim();
+  const descLower = safeStr(description).toLowerCase().trim();
   
   // Header row detection: if >= 2 column values match known header keywords
-  const allValues = Object.values(rowObj).map(v => String(v || "").toLowerCase().trim());
+  const allValues = Object.values(rowObj).map(v => safeStr(v).toLowerCase().trim());
   const headerKeywords = ["data", "date", "valor", "value", "descrição", "descricao", "description", "categoria", "category"];
   const headerMatchCount = headerKeywords.filter(k => allValues.some(v => v === k || v.includes(k))).length;
-  if (headerMatchCount >= 2) return { skip: true, reason: "header_row" };
+  if (headerMatchCount >= 2) return { skip: true, reason: "HEADER_ROW_DETECTED" };
 
   // Totalizing row: only skip if NO valid date (real transactions have dates)
   if (!hasValidDate) {
     const totalKeywords = ["total", "subtotal", "saldo", "soma", "acumulado", "resumo", "balanço", "balanco", "sum", "balance"];
-    if (totalKeywords.some(k => descLower.includes(k))) return { skip: true, reason: "total_row" };
+    if (totalKeywords.some(k => descLower.includes(k))) return { skip: true, reason: "TOTAL_ROW_DETECTED" };
   }
 
   return { skip: false };
 }
 
 function parseDate(value: string | number | null | undefined): string | null {
-  if (!value) return null;
-  if (typeof value === "number" || /^\d+$/.test(String(value))) {
-    const serial = typeof value === "number" ? value : parseInt(String(value));
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" || /^\d+$/.test(safeStr(value))) {
+    const serial = typeof value === "number" ? value : parseInt(safeStr(value));
     if (serial > 25000 && serial < 60000) {
       const date = new Date((serial - 25569) * 86400 * 1000);
       if (!isNaN(date.getTime())) return date.toISOString().split("T")[0];
     }
   }
-  const str = String(value).trim();
+  const str = safeStr(value).trim();
   const brMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (brMatch) {
     const [, d, m, y] = brMatch.map(Number);
@@ -489,8 +556,8 @@ const TRANSFER_CATEGORY_KEYWORDS = [
 ];
 
 function detectMovementType(category: string, description: string, type: string): string {
-  const catLower = (category || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const descLower = (description || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const catLower = safeStr(category).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const descLower = safeStr(description).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
   // Check category first (highest priority)
   for (const kw of TRANSFER_CATEGORY_KEYWORDS) {
@@ -804,10 +871,26 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const headers = allRows[0];
-      const dataRows = allRows.slice(1);
+      // ===== Dynamic header detection =====
+      const headerRowIndex = detectHeaderRow(allRows);
+      const headers = allRows[headerRowIndex].map(h => safeStr(h));
+      const dataRows = allRows.slice(headerRowIndex + 1);
       const mapping = autoDetectMapping(headers);
-      console.log(`[${requestId}] Tab ${tab.title}: ${dataRows.length} data rows, mapping: ${JSON.stringify(mapping)}`);
+      console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, ${dataRows.length} data rows, mapping: ${JSON.stringify(mapping)}`);
+
+      // Check if mapping has at least a value column
+      if (!mapping.amount && !mapping.credit && !mapping.debit) {
+        console.warn(`[${requestId}] Tab ${tab.title}: NO value column detected, skipping tab`);
+        await supabase.from("sync_tab_audit").insert({
+          job_id: jobId, user_id: userId, connection_id: connectionId,
+          tab_name: tab.title, period_key: tab.periodKey || null,
+          rows_scanned: dataRows.length, rows_with_value: 0, rows_imported: 0, rows_skipped: dataRows.length,
+          skip_reasons: { COLUMN_MAP_EMPTY: dataRows.length }, errors: [{ row: headerRowIndex + 1, error: `Headers detected: [${headers.join(", ")}]. No value/credit/debit column mapped.` }],
+        });
+        totalSkipped += dataRows.length;
+        totalScanned += dataRows.length;
+        continue;
+      }
 
       // ===== Parse all rows into batch =====
       const batch: TransactionRow[] = [];
@@ -815,19 +898,20 @@ Deno.serve(async (req) => {
       let tabScanned = 0;
       let tabWithValue = 0;
       let tabSkipped = 0;
+      const tabErrors: Array<{ row: number; error: string; raw?: string }> = [];
 
       for (let rowIndex = 0; rowIndex < dataRows.length; rowIndex++) {
         const row = dataRows[rowIndex];
-        const rowNumber = rowIndex + 2; // 1-indexed, +1 for header
+        const rowNumber = headerRowIndex + rowIndex + 2; // 1-indexed, +1 for header offset
         tabScanned++;
 
         try {
           // Build row object
           const rowObj: Record<string, unknown> = {};
-          headers.forEach((h, i) => { rowObj[String(h)] = row[i] ?? ""; });
+          headers.forEach((h, i) => { rowObj[safeStr(h)] = row[i] ?? ""; });
 
           // Check if all cells are empty
-          const hasAnyContent = row.some(cell => cell !== null && cell !== undefined && String(cell).trim().length > 0);
+          const hasAnyContent = row.some(cell => cell !== null && cell !== undefined && safeStr(cell).trim().length > 0);
           if (!hasAnyContent) {
             tabSkipped++;
             skipReasons["empty_row"] = (skipReasons["empty_row"] || 0) + 1;
@@ -838,7 +922,12 @@ Deno.serve(async (req) => {
           const { value: amount, type } = extractAmount(rowObj, mapping);
           if (amount === null) {
             tabSkipped++;
-            skipReasons["no_value"] = (skipReasons["no_value"] || 0) + 1;
+            skipReasons["VALUE_PARSE_FAIL"] = (skipReasons["VALUE_PARSE_FAIL"] || 0) + 1;
+            // Log first 5 value parse failures for diagnostics
+            if (tabErrors.length < 5) {
+              const rawFields = Object.entries(rowObj).slice(0, 5).map(([k, v]) => `${k}=${safeStr(v).substring(0, 30)}`).join("; ");
+              tabErrors.push({ row: rowNumber, error: "VALUE_PARSE_FAIL", raw: rawFields });
+            }
             continue;
           }
 
@@ -849,7 +938,7 @@ Deno.serve(async (req) => {
           const date = parseDate(dateRaw as string | number | null);
 
           // Get description
-          const description = mapping.description ? String(rowObj[mapping.description] || "").trim() : "";
+          const description = mapping.description ? safeStr(rowObj[mapping.description]).trim() : "";
 
           // RELAXED skip check: pass hasValidDate
           const skipCheck = isSkippableRow(rowObj, description, !!date);
@@ -862,8 +951,8 @@ Deno.serve(async (req) => {
 
           // Use tab's periodKey to infer date if not found
           const finalDate = date || (tab.periodKey ? `${tab.periodKey}-01` : new Date().toISOString().split("T")[0]);
-          const category = mapping.category ? String(rowObj[mapping.category] || "").trim() || "Geral" : "Geral";
-          const clientVendor = mapping.client_vendor ? String(rowObj[mapping.client_vendor] || "").trim() || null : null;
+          const category = mapping.category ? safeStr(rowObj[mapping.category]).trim() || "Geral" : "Geral";
+          const clientVendor = mapping.client_vendor ? safeStr(rowObj[mapping.client_vendor]).trim() || null : null;
           const rowHash = generateRowHash({ description, amount, date: finalDate, type, category });
           const externalRowKey = `${tab.title}:${rowNumber}:${rowHash}`;
 
@@ -888,7 +977,9 @@ Deno.serve(async (req) => {
           });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : "Unknown error";
+          const rawFields = Object.entries(dataRows[rowIndex] || {}).slice(0, 5).map(([k, v]) => `${k}=${safeStr(v).substring(0, 30)}`).join("; ");
           allErrors.push({ tab: tab.title, row: rowNumber, error: errMsg });
+          tabErrors.push({ row: rowNumber, error: errMsg, raw: rawFields });
           skipReasons["parse_error"] = (skipReasons["parse_error"] || 0) + 1;
         }
       }
@@ -901,28 +992,29 @@ Deno.serve(async (req) => {
 
       const upsertResult = await batchUpsertTransactions(supabase, batch, userId, connectionId!, requestId);
       const tabImported = upsertResult.inserted + upsertResult.updated;
-      const tabErrors = upsertResult.errors.length;
 
       for (const err of upsertResult.errors) {
         allErrors.push({ tab: tab.title, row: err.row, error: err.error });
+        tabErrors.push({ row: err.row, error: err.error });
       }
 
-      // ===== SAVE AUDIT =====
+      // ===== SAVE AUDIT with detailed skip_reasons and error samples =====
       await supabase.from("sync_tab_audit").insert({
         job_id: jobId, user_id: userId, connection_id: connectionId,
         tab_name: tab.title, period_key: tab.periodKey || null,
         rows_scanned: tabScanned, rows_with_value: tabWithValue,
         rows_imported: tabImported, rows_skipped: tabSkipped,
-        skip_reasons: skipReasons, errors: upsertResult.errors.slice(0, 20),
+        skip_reasons: skipReasons,
+        errors: tabErrors.slice(0, 20),
       });
 
       totalImported += tabImported;
       totalSkipped += tabSkipped;
-      totalErrors += tabErrors;
+      totalErrors += upsertResult.errors.length;
       totalScanned += tabScanned;
       totalWithValue += tabWithValue;
 
-      console.log(`[${requestId}] Tab ${tab.title}: scanned=${tabScanned}, withValue=${tabWithValue}, imported=${tabImported}, skipped=${tabSkipped}, errors=${tabErrors}`);
+      console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, scanned=${tabScanned}, withValue=${tabWithValue}, imported=${tabImported}, skipped=${tabSkipped}, errors=${upsertResult.errors.length}, skipReasons=${JSON.stringify(skipReasons)}`);
     }
 
     // ===== Finalize =====
