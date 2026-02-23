@@ -267,36 +267,57 @@ function detectHeaderRow(rows: unknown[][]): number {
   return bestRow;
 }
 
+// ============ BANK/ACCOUNT NAME DETECTION ============
+
+const BANK_NAMES = [
+  "sicredi", "banrisul", "unicred", "cresol", "caixa", "banco do brasil", "bb",
+  "itau", "itaú", "bradesco", "santander", "nubank", "inter", "c6", "safra",
+  "original", "pan", "bmg", "daycoval", "pine", "abc brasil", "votorantim",
+  "pagbank", "pagseguro", "mercado pago", "stone", "cielo", "rede",
+  "fatura cc", "cartao", "cartão",
+];
+
+function looksLikeBankName(value: string): boolean {
+  const v = safeStr(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (!v) return false;
+  return BANK_NAMES.some(b => v.includes(b) || v === b);
+}
+
 function autoDetectMapping(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   const usedColumnIndices = new Set<number>();
   const normalizedHeaders = headers.map(h =>
     safeStr(h).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   );
-  const orderedPatterns: Array<[string, string[]]> = [
-    ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado", "dt pagamento", "data pagamento", "data lancamento"]],
-    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description", "fornecedor", "desc.", "hist.", "descr"]],
-    ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value", "vlr total", "valor total", "total"]],
-    ["type", ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao", "tipo de lancamento", "tipo lancamento"]],
-    ["category", ["categoria", "classificacao", "grupo", "centro de custo", "category", "class", "plano de contas", "conta contabil"]],
-    ["client_vendor", ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "favorecido", "nome", "razao", "sacado", "pagador", "beneficiario"]],
-    ["credit", ["credito", "entrada", "receita", "credit", "recebido", "recebimento", "vlr credito", "valor credito"]],
-    ["debit", ["debito", "saida", "despesa", "debit", "pago", "pagamento", "vlr debito", "valor debito"]],
-    ["account", ["conta", "banco", "account", "conta bancaria", "instituicao"]],
+
+  // Category uses STRICT header matching only — no fuzzy prefix
+  const orderedPatterns: Array<[string, string[], boolean]> = [
+    ["date", ["data", "dt", "date", "vencimento", "competencia", "emissao", "lancado", "dt pagamento", "data pagamento", "data lancamento"], false],
+    ["category", ["categoria", "classificacao", "classificação", "category", "centro de custo", "plano de contas"], true],
+    ["account", ["conta", "banco", "account", "conta bancaria", "instituicao", "conta banco"], true],
+    ["description", ["descricao", "historico", "lancamento", "obs", "observacao", "memo", "detalhe", "detail", "description", "desc.", "hist.", "descr"], false],
+    ["amount", ["valor", "montante", "quantia", "vlr", "amount", "value", "vlr total", "valor total", "total"], false],
+    ["type", ["tipo", "natureza", "d/c", "entrada/saida", "type", "operacao", "tipo de lancamento", "tipo lancamento"], false],
+    ["client_vendor", ["cliente", "fornecedor", "razao social", "empresa", "parceiro", "favorecido", "nome", "razao", "sacado", "pagador", "beneficiario"], false],
+    ["credit", ["credito", "entrada", "receita", "credit", "recebido", "recebimento", "vlr credito", "valor credito"], false],
+    ["debit", ["debito", "saida", "despesa", "debit", "pago", "pagamento", "vlr debito", "valor debito"], false],
   ];
-  for (const [field, keywords] of orderedPatterns) {
+
+  for (const [field, keywords, strictOnly] of orderedPatterns) {
     for (let i = 0; i < normalizedHeaders.length; i++) {
       if (usedColumnIndices.has(i)) continue;
       const header = normalizedHeaders[i];
       if (!header) continue;
+
       const matched = keywords.some(k => {
         if (header === k) return true;
-        const regex = new RegExp(`\\b${k}\\b`);
+        const regex = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
         if (regex.test(header)) return true;
-        if (k.length >= 3 && header.startsWith(k)) return true;
-        if (header.length >= 3 && k.startsWith(header)) return true;
+        // Only allow prefix matching for non-strict fields, and ONLY header.startsWith(keyword)
+        if (!strictOnly && k.length >= 4 && header.startsWith(k)) return true;
         return false;
       });
+
       if (matched) {
         mapping[field] = headers[i];
         usedColumnIndices.add(i);
@@ -304,7 +325,93 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
       }
     }
   }
+
   return mapping;
+}
+
+// ============ Post-Mapping Validation with Data Analysis ============
+
+function validateAndFixMapping(
+  mapping: Record<string, string>,
+  headers: string[],
+  dataRows: unknown[][],
+  requestId: string
+): Record<string, string> {
+  const fixed = { ...mapping };
+
+  // If no category mapped, try to find one by data analysis
+  if (!fixed.category && !fixed.account) return fixed;
+
+  // Get column indices
+  const catColIdx = fixed.category ? headers.indexOf(fixed.category) : -1;
+  const accColIdx = fixed.account ? headers.indexOf(fixed.account) : -1;
+
+  // Analyze category column values if mapped
+  if (catColIdx >= 0) {
+    const sampleSize = Math.min(dataRows.length, 100);
+    let bankCount = 0;
+    let totalNonEmpty = 0;
+    let totalCharLen = 0;
+
+    for (let i = 0; i < sampleSize; i++) {
+      const row = dataRows[i];
+      if (!Array.isArray(row)) continue;
+      const val = safeStr(row[catColIdx]).trim();
+      if (!val) continue;
+      totalNonEmpty++;
+      totalCharLen += val.length;
+      if (looksLikeBankName(val)) bankCount++;
+    }
+
+    const bankRatio = totalNonEmpty > 0 ? bankCount / totalNonEmpty : 0;
+    const avgLen = totalNonEmpty > 0 ? totalCharLen / totalNonEmpty : 0;
+
+    // If >60% of values are bank names → this is actually the account column, not category
+    if (bankRatio > 0.6) {
+      console.warn(`[${requestId}] CATEGORY SWAP DETECTED: ${bankRatio * 100}% bank names in category col "${fixed.category}"`);
+      // Swap category and account
+      if (fixed.account) {
+        // Check if account col has actual categories
+        const accSample = dataRows.slice(0, sampleSize);
+        let accBankCount = 0;
+        let accTotal = 0;
+        for (const row of accSample) {
+          if (!Array.isArray(row)) continue;
+          const val = safeStr(row[accColIdx]).trim();
+          if (!val) continue;
+          accTotal++;
+          if (looksLikeBankName(val)) accBankCount++;
+        }
+        const accBankRatio = accTotal > 0 ? accBankCount / accTotal : 0;
+
+        if (accBankRatio < 0.3) {
+          // Account col has real categories → swap them
+          console.warn(`[${requestId}] SWAPPING: category="${fixed.category}" <-> account="${fixed.account}"`);
+          const temp = fixed.category;
+          fixed.category = fixed.account;
+          fixed.account = temp;
+        } else {
+          // Both look like banks → remove category mapping
+          console.warn(`[${requestId}] REMOVING bad category mapping "${fixed.category}"`);
+          delete fixed.category;
+        }
+      } else {
+        // No account column → move category to account, remove category
+        console.warn(`[${requestId}] MOVING "${fixed.category}" from category to account`);
+        fixed.account = fixed.category;
+        delete fixed.category;
+      }
+    }
+
+    // Check if category looks like description (avg length > 25)
+    if (fixed.category && avgLen > 25) {
+      console.warn(`[${requestId}] Category col "${fixed.category}" has avg length ${avgLen.toFixed(0)}, likely a description col`);
+      // Don't swap with description, just remove the bad category mapping
+      delete fixed.category;
+    }
+  }
+
+  return fixed;
 }
 
 function extractAmount(rowObj: Record<string, unknown>, mapping: Record<string, string>): { value: number | null; type: "income" | "expense" } {
@@ -1010,8 +1117,9 @@ Deno.serve(async (req) => {
       const headerRowIndex = detectHeaderRow(allRows);
       const headers = allRows[headerRowIndex].map(h => safeStr(h));
       const dataRows = allRows.slice(headerRowIndex + 1);
-      const mapping = autoDetectMapping(headers);
-      console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, ${dataRows.length} data rows, mapping: ${JSON.stringify(mapping)}`);
+      const rawMapping = autoDetectMapping(headers);
+      const mapping = validateAndFixMapping(rawMapping, headers, dataRows, requestId);
+      console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, ${dataRows.length} data rows, rawMapping: ${JSON.stringify(rawMapping)}, finalMapping: ${JSON.stringify(mapping)}`);
 
       // ===== TAB FINGERPRINT CHECK =====
       const tabFingerprint = computeTabFingerprint(allRows, headerRowIndex);
@@ -1113,7 +1221,11 @@ Deno.serve(async (req) => {
 
           // Use tab's periodKey to infer date if not found
           const finalDate = date || (tab.periodKey ? `${tab.periodKey}-01` : new Date().toISOString().split("T")[0]);
-          const category = mapping.category ? safeStr(rowObj[mapping.category]).trim() || "Geral" : "Geral";
+          let category = mapping.category ? safeStr(rowObj[mapping.category]).trim() || "Geral" : "Geral";
+          // Safety: if category looks like a bank name, replace with "Sem categoria"
+          if (category !== "Geral" && looksLikeBankName(category)) {
+            category = "Sem categoria";
+          }
           const clientVendor = mapping.client_vendor ? safeStr(rowObj[mapping.client_vendor]).trim() || null : null;
 
           // ===== STABLE KEY (position-based, relative to header) =====
