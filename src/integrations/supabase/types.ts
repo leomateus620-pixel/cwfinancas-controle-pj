@@ -679,7 +679,9 @@ export type Database = {
           created_at: string
           data_type: string
           id: string
+          last_source_fingerprint: string | null
           last_sync_at: string | null
+          lock_until: string | null
           refresh_token: string
           sheet_name: string | null
           spreadsheet_id: string
@@ -698,7 +700,9 @@ export type Database = {
           created_at?: string
           data_type?: string
           id?: string
+          last_source_fingerprint?: string | null
           last_sync_at?: string | null
+          lock_until?: string | null
           refresh_token: string
           sheet_name?: string | null
           spreadsheet_id: string
@@ -717,7 +721,9 @@ export type Database = {
           created_at?: string
           data_type?: string
           id?: string
+          last_source_fingerprint?: string | null
           last_sync_at?: string | null
+          lock_until?: string | null
           refresh_token?: string
           sheet_name?: string | null
           spreadsheet_id?: string
@@ -1032,6 +1038,7 @@ export type Database = {
           amount: number
           category: string
           client_vendor: string | null
+          content_hash: string | null
           created_at: string
           date: string
           description: string
@@ -1044,6 +1051,7 @@ export type Database = {
           source_row_number: number | null
           source_sheet_id: string | null
           source_tab: string | null
+          stable_key: string | null
           type: string
           updated_at: string
           user_id: string
@@ -1052,6 +1060,7 @@ export type Database = {
           amount: number
           category: string
           client_vendor?: string | null
+          content_hash?: string | null
           created_at?: string
           date?: string
           description: string
@@ -1064,6 +1073,7 @@ export type Database = {
           source_row_number?: number | null
           source_sheet_id?: string | null
           source_tab?: string | null
+          stable_key?: string | null
           type: string
           updated_at?: string
           user_id: string
@@ -1072,6 +1082,7 @@ export type Database = {
           amount?: number
           category?: string
           client_vendor?: string | null
+          content_hash?: string | null
           created_at?: string
           date?: string
           description?: string
@@ -1084,6 +1095,7 @@ export type Database = {
           source_row_number?: number | null
           source_sheet_id?: string | null
           source_tab?: string | null
+          stable_key?: string | null
           type?: string
           updated_at?: string
           user_id?: string

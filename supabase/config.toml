@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.parse-excel-upload]
 verify_jwt = false
+
+[functions.scheduled-sync]
+verify_jwt = false

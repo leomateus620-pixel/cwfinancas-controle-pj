@@ -175,7 +175,6 @@ function parseBRL(value: string | number | null | undefined): number | null {
   if (lastComma > lastDot) {
     normalized = str.replace(/\./g, "").replace(",", ".");
   } else if (lastDot > lastComma && lastComma >= 0) {
-    // "1,234.56" -> dot is decimal
     normalized = str.replace(/,/g, "");
   } else if (lastComma >= 0 && lastDot === -1) {
     if (commaCount === 1) {
@@ -186,16 +185,12 @@ function parseBRL(value: string | number | null | undefined): number | null {
     }
   } else if (lastDot >= 0 && lastComma === -1) {
     if (dotCount >= 2) {
-      // "1.234.567" -> all dots are thousand separators
       normalized = str.replace(/\./g, "");
     } else {
-      // Single dot: check if after-dot part has exactly 3 digits (thousand sep)
       const afterDot = str.substring(lastDot + 1);
       if (/^\d{3}$/.test(afterDot)) {
-        // "100.000" -> thousand separator (regardless of before-dot length)
         normalized = str.replace(".", "");
       }
-      // else "123.45" -> decimal, leave as-is
     }
   }
   const num = parseFloat(normalized);
@@ -247,11 +242,9 @@ function detectHeaderRow(rows: unknown[][]): number {
     const row = rows[i];
     if (!row || !Array.isArray(row)) continue;
 
-    // Count non-empty string-like cells
     const nonEmpty = row.filter(c => c !== null && c !== undefined && safeStr(c).trim().length > 0).length;
     if (nonEmpty < 2) continue;
 
-    // Count how many cells match header keywords
     let keywordMatches = 0;
     for (const cell of row) {
       const cellNorm = safeStr(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -264,7 +257,6 @@ function detectHeaderRow(rows: unknown[][]): number {
       }
     }
 
-    // Score = keyword matches * 10 + non-empty cells (prefer rows with more header keywords)
     const score = keywordMatches * 10 + nonEmpty;
     if (keywordMatches >= 2 && score > bestScore) {
       bestScore = score;
@@ -301,9 +293,7 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
         if (header === k) return true;
         const regex = new RegExp(`\\b${k}\\b`);
         if (regex.test(header)) return true;
-        // Partial match: header starts with keyword (min 3 chars)
         if (k.length >= 3 && header.startsWith(k)) return true;
-        // Partial match: keyword starts with header (min 3 chars)
         if (header.length >= 3 && k.startsWith(header)) return true;
         return false;
       });
@@ -349,17 +339,14 @@ function extractAmount(rowObj: Record<string, unknown>, mapping: Record<string, 
   return { value: null, type: "income" };
 }
 
-// RELAXED: only skip if NO valid date AND description has totalizing keyword, or if it's a repeated header row
 function isSkippableRow(rowObj: Record<string, unknown>, description: string, hasValidDate: boolean): { skip: boolean; reason?: string } {
   const descLower = safeStr(description).toLowerCase().trim();
   
-  // Header row detection: if >= 2 column values match known header keywords
   const allValues = Object.values(rowObj).map(v => safeStr(v).toLowerCase().trim());
   const headerKeywords = ["data", "date", "valor", "value", "descrição", "descricao", "description", "categoria", "category"];
   const headerMatchCount = headerKeywords.filter(k => allValues.some(v => v === k || v.includes(k))).length;
   if (headerMatchCount >= 2) return { skip: true, reason: "HEADER_ROW_DETECTED" };
 
-  // Totalizing row: only skip if NO valid date (real transactions have dates)
   if (!hasValidDate) {
     const totalKeywords = ["total", "subtotal", "saldo", "soma", "acumulado", "resumo", "balanço", "balanco", "sum", "balance"];
     if (totalKeywords.some(k => descLower.includes(k))) return { skip: true, reason: "TOTAL_ROW_DETECTED" };
@@ -415,7 +402,7 @@ async function readTabPaginated(
 ): Promise<string[][]> {
   const allRows: string[][] = [];
   let startRow = 1;
-  const maxRow = Math.min(tabRowCount, 10000); // safety cap
+  const maxRow = Math.min(tabRowCount, 10000);
 
   while (startRow <= maxRow) {
     const endRow = Math.min(startRow + BATCH_READ_SIZE - 1, maxRow);
@@ -434,11 +421,10 @@ async function readTabPaginated(
     const data = await response.json();
     const values: string[][] = data.values || [];
     
-    if (values.length === 0) break; // Empty batch = end of data
+    if (values.length === 0) break;
     
     allRows.push(...values);
     
-    // If we got fewer rows than requested, we've reached the end
     if (values.length < BATCH_READ_SIZE) break;
     
     startRow = endRow + 1;
@@ -527,7 +513,7 @@ async function finalizeJob(
   await supabase.from("sheet_sync_jobs").update(update).eq("id", jobId);
 }
 
-// ============ Batch Upsert ============
+// ============ Transaction Row Interface ============
 
 interface TransactionRow {
   user_id: string;
@@ -543,6 +529,8 @@ interface TransactionRow {
   source_tab: string;
   source_row_number: number;
   external_row_key: string;
+  stable_key: string;
+  content_hash: string;
   raw_data: Record<string, unknown>;
   movement_type: string;
 }
@@ -559,13 +547,11 @@ function detectMovementType(category: string, description: string, type: string)
   const catLower = safeStr(category).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const descLower = safeStr(description).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // Check category first (highest priority)
   for (const kw of TRANSFER_CATEGORY_KEYWORDS) {
     const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (catLower.includes(kwNorm)) return "TRANSFER";
   }
 
-  // Fallback: description keywords for inter-account transfers
   const transferDescKeywords = ["transferencia entre", "transf entre contas", "movimentacao entre"];
   for (const kw of transferDescKeywords) {
     const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -575,79 +561,190 @@ function detectMovementType(category: string, description: string, type: string)
   return type === "income" ? "INCOME" : "EXPENSE";
 }
 
-async function batchUpsertTransactions(
+// ============ Reconcile & Upsert (2-Layer Idempotency with Realignment) ============
+
+async function reconcileAndUpsert(
   supabase: SupabaseClient,
   batch: TransactionRow[],
   userId: string,
   connectionId: string,
   requestId: string
-): Promise<{ inserted: number; updated: number; errors: Array<{ row: number; error: string }> }> {
-  if (batch.length === 0) return { inserted: 0, updated: 0, errors: [] };
+): Promise<{ inserted: number; updated: number; noOps: number; errors: Array<{ row: number; error: string }> }> {
+  if (batch.length === 0) return { inserted: 0, updated: 0, noOps: 0, errors: [] };
+
+  // 1. Fetch ALL existing records for this connection + tabs
+  const tabNames = [...new Set(batch.map(b => b.source_tab))];
+  const existingMap = new Map<string, { id: string; content_hash: string | null; source_row_number: number | null }>();
+  const contentIndex = new Map<string, Array<{ id: string; stable_key: string | null; source_row_number: number | null }>>();
+
+  for (const tabName of tabNames) {
+    // Fetch in pages of 1000 to handle large tabs
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data } = await supabase.from("transactions")
+        .select("id, stable_key, content_hash, source_row_number")
+        .eq("user_id", userId)
+        .eq("source_sheet_id", connectionId)
+        .eq("source_tab", tabName)
+        .range(from, from + pageSize - 1);
+
+      if (data) {
+        for (const row of data) {
+          if (row.stable_key) existingMap.set(row.stable_key, row);
+          const key = row.content_hash || "";
+          if (!contentIndex.has(key)) contentIndex.set(key, []);
+          contentIndex.get(key)!.push(row);
+        }
+        hasMore = data.length === pageSize;
+        from += pageSize;
+      } else {
+        hasMore = false;
+      }
+    }
+  }
+
+  console.log(`[${requestId}] Reconcile: batch=${batch.length}, existing=${existingMap.size}`);
+
+  // Track matched IDs to avoid double-matching
+  const matchedIds = new Set<string>();
+
+  let noOps = 0;
+  const toInsert: TransactionRow[] = [];
+  const toUpdate: Array<{ id: string } & TransactionRow> = [];
+
+  for (const row of batch) {
+    // STEP A: Try match by stable_key
+    const existing = existingMap.get(row.stable_key);
+    if (existing && !matchedIds.has(existing.id)) {
+      matchedIds.add(existing.id);
+      if (existing.content_hash === row.content_hash) {
+        noOps++;
+      } else {
+        toUpdate.push({ id: existing.id, ...row });
+      }
+      continue;
+    }
+
+    // STEP B: Fallback — match by content_hash (realignment for row shifts)
+    const candidates = contentIndex.get(row.content_hash) || [];
+    const unmatched = candidates.filter(c => !matchedIds.has(c.id));
+
+    if (unmatched.length > 0) {
+      // Tie-break: closest rowIndex
+      unmatched.sort((a, b) =>
+        Math.abs((a.source_row_number || 0) - row.source_row_number) -
+        Math.abs((b.source_row_number || 0) - row.source_row_number)
+      );
+      const best = unmatched[0];
+      matchedIds.add(best.id);
+
+      // UPDATE stable_key to new value (realignment) + update fields if content changed
+      toUpdate.push({ id: best.id, ...row });
+      continue;
+    }
+
+    // STEP C: No match → INSERT
+    toInsert.push(row);
+  }
+
+  console.log(`[${requestId}] Reconcile result: insert=${toInsert.length}, update=${toUpdate.length}, noOp=${noOps}`);
 
   let inserted = 0;
   let updated = 0;
   const errors: Array<{ row: number; error: string }> = [];
 
-  // Fetch existing keys in one query
-  const batchKeys = batch.map(b => b.external_row_key);
-  const existingSet = new Set<string>();
-  
-  // Query in chunks of 200 to avoid URL length limits
-  for (const keyChunk of chunks(batchKeys, 200)) {
-    const { data: existingRows } = await supabase
-      .from("transactions")
-      .select("external_row_key")
-      .eq("user_id", userId)
-      .eq("source_sheet_id", connectionId)
-      .in("external_row_key", keyChunk);
-    
-    if (existingRows) {
-      for (const row of existingRows) {
-        if (row.external_row_key) existingSet.add(row.external_row_key);
-      }
-    }
-  }
-
-  const toInsert = batch.filter(b => !existingSet.has(b.external_row_key));
-  const toUpdate = batch.filter(b => existingSet.has(b.external_row_key));
-
-  // Insert in chunks
+  // Execute INSERTs in batches
   for (const chunk of chunks(toInsert, BATCH_UPSERT_SIZE)) {
     const { error } = await supabase.from("transactions").insert(chunk);
     if (error) {
-      // If batch fails, try one by one
-      console.warn(`[${requestId}] Batch insert failed (${chunk.length} rows), falling back to individual: ${error.message}`);
-      for (const row of chunk) {
-        const { error: singleErr } = await supabase.from("transactions").insert(row);
-        if (singleErr) {
-          if (singleErr.code === "23505") { updated++; } // duplicate = already exists
-          else { errors.push({ row: row.source_row_number, error: singleErr.message }); }
-        } else { inserted++; }
+      console.warn(`[${requestId}] Batch insert failed (${chunk.length} rows), falling back: ${error.message}`);
+      for (const r of chunk) {
+        const { error: e } = await supabase.from("transactions").insert(r);
+        if (e) errors.push({ row: r.source_row_number, error: e.message });
+        else inserted++;
       }
     } else {
       inserted += chunk.length;
     }
   }
 
-  // Update in chunks using upsert
-  for (const chunk of chunks(toUpdate, BATCH_UPSERT_SIZE)) {
-    const { error } = await supabase.from("transactions").upsert(chunk, {
-      onConflict: "user_id,source_sheet_id,external_row_key",
-    });
-    if (error) {
-      console.warn(`[${requestId}] Batch upsert failed (${chunk.length} rows), falling back: ${error.message}`);
-      for (const row of chunk) {
-        const { error: singleErr } = await supabase.from("transactions")
-          .update(row).eq("user_id", userId).eq("source_sheet_id", connectionId).eq("external_row_key", row.external_row_key);
-        if (singleErr) { errors.push({ row: row.source_row_number, error: singleErr.message }); }
-        else { updated++; }
-      }
-    } else {
-      updated += chunk.length;
-    }
+  // Execute UPDATEs individually (by id)
+  for (const row of toUpdate) {
+    const { id, ...data } = row;
+    const { error } = await supabase.from("transactions")
+      .update(data).eq("id", id);
+    if (error) errors.push({ row: data.source_row_number, error: error.message });
+    else updated++;
   }
 
-  return { inserted, updated, errors };
+  return { inserted, updated, noOps, errors };
+}
+
+// ============ Tab Fingerprint ============
+
+function computeTabFingerprint(rows: unknown[][], headerRow: number): string {
+  const header = (rows[headerRow] || []).map(c => safeStr(c)).join("|");
+  const sampleRows = rows.slice(headerRow + 1, headerRow + 51);
+  const sample = sampleRows.map(r =>
+    (Array.isArray(r) ? r : []).slice(0, 5).map(c => safeStr(c).trim().substring(0, 20)).join("|")
+  ).join("\n");
+  return generateRowHash({ header, sample });
+}
+
+// ============ Content Hash Generation ============
+
+function computeContentHash(
+  finalDate: string,
+  amount: number,
+  description: string,
+  category: string,
+  clientVendor: string | null,
+): string {
+  return generateRowHash({
+    d: finalDate,
+    a: Math.round(amount * 100),
+    desc: (description || "").toLowerCase().trim().replace(/\s+/g, " "),
+    cat: (category || "").toLowerCase().trim(),
+    cv: (clientVendor || "").toLowerCase().trim(),
+  });
+}
+
+// ============ Lock helpers ============
+
+async function acquireLock(supabase: SupabaseClient, connectionId: string): Promise<boolean> {
+  const now = new Date().toISOString();
+  const lockUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("google_sheet_connections")
+    .update({ lock_until: lockUntil, sync_status: "syncing" })
+    .eq("id", connectionId)
+    .or(`lock_until.is.null,lock_until.lt.${now}`)
+    .select("id");
+  return !!(data && data.length > 0);
+}
+
+async function releaseLock(supabase: SupabaseClient, connectionId: string): Promise<void> {
+  await supabase.from("google_sheet_connections")
+    .update({ lock_until: null })
+    .eq("id", connectionId);
+}
+
+// ============ Drive fingerprint ============
+
+async function getDriveFingerprint(accessToken: string, spreadsheetId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${spreadsheetId}?fields=modifiedTime&supportsAllDrives=true`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.modifiedTime || null;
+  } catch {
+    return null;
+  }
 }
 
 // ============ Main handler ============
@@ -656,6 +753,8 @@ interface SyncAllTabsRequest {
   connection_id: string;
   month_range?: { from: string; to: string };
   selected_tabs?: string[];
+  // Internal: called by scheduled-sync with service role, skip user auth
+  _internal_user_id?: string;
 }
 
 Deno.serve(async (req) => {
@@ -680,26 +779,42 @@ Deno.serve(async (req) => {
     }
 
     supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabase.auth.getUser(token);
-    if (claimsError || !claimsData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userId = claimsData.user.id;
+    
     const body: SyncAllTabsRequest = await req.json();
     connectionId = body.connection_id;
     const { month_range, selected_tabs } = body;
+
+    // Determine userId: internal call (from scheduled-sync) or user auth
+    let userId: string;
+    if (body._internal_user_id) {
+      userId = body._internal_user_id;
+    } else {
+      const token = authHeader.replace("Bearer ", "");
+      const { data: claimsData, error: claimsError } = await supabase.auth.getUser(token);
+      if (claimsError || !claimsData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = claimsData.user.id;
+    }
 
     if (!connectionId) throw new Error("connection_id is required");
 
     console.log(`[${requestId}] User: ${userId}, Connection: ${connectionId}, SelectedTabs: ${JSON.stringify(selected_tabs)}, Range: ${JSON.stringify(month_range)}`);
 
+    // ===== LOCK =====
+    const lockAcquired = await acquireLock(supabase, connectionId);
+    if (!lockAcquired) {
+      return new Response(JSON.stringify({ error: "sync_locked", message: "Another sync is already running" }), {
+        status: 423, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ===== JOB CONTROL =====
     const jobResult = await checkAndClaimJob(supabase, userId, connectionId, "ALL_TABS", requestId);
     if ("error" in jobResult) {
+      await releaseLock(supabase, connectionId);
       return new Response(JSON.stringify({ error: jobResult.error }), {
         status: jobResult.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -711,7 +826,10 @@ Deno.serve(async (req) => {
 
     const { data: connection, error: connError } = await supabase
       .from("google_sheet_connections").select("*").eq("id", connectionId).eq("user_id", userId).single();
-    if (connError || !connection) throw new Error("Connection not found");
+    if (connError || !connection) {
+      await releaseLock(supabase, connectionId);
+      throw new Error("Connection not found");
+    }
 
     let accessToken = connection.access_token;
     const tokenExpired = !connection.token_expires_at || new Date(connection.token_expires_at) < new Date();
@@ -723,7 +841,23 @@ Deno.serve(async (req) => {
       }).eq("id", connectionId);
     }
 
-    await supabase.from("google_sheet_connections").update({ sync_status: "syncing" }).eq("id", connectionId);
+    // ===== FINGERPRINT CHECK (Drive modifiedTime) =====
+    const driveFingerprint = await getDriveFingerprint(accessToken!, connection.spreadsheet_id);
+    if (driveFingerprint && connection.last_source_fingerprint === driveFingerprint) {
+      console.log(`[${requestId}] Drive fingerprint unchanged, skipping sync`);
+      await finalizeJob(supabase, jobId, "success", undefined, undefined, {
+        tabs_total: 0, tabs_done: 0, rows_read: 0, rows_imported: 0, current_tab: "Sem alterações",
+      });
+      await supabase.from("google_sheet_connections").update({ 
+        sync_status: "success", last_sync_at: new Date().toISOString() 
+      }).eq("id", connectionId);
+      await releaseLock(supabase, connectionId);
+      jobId = null;
+      return new Response(JSON.stringify({
+        success: true, skipped: true, reason: "no_changes",
+        total_imported: 0, total_skipped: 0, total_errors: 0,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // Create sync log (legacy compatibility)
     const { data: syncLog } = await supabase
@@ -824,6 +958,7 @@ Deno.serve(async (req) => {
     let totalErrors = 0;
     let totalScanned = 0;
     let totalWithValue = 0;
+    let totalNoOps = 0;
     const allErrors: Array<{ tab: string; row: number; error: string }> = [];
 
     for (let tabIdx = 0; tabIdx < monthlyTabs.length; tabIdx++) {
@@ -843,6 +978,7 @@ Deno.serve(async (req) => {
           }).eq("id", syncLog.id);
         }
         await supabase.from("google_sheet_connections").update({ sync_status: "partial", last_sync_at: new Date().toISOString() }).eq("id", connectionId);
+        await releaseLock(supabase, connectionId);
 
         return new Response(JSON.stringify({
           success: false, error: "timeout", tabs_imported: tabIdx,
@@ -861,7 +997,6 @@ Deno.serve(async (req) => {
         : await readTabPaginated(accessToken!, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
 
       if (allRows.length < 2) {
-        // Save empty audit
         await supabase.from("sync_tab_audit").insert({
           job_id: jobId, user_id: userId, connection_id: connectionId,
           tab_name: tab.title, period_key: tab.periodKey || null,
@@ -878,6 +1013,30 @@ Deno.serve(async (req) => {
       const mapping = autoDetectMapping(headers);
       console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, ${dataRows.length} data rows, mapping: ${JSON.stringify(mapping)}`);
 
+      // ===== TAB FINGERPRINT CHECK =====
+      const tabFingerprint = computeTabFingerprint(allRows, headerRowIndex);
+      
+      // Check if tab fingerprint matches last audit
+      const { data: lastAudit } = await supabase.from("sync_tab_audit")
+        .select("skip_reasons")
+        .eq("user_id", userId)
+        .eq("connection_id", connectionId)
+        .eq("tab_name", tab.title)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      
+      const lastFingerprint = lastAudit?.[0]?.skip_reasons?.tab_fingerprint;
+      if (lastFingerprint && lastFingerprint === tabFingerprint) {
+        console.log(`[${requestId}] Tab ${tab.title}: fingerprint unchanged, skipping`);
+        await supabase.from("sync_tab_audit").insert({
+          job_id: jobId, user_id: userId, connection_id: connectionId,
+          tab_name: tab.title, period_key: tab.periodKey || null,
+          rows_scanned: 0, rows_with_value: 0, rows_imported: 0, rows_skipped: 0,
+          skip_reasons: { tab_fingerprint: tabFingerprint, skipped_no_changes: 1 }, errors: [],
+        });
+        continue;
+      }
+
       // Check if mapping has at least a value column
       if (!mapping.amount && !mapping.credit && !mapping.debit) {
         console.warn(`[${requestId}] Tab ${tab.title}: NO value column detected, skipping tab`);
@@ -891,6 +1050,10 @@ Deno.serve(async (req) => {
         totalScanned += dataRows.length;
         continue;
       }
+
+      // ===== Generate headerSig once per tab =====
+      const mappedCols = Object.keys(mapping).sort().join(",");
+      const headerSig = generateRowHash({ cols: mappedCols }).slice(0, 6);
 
       // ===== Parse all rows into batch =====
       const batch: TransactionRow[] = [];
@@ -918,12 +1081,11 @@ Deno.serve(async (req) => {
             continue;
           }
 
-          // Extract amount FIRST - this is the primary filter
+          // Extract amount FIRST
           const { value: amount, type } = extractAmount(rowObj, mapping);
           if (amount === null) {
             tabSkipped++;
             skipReasons["VALUE_PARSE_FAIL"] = (skipReasons["VALUE_PARSE_FAIL"] || 0) + 1;
-            // Log first 5 value parse failures for diagnostics
             if (tabErrors.length < 5) {
               const rawFields = Object.entries(rowObj).slice(0, 5).map(([k, v]) => `${k}=${safeStr(v).substring(0, 30)}`).join("; ");
               tabErrors.push({ row: rowNumber, error: "VALUE_PARSE_FAIL", raw: rawFields });
@@ -940,11 +1102,11 @@ Deno.serve(async (req) => {
           // Get description
           const description = mapping.description ? safeStr(rowObj[mapping.description]).trim() : "";
 
-          // RELAXED skip check: pass hasValidDate
+          // Skip check
           const skipCheck = isSkippableRow(rowObj, description, !!date);
           if (skipCheck.skip) {
             tabSkipped++;
-            tabWithValue--; // Don't count as "with value" if skipped
+            tabWithValue--;
             skipReasons[skipCheck.reason || "unknown"] = (skipReasons[skipCheck.reason || "unknown"] || 0) + 1;
             continue;
           }
@@ -953,8 +1115,13 @@ Deno.serve(async (req) => {
           const finalDate = date || (tab.periodKey ? `${tab.periodKey}-01` : new Date().toISOString().split("T")[0]);
           const category = mapping.category ? safeStr(rowObj[mapping.category]).trim() || "Geral" : "Geral";
           const clientVendor = mapping.client_vendor ? safeStr(rowObj[mapping.client_vendor]).trim() || null : null;
-          const rowHash = generateRowHash({ description, amount, date: finalDate, type, category });
-          const externalRowKey = `${tab.title}:${rowNumber}:${rowHash}`;
+
+          // ===== STABLE KEY (position-based, relative to header) =====
+          const dataRowIndex = rowIndex; // 0-based relative to header
+          const stableKey = `${tab.title}:${headerSig}:${dataRowIndex}`;
+
+          // ===== CONTENT HASH (content-based, for change detection) =====
+          const contentHash = computeContentHash(finalDate, amount, description, category, clientVendor);
 
           const movementType = detectMovementType(category, description, type);
 
@@ -971,7 +1138,9 @@ Deno.serve(async (req) => {
             source_sheet_id: connectionId!,
             source_tab: tab.title,
             source_row_number: rowNumber,
-            external_row_key: externalRowKey,
+            external_row_key: stableKey, // Keep for backward compat
+            stable_key: stableKey,
+            content_hash: contentHash,
             raw_data: rowObj,
             movement_type: movementType,
           });
@@ -984,13 +1153,13 @@ Deno.serve(async (req) => {
         }
       }
 
-      // ===== BATCH UPSERT =====
+      // ===== RECONCILE & UPSERT =====
       await updateJobHeartbeat(supabase, jobId, `upsert(${tab.title})`, {
         tabs_total: monthlyTabs.length, tabs_done: tabIdx, rows_read: totalScanned + tabScanned,
         rows_imported: totalImported, current_tab: `${tab.title} - importando ${batch.length} linhas...`,
       });
 
-      const upsertResult = await batchUpsertTransactions(supabase, batch, userId, connectionId!, requestId);
+      const upsertResult = await reconcileAndUpsert(supabase, batch, userId, connectionId!, requestId);
       const tabImported = upsertResult.inserted + upsertResult.updated;
 
       for (const err of upsertResult.errors) {
@@ -998,13 +1167,13 @@ Deno.serve(async (req) => {
         tabErrors.push({ row: err.row, error: err.error });
       }
 
-      // ===== SAVE AUDIT with detailed skip_reasons and error samples =====
+      // ===== SAVE AUDIT with fingerprint =====
       await supabase.from("sync_tab_audit").insert({
         job_id: jobId, user_id: userId, connection_id: connectionId,
         tab_name: tab.title, period_key: tab.periodKey || null,
         rows_scanned: tabScanned, rows_with_value: tabWithValue,
         rows_imported: tabImported, rows_skipped: tabSkipped,
-        skip_reasons: skipReasons,
+        skip_reasons: { ...skipReasons, tab_fingerprint: tabFingerprint, noOps: upsertResult.noOps },
         errors: tabErrors.slice(0, 20),
       });
 
@@ -1013,8 +1182,9 @@ Deno.serve(async (req) => {
       totalErrors += upsertResult.errors.length;
       totalScanned += tabScanned;
       totalWithValue += tabWithValue;
+      totalNoOps += upsertResult.noOps;
 
-      console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, scanned=${tabScanned}, withValue=${tabWithValue}, imported=${tabImported}, skipped=${tabSkipped}, errors=${upsertResult.errors.length}, skipReasons=${JSON.stringify(skipReasons)}`);
+      console.log(`[${requestId}] Tab ${tab.title}: scanned=${tabScanned}, withValue=${tabWithValue}, inserted=${upsertResult.inserted}, updated=${upsertResult.updated}, noOps=${upsertResult.noOps}, skipped=${tabSkipped}, errors=${upsertResult.errors.length}`);
     }
 
     // ===== Finalize =====
@@ -1027,20 +1197,29 @@ Deno.serve(async (req) => {
       }).eq("id", syncLog.id);
     }
 
-    await supabase.from("google_sheet_connections").update({ sync_status: finalStatus, last_sync_at: new Date().toISOString() }).eq("id", connectionId);
+    // Save Drive fingerprint on success
+    const updateFields: Record<string, unknown> = { 
+      sync_status: finalStatus, last_sync_at: new Date().toISOString() 
+    };
+    if (driveFingerprint) {
+      updateFields.last_source_fingerprint = driveFingerprint;
+    }
+    await supabase.from("google_sheet_connections").update(updateFields).eq("id", connectionId);
 
     await finalizeJob(supabase, jobId, finalStatus === "error" ? "failed" : "success", undefined, undefined, {
       tabs_total: monthlyTabs.length, tabs_done: monthlyTabs.length,
       rows_read: totalScanned, rows_imported: totalImported, current_tab: "Concluído",
     });
+    await releaseLock(supabase, connectionId);
     jobId = null;
 
-    console.log(`[${requestId}] DONE: tabs=${monthlyTabs.length}, scanned=${totalScanned}, withValue=${totalWithValue}, imported=${totalImported}, skipped=${totalSkipped}, errors=${totalErrors}, duration=${Date.now() - startTime}ms`);
+    console.log(`[${requestId}] DONE: tabs=${monthlyTabs.length}, scanned=${totalScanned}, withValue=${totalWithValue}, imported=${totalImported}, noOps=${totalNoOps}, skipped=${totalSkipped}, errors=${totalErrors}, duration=${Date.now() - startTime}ms`);
 
     return new Response(JSON.stringify({
       success: true, tabs_imported: monthlyTabs.length,
       total_scanned: totalScanned, total_with_value: totalWithValue,
       total_imported: totalImported, total_skipped: totalSkipped, total_errors: totalErrors,
+      total_no_ops: totalNoOps,
       errors: allErrors.slice(0, 20),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
@@ -1060,6 +1239,7 @@ Deno.serve(async (req) => {
     if (connectionId && supabase!) {
       try {
         await supabase!.from("google_sheet_connections").update({ sync_status: "error" }).eq("id", connectionId);
+        await releaseLock(supabase!, connectionId);
       } catch (_e) { /* best effort */ }
     }
 
