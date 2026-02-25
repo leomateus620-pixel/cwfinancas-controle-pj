@@ -397,6 +397,7 @@ async function parseDreMatrix(
   connectionId: string,
   supabase: any,
   detection: MatrixDetectResult,
+  skipCleanup = false,
 ) {
   const { headerRowIndex, labelColIndex, monthCols, totalColIndex } = detection;
   
@@ -494,18 +495,21 @@ async function parseDreMatrix(
   console.log(`[dre-sync] Matrix: parsed ${parsedLines.length} lines for ${periodColumns.length} periods`);
 
   // Delete old data for this connection with DEFAULT template (matrix uses DEFAULT type)
-  const { data: oldPeriods } = await supabase
-    .from("dre_periods")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("sheet_id", connectionId)
-    .eq("template_type", "DEFAULT");
+  // Skip if caller already handled cleanup (multi-tab matrix scenario)
+  if (!skipCleanup) {
+    const { data: oldPeriods } = await supabase
+      .from("dre_periods")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("sheet_id", connectionId)
+      .eq("template_type", "DEFAULT");
 
-  if (oldPeriods && oldPeriods.length > 0) {
-    const oldIds = oldPeriods.map((p: any) => p.id);
-    await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
-    await supabase.from("dre_lines").delete().in("period_id", oldIds);
-    await supabase.from("dre_periods").delete().in("id", oldIds);
+    if (oldPeriods && oldPeriods.length > 0) {
+      const oldIds = oldPeriods.map((p: any) => p.id);
+      await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+      await supabase.from("dre_lines").delete().in("period_id", oldIds);
+      await supabase.from("dre_periods").delete().in("id", oldIds);
+    }
   }
 
   // Insert periods
@@ -522,12 +526,18 @@ async function parseDreMatrix(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
+    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
   if (periodError) throw new Error(`Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
   for (const p of insertedPeriods || []) {
     periodMap.set(p.period_key, { id: p.id, colIndex: p.col_index });
+  }
+
+  // Delete old lines for these periods (in case of re-sync with upsert)
+  const periodIds = (insertedPeriods || []).map((p: any) => p.id);
+  if (periodIds.length > 0) {
+    await supabase.from("dre_lines").delete().in("period_id", periodIds);
   }
 
   // Insert lines
@@ -1240,7 +1250,7 @@ Deno.serve(async (req) => {
           // parseDreMatrix already handles its own insert, but we already cleared old data above
           // We need a version that doesn't re-delete. For simplicity, just call it - it will
           // try to delete again but find nothing (already cleared).
-          const result = await parseDreMatrix(entry.rows, entry.tab, userId, connection_id, supabase, entry.matrixDetect!);
+          const result = await parseDreMatrix(entry.rows, entry.tab, userId, connection_id, supabase, entry.matrixDetect!, true);
           if (result.success) {
             totalLines += result.lines_count || 0;
             totalPeriods += result.periods_count || 0;

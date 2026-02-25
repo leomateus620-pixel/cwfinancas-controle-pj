@@ -70,14 +70,14 @@ Deno.serve(async (req) => {
 
     const userId = userData.user.id;
     const body = await req.json();
-    const { connection_id } = body;
+    const { connection_id, fix_descriptions } = body;
 
-    console.log(`[rebuild-categories] User: ${userId}, Connection: ${connection_id || "ALL"}`);
+    console.log(`[rebuild-categories] User: ${userId}, Connection: ${connection_id || "ALL"}, fixDescriptions: ${!!fix_descriptions}`);
 
-    // Fetch transactions with raw_data that have bank-name categories
+    // Fetch transactions with raw_data
     let query = supabase
       .from("transactions")
-      .select("id, category, raw_data, source_tab, source_sheet_id")
+      .select("id, category, description, raw_data, source_tab, source_sheet_id")
       .eq("user_id", userId)
       .eq("source", "sheets")
       .not("raw_data", "is", null);
@@ -90,6 +90,7 @@ Deno.serve(async (req) => {
     let totalFixed = 0;
     let totalChecked = 0;
     let totalAlreadyOk = 0;
+    let descriptionsFixed = 0;
     const pageSize = 500;
     let from = 0;
     let hasMore = true;
@@ -109,9 +110,31 @@ Deno.serve(async (req) => {
         const rawData = tx.raw_data as Record<string, unknown> | null;
         if (!rawData) continue;
 
-        // Find the real category from raw_data
-        const { categoryCol, accountCol } = findCategoryColumn(rawData);
+        const updates: Record<string, unknown> = {};
 
+        // === Fix descriptions ===
+        if (fix_descriptions) {
+          const currentDesc = (tx.description || "").trim();
+          if (currentDesc === "Sem descrição" || currentDesc === "") {
+            // Look for alternative description columns in raw_data
+            let bestDesc = "";
+            for (const [key, val] of Object.entries(rawData)) {
+              const norm = key.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+              if ((norm.includes("descricao") || norm.includes("description") || norm.includes("historico")) && val) {
+                const v = String(val).trim();
+                if (v && v.length > bestDesc.length) {
+                  bestDesc = v;
+                }
+              }
+            }
+            if (bestDesc && bestDesc !== currentDesc) {
+              updates.description = bestDesc;
+            }
+          }
+        }
+
+        // === Fix categories ===
+        const { categoryCol, accountCol } = findCategoryColumn(rawData);
         let newCategory: string | null = null;
 
         if (categoryCol) {
@@ -119,23 +142,20 @@ Deno.serve(async (req) => {
           if (rawCat && !looksLikeBankName(rawCat)) {
             newCategory = rawCat;
           } else if (rawCat && looksLikeBankName(rawCat)) {
-            // The "category" column actually has bank names — check if account col has real categories
             if (accountCol) {
               const rawAcc = String(rawData[accountCol] || "").trim();
               if (rawAcc && !looksLikeBankName(rawAcc)) {
-                newCategory = rawAcc; // Swap: account had the real category
+                newCategory = rawAcc;
               }
             }
           }
         } else if (!categoryCol && accountCol) {
-          // No category column found; maybe account has real categories
           const rawAcc = String(rawData[accountCol] || "").trim();
           if (rawAcc && !looksLikeBankName(rawAcc)) {
             newCategory = rawAcc;
           }
         }
 
-        // Fallback: look for any key with "categoria" or "classificação"
         if (!newCategory) {
           for (const [key, val] of Object.entries(rawData)) {
             const norm = key.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -151,36 +171,42 @@ Deno.serve(async (req) => {
 
         if (!newCategory) newCategory = "Sem categoria";
 
-        // Check if current category needs fixing
         const currentCategory = tx.category || "";
         const currentIsBad = looksLikeBankName(currentCategory) || currentCategory === "Geral";
         const newIsDifferent = newCategory !== currentCategory;
 
         if (currentIsBad && newIsDifferent) {
+          updates.category = newCategory;
+        }
+
+        // Apply updates if any
+        if (Object.keys(updates).length > 0) {
           const { error: updateError } = await supabase
             .from("transactions")
-            .update({ category: newCategory })
+            .update(updates)
             .eq("id", tx.id);
 
           if (updateError) {
             console.error(`Error updating tx ${tx.id}:`, updateError.message);
           } else {
-            totalFixed++;
+            if (updates.category) totalFixed++;
+            if (updates.description) descriptionsFixed++;
           }
         } else {
           totalAlreadyOk++;
         }
       }
 
-      console.log(`[rebuild-categories] Progress: checked=${totalChecked}, fixed=${totalFixed}, ok=${totalAlreadyOk}`);
+      console.log(`[rebuild-categories] Progress: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, ok=${totalAlreadyOk}`);
     }
 
-    console.log(`[rebuild-categories] DONE: checked=${totalChecked}, fixed=${totalFixed}, alreadyOk=${totalAlreadyOk}`);
+    console.log(`[rebuild-categories] DONE: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, alreadyOk=${totalAlreadyOk}`);
 
     return new Response(JSON.stringify({
       success: true,
       total_checked: totalChecked,
       total_fixed: totalFixed,
+      descriptions_fixed: descriptionsFixed,
       total_already_ok: totalAlreadyOk,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
