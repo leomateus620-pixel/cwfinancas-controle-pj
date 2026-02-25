@@ -1119,6 +1119,43 @@ Deno.serve(async (req) => {
       const dataRows = allRows.slice(headerRowIndex + 1);
       const rawMapping = autoDetectMapping(headers);
       const mapping = validateAndFixMapping(rawMapping, headers, dataRows, requestId);
+
+      // Fix description mapping: if mapped column is mostly empty but another "descricao" column has data, switch
+      if (mapping.description) {
+        const descColIdx = headers.indexOf(mapping.description);
+        const normalizedHeaders = headers.map(h => safeStr(h).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
+        const altDescCols: Array<{ idx: number; header: string }> = [];
+        for (let i = 0; i < normalizedHeaders.length; i++) {
+          if (i === descColIdx) continue;
+          if (normalizedHeaders[i].includes("descricao") || normalizedHeaders[i].includes("description") || normalizedHeaders[i].includes("historico")) {
+            altDescCols.push({ idx: i, header: headers[i] });
+          }
+        }
+        if (altDescCols.length > 0) {
+          const sampleSize = Math.min(dataRows.length, 50);
+          let mainFilled = 0;
+          const altFilled = altDescCols.map(() => 0);
+          for (let i = 0; i < sampleSize; i++) {
+            const row = dataRows[i];
+            if (!Array.isArray(row)) continue;
+            if (safeStr(row[descColIdx]).trim()) mainFilled++;
+            altDescCols.forEach((alt, j) => { if (safeStr(row[alt.idx]).trim()) altFilled[j]++; });
+          }
+          const mainRate = sampleSize > 0 ? mainFilled / sampleSize : 0;
+          // Find best alternative
+          let bestAltIdx = -1;
+          let bestAltRate = 0;
+          altFilled.forEach((count, j) => {
+            const rate = sampleSize > 0 ? count / sampleSize : 0;
+            if (rate > bestAltRate) { bestAltRate = rate; bestAltIdx = j; }
+          });
+          if (mainRate < 0.3 && bestAltRate > 0.3 && bestAltIdx >= 0) {
+            console.log(`[${requestId}] DESCRIPTION SWAP: "${mapping.description}" (${(mainRate*100).toFixed(0)}% filled) -> "${altDescCols[bestAltIdx].header}" (${(bestAltRate*100).toFixed(0)}% filled)`);
+            mapping.description = altDescCols[bestAltIdx].header;
+          }
+        }
+      }
+
       console.log(`[${requestId}] Tab ${tab.title}: headerRow=${headerRowIndex}, ${dataRows.length} data rows, rawMapping: ${JSON.stringify(rawMapping)}, finalMapping: ${JSON.stringify(mapping)}`);
 
       // ===== TAB FINGERPRINT CHECK =====
