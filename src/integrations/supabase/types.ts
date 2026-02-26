@@ -273,6 +273,7 @@ export type Database = {
           last_import_at: string | null
           period_key: string
           period_label: string | null
+          scenario: string | null
           sheet_id: string | null
           template_type: string | null
           updated_at: string | null
@@ -287,6 +288,7 @@ export type Database = {
           last_import_at?: string | null
           period_key: string
           period_label?: string | null
+          scenario?: string | null
           sheet_id?: string | null
           template_type?: string | null
           updated_at?: string | null
@@ -301,6 +303,7 @@ export type Database = {
           last_import_at?: string | null
           period_key?: string
           period_label?: string | null
+          scenario?: string | null
           sheet_id?: string | null
           template_type?: string | null
           updated_at?: string | null

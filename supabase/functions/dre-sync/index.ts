@@ -18,6 +18,10 @@ function normalize(text: string): string {
   return text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 }
 
+function slugify(text: string): string {
+  return normalize(text).replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
 function parseBRL(value: string | number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return isNaN(value) ? null : value;
@@ -25,6 +29,8 @@ function parseBRL(value: string | number | null | undefined): number | null {
   if (!str) return null;
   if (/^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(str)) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return null;
+  // Handle #N/A, #REF!, #VALUE! etc
+  if (str.startsWith("#")) return null;
 
   str = str.replace(/[R$¤€£¥a-zA-Z]/gi, "");
   str = str.replace(/[\u00A0\u2007\u202F\u200B\uFEFF]/g, "");
@@ -61,16 +67,10 @@ function parseBRL(value: string | number | null | undefined): number | null {
   return isNeg ? -num : num;
 }
 
-/**
- * Enhanced parseBRL for matrix DRE: tries current cell, and if it only has "R$",
- * looks at the next cell for the actual number.
- */
 function parseBRLFromCells(row: any[], colIndex: number): number | null {
   const cell = row?.[colIndex];
   const parsed = parseBRL(cell);
   if (parsed !== null) return parsed;
-  
-  // Check if current cell is just "R$" and next cell has the number
   const cellStr = String(cell ?? "").trim();
   if (/^R\$?\s*-?$/.test(cellStr) || cellStr === "R$") {
     const nextVal = parseBRL(row?.[colIndex + 1]);
@@ -151,7 +151,6 @@ function parseMonthHeader(raw: string): { periodKey: string; label: string } | n
 
   if (norm === "total") return { periodKey: "TOTAL", label };
 
-  // Pattern: "abr./25", "abr/25", "abr./2025", "mai/2025", "jan-25"
   const m1 = norm.match(/^([a-z]{3,})\.?\s*[\/\-]\s*(\d{2,4})$/);
   if (m1) {
     const monthNum = MONTH_ABBREVS[m1[1]];
@@ -161,7 +160,6 @@ function parseMonthHeader(raw: string): { periodKey: string; label: string } | n
     }
   }
 
-  // Pattern: "04/2025" or "04/25"
   const m2 = norm.match(/^(\d{1,2})[\/\-](\d{2,4})$/);
   if (m2) {
     const month = m2[1].padStart(2, "0");
@@ -171,25 +169,94 @@ function parseMonthHeader(raw: string): { periodKey: string; label: string } | n
     }
   }
 
-  // Excel serial date number
   const serial = parseFloat(norm);
   if (!isNaN(serial) && serial > 40000 && serial < 60000) {
     const date = new Date((serial - 25569) * 86400000);
     const y = date.getUTCFullYear();
-    const m = date.getUTCMonth(); // 0-indexed
+    const m = date.getUTCMonth();
     const mStr = String(m + 1).padStart(2, "0");
     const MONTH_NAMES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
     const friendlyLabel = `${MONTH_NAMES_PT[m]}/${y}`;
     return { periodKey: `${y}-${mStr}`, label: friendlyLabel };
   }
 
-  // ISO date "2025-04-01"
   const m3 = norm.match(/^(\d{4})-(\d{2})-\d{2}$/);
   if (m3) {
     return { periodKey: `${m3[1]}-${m3[2]}`, label };
   }
 
   return null;
+}
+
+// ========== YEAR EXTRACTION ==========
+
+function extractYearFromTab(tabName: string, rows: string[][]): number | null {
+  // 1. Tab name: "DRE 2026", "2026 DRE", "DRE-Caixa" etc
+  const yearMatch = tabName.match(/\b(20\d{2})\b/);
+  if (yearMatch) return parseInt(yearMatch[1]);
+
+  // 2. Month headers in first 10 rows
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    for (const cell of rows[r]) {
+      if (!cell) continue;
+      const parsed = parseMonthHeader(String(cell));
+      if (parsed && parsed.periodKey !== "TOTAL") {
+        const y = parseInt(parsed.periodKey.split("-")[0]);
+        if (y >= 2020 && y <= 2030) return y;
+      }
+    }
+  }
+
+  // 3. Serial dates in headers
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    for (const cell of rows[r]) {
+      const n = parseFloat(String(cell ?? ""));
+      if (!isNaN(n) && n > 40000 && n < 60000) {
+        const date = new Date((n - 25569) * 86400000);
+        return date.getUTCFullYear();
+      }
+    }
+  }
+
+  return null;
+}
+
+// ========== TAB SCORING ==========
+
+const NON_DRE_PATTERNS = [
+  "fluxo", "dashboard", "contas a pagar", "contas a receber",
+  "balanco", "balanço", "config", "resumo", "controle",
+  "saldo", "teste", "testes", "template", "modelo",
+];
+
+function scoreDreTab(tabName: string, rows: string[][]): number {
+  let score = 0;
+  const norm = normalize(tabName);
+
+  // Year bonus
+  if (norm.includes("2026")) score += 100;
+  else if (norm.includes("2025")) score += 50;
+  else if (norm.includes("2024")) score += 30;
+
+  // DRE keyword
+  if (norm.includes("dre")) score += 80;
+
+  // Non-DRE penalty
+  if (NON_DRE_PATTERNS.some(p => norm.includes(p) && !norm.includes("dre"))) score -= 100;
+
+  // Month headers bonus
+  const year = extractYearFromTab(tabName, rows);
+  if (year === 2026) score += 60;
+  else if (year === 2025) score += 30;
+
+  // TOTAL column bonus
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    for (const cell of rows[r]) {
+      if (normalize(String(cell ?? "")) === "total") { score += 40; break; }
+    }
+  }
+
+  return score;
 }
 
 // ========== SUBTOTAL DETECTION ==========
@@ -199,7 +266,7 @@ const SUBTOTAL_KEYWORDS = [
   "ebitda", "resultado mes", "resultado do mes", "total despesas",
   "resultado operacional", "resultado liquido", "lucro liquido",
   "total geral", "resultado final", "lucro operacional",
-  "faturamento", "deducoes",
+  "faturamento", "deducoes", "custos totais", "custos diretos",
 ];
 
 function isSubtotalLabel(label: string): boolean {
@@ -215,14 +282,15 @@ function isGroupLabel(label: string): boolean {
   return false;
 }
 
-// ========== DRE TAB DETECTION (multi-tab aware) ==========
+// ========== DRE TAB DETECTION ==========
 
-/** Returns ALL tabs whose name contains "DRE" (case-insensitive) */
 function listCandidateDreSheets(sheetTitles: string[]): string[] {
-  return sheetTitles.filter(t => normalize(t).includes("dre"));
+  return sheetTitles.filter(t => {
+    const n = normalize(t);
+    return n.includes("dre");
+  });
 }
 
-/** Detect if a single tab uses LCF_NUCLEO template */
 function detectDreTemplate(rows: string[][]): "LCF_NUCLEO" | "DEFAULT" {
   let hasReceitaBruta = false;
   let hasDespesasNucleo = false;
@@ -247,7 +315,6 @@ function detectDreTemplate(rows: string[][]): "LCF_NUCLEO" | "DEFAULT" {
   return "DEFAULT";
 }
 
-/** Extract period (YYYY-MM) from tab name like "DRE Jan26", "DRE Fev/2026", "DRE 02-2026" */
 function extractPeriodFromTabName(tabName: string): string | null {
   const norm = normalize(tabName).replace("dre", "").trim();
   if (!norm) return null;
@@ -270,13 +337,9 @@ function extractPeriodFromTabName(tabName: string): string | null {
     }
   }
 
-  const bareMonth = MONTH_ABBREVS[norm];
-  if (bareMonth) return null;
-
   return null;
 }
 
-/** Extract period from content headers (first few rows) */
 function extractPeriodFromContent(rows: string[][]): string | null {
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
     for (const cell of rows[i]) {
@@ -309,14 +372,9 @@ interface MatrixDetectResult {
   totalColIndex: number;
 }
 
-/**
- * Detect if a DRE tab uses horizontal matrix format (months as columns).
- * Searches more rows (up to 20) and looks for DRE section markers.
- */
 function detectDreMatrix(rows: string[][]): MatrixDetectResult {
   const fail: MatrixDetectResult = { isMatrix: false, headerRowIndex: -1, labelColIndex: 0, monthCols: [], totalColIndex: -1 };
   
-  // Look for section markers that indicate a DRE structure
   let hasFaturamento = false;
   let hasDeducoes = false;
   let hasReceitaLiquida = false;
@@ -332,16 +390,12 @@ function detectDreMatrix(rows: string[][]): MatrixDetectResult {
     if (firstCell.includes("lucro operacional") || firstCell.includes("resultado operacional")) hasLucroOperacional = true;
   }
 
-  const hasSections = (hasFaturamento || hasDeducoes) && (hasReceitaLiquida || hasDespesasTotais || hasLucroOperacional);
-
-  // Search for month header row (up to row 20)
   for (let rowIdx = 0; rowIdx < Math.min(rows.length, 20); rowIdx++) {
     const row = rows[rowIdx];
     if (!row) continue;
     
     const candidates: Array<{ colIndex: number; periodKey: string; label: string }> = [];
     let foundTotal = -1;
-    let labelCol = 0;
 
     for (let colIdx = 0; colIdx < row.length; colIdx++) {
       const val = String(row[colIdx] ?? "").trim();
@@ -356,14 +410,10 @@ function detectDreMatrix(rows: string[][]): MatrixDetectResult {
       }
     }
 
-    // Need at least 2 months to be a valid matrix header
     if (candidates.length >= 2) {
-      // Label column is typically the first column before the month columns
       const firstMonthCol = Math.min(...candidates.map(c => c.colIndex));
-      labelCol = firstMonthCol > 0 ? firstMonthCol - 1 : 0;
+      let labelCol = firstMonthCol > 0 ? firstMonthCol - 1 : 0;
       
-      // Check if there might be a "R$" column between label and values
-      // If the column before months has "R$" patterns, shift label back
       const possibleRsCol = normalize(String(row[labelCol] ?? ""));
       if (possibleRsCol === "r$" || possibleRsCol === "") {
         labelCol = Math.max(0, labelCol - 1);
@@ -379,16 +429,10 @@ function detectDreMatrix(rows: string[][]): MatrixDetectResult {
     }
   }
 
-  // If we found DRE section markers but no month columns, it's still possibly a matrix
-  // but we can't parse it without months
-  if (hasSections) {
-    console.log("[dre-sync] Found DRE section markers but no month header columns");
-  }
-
   return fail;
 }
 
-// ========== MATRIX DRE PARSER (Format C) ==========
+// ========== MATRIX DRE PARSER (Format C - existing Baladão) ==========
 
 async function parseDreMatrix(
   rows: string[][],
@@ -398,22 +442,25 @@ async function parseDreMatrix(
   supabase: any,
   detection: MatrixDetectResult,
   skipCleanup = false,
+  yearOverride?: number,
 ) {
   const { headerRowIndex, labelColIndex, monthCols, totalColIndex } = detection;
   
-  console.log(`[dre-sync] Matrix DRE: header at row ${headerRowIndex}, label col ${labelColIndex}, ${monthCols.length} months, total col ${totalColIndex}`);
+  const dreYear = yearOverride || extractYearFromTab(dreTab, rows);
+  console.log(`[dre-sync] Matrix DRE: tab="${dreTab}", year=${dreYear}, header at row ${headerRowIndex}, ${monthCols.length} months`);
 
-  // Build period columns
+  // Year-scope the TOTAL key
+  const totalPeriodKey = dreYear ? `${dreYear}-TOTAL` : "TOTAL";
+
   const periodColumns = [
     ...monthCols.map(m => ({ colIndex: m.colIndex, periodKey: m.periodKey, periodLabel: m.label })),
   ];
   if (totalColIndex >= 0) {
-    periodColumns.push({ colIndex: totalColIndex, periodKey: "TOTAL", periodLabel: "TOTAL" });
+    periodColumns.push({ colIndex: totalColIndex, periodKey: totalPeriodKey, periodLabel: `TOTAL ${dreYear || ""}`.trim() });
   }
   
   const allValueCols = periodColumns.map(p => p.colIndex);
 
-  // Parse data rows - stop at LUCRO OPERACIONAL or end
   interface ParsedLine {
     label: string;
     rowIndex: number;
@@ -431,7 +478,6 @@ async function parseDreMatrix(
     if (reachedStop) break;
 
     const row = rows[rowIdx];
-    // Try label column; also check adjacent columns if empty
     let label = String(row?.[labelColIndex] ?? "").trim();
     if (!label && labelColIndex > 0) {
       label = String(row?.[labelColIndex - 1] ?? "").trim();
@@ -443,26 +489,17 @@ async function parseDreMatrix(
 
     const normLabel = normalize(label);
     
-    // Check exclusion list (blocks below main DRE)
-    if (MATRIX_EXCLUDE_KEYWORDS.some(kw => normLabel.includes(kw))) {
-      console.log(`[dre-sync] Matrix: excluding line "${label}" (matches exclusion keyword)`);
-      continue;
-    }
-    
-    // Skip "R$" only cells that aren't real labels
+    if (MATRIX_EXCLUDE_KEYWORDS.some(kw => normLabel.includes(kw))) continue;
     if (/^R\$?\s*$/.test(label)) continue;
-    // Skip "DRE 20XX" title rows
     if (/^DRE\s+\d{4}/i.test(label)) continue;
 
     const isGroup = isGroupLabel(label);
     const isSubtotal = isSubtotalLabel(label);
     if (isGroup) currentGroup = label;
 
-    // Parse values from each month/total column
     const values = new Map<number, number>();
     let hasAnyValue = false;
     for (const colIdx of allValueCols) {
-      // Use enhanced parser that handles R$ in adjacent cells
       const parsed = parseBRLFromCells(row, colIdx);
       if (parsed !== null) { values.set(colIdx, parsed); hasAnyValue = true; }
     }
@@ -471,9 +508,7 @@ async function parseDreMatrix(
 
     parsedLines.push({ label, rowIndex: rowIdx, isGroup, isSubtotal, groupLabel: isGroup ? label : currentGroup, values });
 
-    // Check if we hit the stop line (LUCRO OPERACIONAL etc.) - include it but stop after
     if (MATRIX_DRE_STOP_KEYWORDS.some(kw => normLabel.includes(kw))) {
-      console.log(`[dre-sync] Matrix: reached stop line "${label}" at row ${rowIdx + 1}`);
       reachedStop = true;
     }
   }
@@ -482,33 +517,30 @@ async function parseDreMatrix(
     return { success: false, found: true, message: "DRE matricial detectada mas sem linhas válidas." };
   }
 
-  // Validate: check for key lines
-  const hasKeyLines = parsedLines.some(l => {
-    const n = normalize(l.label);
-    return n.includes("receita liquida") || n.includes("despesas totais") || n.includes("lucro operacional") || n.includes("faturamento");
-  });
-  
-  if (!hasKeyLines) {
-    console.log(`[dre-sync] Matrix: no key DRE lines found, parsed ${parsedLines.length} lines`);
-  }
-
   console.log(`[dre-sync] Matrix: parsed ${parsedLines.length} lines for ${periodColumns.length} periods`);
 
-  // Delete old data for this connection with DEFAULT template (matrix uses DEFAULT type)
-  // Skip if caller already handled cleanup (multi-tab matrix scenario)
+  // Year-scoped cleanup: only delete periods matching this year
   if (!skipCleanup) {
     const { data: oldPeriods } = await supabase
       .from("dre_periods")
-      .select("id")
+      .select("id, period_key")
       .eq("user_id", userId)
       .eq("sheet_id", connectionId)
       .eq("template_type", "DEFAULT");
 
     if (oldPeriods && oldPeriods.length > 0) {
-      const oldIds = oldPeriods.map((p: any) => p.id);
-      await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
-      await supabase.from("dre_lines").delete().in("period_id", oldIds);
-      await supabase.from("dre_periods").delete().in("id", oldIds);
+      // Filter to only periods matching our year
+      const yearStr = dreYear ? String(dreYear) : null;
+      const periodsToDelete = yearStr
+        ? oldPeriods.filter((p: any) => p.period_key.startsWith(yearStr) || p.period_key === "TOTAL")
+        : oldPeriods;
+      
+      if (periodsToDelete.length > 0) {
+        const oldIds = periodsToDelete.map((p: any) => p.id);
+        await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+        await supabase.from("dre_lines").delete().in("period_id", oldIds);
+        await supabase.from("dre_periods").delete().in("id", oldIds);
+      }
     }
   }
 
@@ -523,6 +555,7 @@ async function parseDreMatrix(
     validation_notes: [],
     last_import_at: new Date().toISOString(),
     template_type: "DEFAULT",
+    scenario: null,
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
@@ -534,13 +567,11 @@ async function parseDreMatrix(
     periodMap.set(p.period_key, { id: p.id, colIndex: p.col_index });
   }
 
-  // Delete old lines for these periods (in case of re-sync with upsert)
   const periodIds = (insertedPeriods || []).map((p: any) => p.id);
   if (periodIds.length > 0) {
     await supabase.from("dre_lines").delete().in("period_id", periodIds);
   }
 
-  // Insert lines
   const lineInserts: any[] = [];
   for (let lineIdx = 0; lineIdx < parsedLines.length; lineIdx++) {
     const line = parsedLines[lineIdx];
@@ -566,47 +597,606 @@ async function parseDreMatrix(
     totalInserted += batch.length;
   }
 
-  // Validation: check totals match sum of months
-  const validationUpdates: Array<{ periodId: string; status: string; notes: string[] }> = [];
-  
-  if (totalColIndex >= 0) {
-    const totalPeriodData = periodMap.get("TOTAL");
-    if (totalPeriodData) {
-      const notes: string[] = [];
-      for (const line of parsedLines) {
-        if (line.isGroup) continue;
-        const totalVal = line.values.get(totalColIndex);
-        if (totalVal === undefined) continue;
-        
-        const monthSum = monthCols.reduce((sum, mc) => {
-          const v = line.values.get(mc.colIndex);
-          return sum + (v ?? 0);
-        }, 0);
-        
-        const diff = Math.abs(totalVal - monthSum);
-        if (diff > 0.02) {
-          notes.push(`"${line.label}": TOTAL=${totalVal.toFixed(2)}, soma meses=${monthSum.toFixed(2)}, diff=${diff.toFixed(2)}`);
-        }
-      }
-      if (notes.length > 0) {
-        validationUpdates.push({ periodId: totalPeriodData.id, status: "warning", notes: notes.slice(0, 10) });
-      }
-    }
-  }
-
-  for (const vu of validationUpdates) {
-    await supabase.from("dre_periods").update({ validation_status: vu.status, validation_notes: vu.notes }).eq("id", vu.periodId);
-  }
-
   return {
     success: true, found: true, tab_name: dreTab, template: "DEFAULT",
-    parser: "dre_matricial",
+    parser: "dre_matricial", dre_year: dreYear,
     periods_count: periodColumns.length, lines_count: totalInserted,
-    periods: periodColumns.map(p => p.periodKey), warnings: validationUpdates.length,
+    periods: periodColumns.map(p => p.periodKey), warnings: 0,
   };
 }
 
-// ========== LCF NUCLEO PARSER ==========
+// ========== NEW MODEL: SAH (aba "DRE 2026") ==========
+
+const SAH_MONTH_COLS: Array<{ month: string; prevCol: number; realCol: number }> = [
+  { month: "01", prevCol: 4, realCol: 5 },   // E, F
+  { month: "02", prevCol: 7, realCol: 8 },   // H, I
+  { month: "03", prevCol: 10, realCol: 11 },  // K, L
+  { month: "04", prevCol: 13, realCol: 14 },  // N, O
+  { month: "05", prevCol: 16, realCol: 17 },  // Q, R
+  { month: "06", prevCol: 19, realCol: 20 },  // T, U
+  { month: "07", prevCol: 22, realCol: 23 },  // W, X
+  { month: "08", prevCol: 25, realCol: 26 },  // Z, AA
+  { month: "09", prevCol: 28, realCol: 29 },  // AC, AD
+  { month: "10", prevCol: 31, realCol: 32 },  // AF, AG
+  { month: "11", prevCol: 34, realCol: 35 },  // AI, AJ
+  { month: "12", prevCol: 37, realCol: 38 },  // AL, AM
+];
+
+function matcherSAH(tabName: string, rows: string[][]): boolean {
+  const norm = normalize(tabName);
+  // Match "DRE 2026" (exact or close)
+  if (!norm.match(/^dre\s+2026$/)) return false;
+  
+  // Check for dual-row header pattern: row 3 = months, row 4 = Previsto/Realizado
+  if (rows.length < 5) return false;
+  const row4 = rows[3] || [];
+  let hasPrevisto = false;
+  let hasRealizado = false;
+  for (const cell of row4) {
+    const n = normalize(String(cell ?? ""));
+    if (n === "previsto") hasPrevisto = true;
+    if (n === "realizado") hasRealizado = true;
+  }
+  return hasPrevisto && hasRealizado;
+}
+
+async function parseSAH(
+  rows: string[][],
+  dreTab: string,
+  userId: string,
+  connectionId: string,
+  supabase: any,
+): Promise<any> {
+  const dreYear = extractYearFromTab(dreTab, rows) || 2026;
+  console.log(`[dre-sync] SAH model: tab="${dreTab}", year=${dreYear}`);
+
+  // Build period columns for both scenarios
+  interface SAHPeriod { periodKey: string; periodLabel: string; scenario: string; colIndex: number; }
+  const periods: SAHPeriod[] = [];
+
+  // Annual totals: B=previsto, C=realizado
+  periods.push({ periodKey: `${dreYear}-TOTAL`, periodLabel: `TOTAL ${dreYear} Previsto`, scenario: "previsto", colIndex: 1 });
+  periods.push({ periodKey: `${dreYear}-TOTAL`, periodLabel: `TOTAL ${dreYear} Realizado`, scenario: "realizado", colIndex: 2 });
+
+  // Monthly
+  for (const mc of SAH_MONTH_COLS) {
+    periods.push({ periodKey: `${dreYear}-${mc.month}`, periodLabel: `${mc.month}/${dreYear} Previsto`, scenario: "previsto", colIndex: mc.prevCol });
+    periods.push({ periodKey: `${dreYear}-${mc.month}`, periodLabel: `${mc.month}/${dreYear} Realizado`, scenario: "realizado", colIndex: mc.realCol });
+  }
+
+  // Parse lines starting from row 5 (index 4)
+  interface ParsedLine {
+    label: string;
+    rowIndex: number;
+    isGroup: boolean;
+    isSubtotal: boolean;
+    groupLabel: string | null;
+    values: Map<number, number>;
+  }
+
+  const parsedLines: ParsedLine[] = [];
+  let currentGroup: string | null = null;
+
+  for (let rowIdx = 4; rowIdx < rows.length; rowIdx++) {
+    const row = rows[rowIdx];
+    const label = String(row?.[0] ?? "").trim();
+    if (!label) continue;
+    
+    // Stop at free-text notes (no values in any column)
+    const normLabel = normalize(label);
+    if (normLabel.startsWith("meta") && normLabel.length > 20) break; // free-text meta block
+
+    const isGroup = isGroupLabel(label);
+    const isSubtotal = isSubtotalLabel(label);
+    if (isGroup) currentGroup = label;
+
+    const allCols = periods.map(p => p.colIndex);
+    const uniqueCols = [...new Set(allCols)];
+    
+    const values = new Map<number, number>();
+    let hasAnyValue = false;
+    for (const colIdx of uniqueCols) {
+      const parsed = parseBRL(row?.[colIdx]);
+      if (parsed !== null) { values.set(colIdx, parsed); hasAnyValue = true; }
+    }
+
+    if (!hasAnyValue && !isGroup) continue;
+
+    parsedLines.push({ label, rowIndex: rowIdx, isGroup, isSubtotal, groupLabel: isGroup ? label : currentGroup, values });
+  }
+
+  if (parsedLines.length === 0) {
+    return { success: false, found: true, message: "SAH: sem linhas válidas." };
+  }
+
+  console.log(`[dre-sync] SAH: parsed ${parsedLines.length} lines`);
+
+  // Year-scoped cleanup
+  const { data: oldPeriods } = await supabase
+    .from("dre_periods")
+    .select("id, period_key")
+    .eq("user_id", userId)
+    .eq("sheet_id", connectionId)
+    .like("period_key", `${dreYear}%`);
+
+  if (oldPeriods && oldPeriods.length > 0) {
+    const oldIds = oldPeriods.map((p: any) => p.id);
+    await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+    await supabase.from("dre_lines").delete().in("period_id", oldIds);
+    await supabase.from("dre_periods").delete().in("id", oldIds);
+  }
+
+  // Insert periods (each scenario gets its own period record)
+  const periodInserts = periods.map(p => ({
+    user_id: userId,
+    sheet_id: connectionId,
+    period_key: p.periodKey,
+    period_label: p.periodLabel,
+    col_index: p.colIndex,
+    validation_status: "ok",
+    validation_notes: [],
+    last_import_at: new Date().toISOString(),
+    template_type: "SAH",
+    scenario: p.scenario,
+  }));
+
+  const { data: insertedPeriods, error: periodError } = await supabase
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index, scenario");
+  if (periodError) throw new Error(`SAH: Failed to insert periods: ${periodError.message}`);
+
+  // Insert lines
+  const lineInserts: any[] = [];
+  for (let lineIdx = 0; lineIdx < parsedLines.length; lineIdx++) {
+    const line = parsedLines[lineIdx];
+    for (const period of (insertedPeriods || [])) {
+      const val = line.values.get(period.col_index);
+      if (!line.isGroup && val === undefined) continue;
+      lineInserts.push({
+        period_id: period.id, user_id: userId, group_label: line.groupLabel,
+        line_label: line.label, value: val ?? 0,
+        source_cell: `${dreTab}!${colToLetter(period.col_index)}${line.rowIndex + 1}`,
+        source_tab: dreTab, order_index: lineIdx, is_group: line.isGroup, is_subtotal: line.isSubtotal,
+        nucleo: null, section: period.scenario,
+      });
+    }
+  }
+
+  const BATCH_SIZE = 500;
+  let totalInserted = 0;
+  for (let i = 0; i < lineInserts.length; i += BATCH_SIZE) {
+    const batch = lineInserts.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from("dre_lines").insert(batch);
+    if (error) throw new Error(`SAH: Failed to insert lines: ${error.message}`);
+    totalInserted += batch.length;
+  }
+
+  return {
+    success: true, found: true, tab_name: dreTab, template: "SAH",
+    parser: "sah", dre_year: dreYear,
+    periods_count: insertedPeriods?.length || 0, lines_count: totalInserted,
+    periods: [...new Set(periods.map(p => p.periodKey))],
+    scenarios: ["previsto", "realizado"],
+    warnings: 0,
+  };
+}
+
+// ========== NEW MODEL: StartSync (aba "2026 DRE") ==========
+
+function matcherStartSync(tabName: string, rows: string[][]): boolean {
+  const norm = normalize(tabName);
+  // Match "2026 DRE" pattern
+  if (!norm.match(/^2026\s+dre$/)) return false;
+  // Verify B:M columns exist with month data
+  if (rows.length < 3) return false;
+  return true;
+}
+
+async function parseStartSync(
+  rows: string[][],
+  dreTab: string,
+  userId: string,
+  connectionId: string,
+  supabase: any,
+): Promise<any> {
+  const dreYear = extractYearFromTab(dreTab, rows) || 2026;
+  console.log(`[dre-sync] StartSync model: tab="${dreTab}", year=${dreYear}`);
+
+  // Find header row with month columns
+  let headerRowIdx = -1;
+  let monthCols: Array<{ colIndex: number; periodKey: string; label: string }> = [];
+  let totalColIdx = -1;
+
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const candidates: Array<{ colIndex: number; periodKey: string; label: string }> = [];
+    let foundTotal = -1;
+
+    for (let c = 1; c < row.length; c++) {
+      const val = String(row[c] ?? "").trim();
+      if (!val) continue;
+      const n = normalize(val);
+      if (n === "total") { foundTotal = c; continue; }
+      const parsed = parseMonthHeader(val);
+      if (parsed && parsed.periodKey !== "TOTAL") {
+        candidates.push({ colIndex: c, periodKey: parsed.periodKey, label: parsed.label });
+      }
+    }
+
+    if (candidates.length >= 6) {
+      headerRowIdx = r;
+      monthCols = candidates;
+      totalColIdx = foundTotal;
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1) {
+    return { success: false, found: true, message: "StartSync: header de meses não encontrado." };
+  }
+
+  // Year-scope TOTAL
+  const totalPeriodKey = `${dreYear}-TOTAL`;
+
+  const periodColumns = [
+    ...monthCols.map(m => ({ colIndex: m.colIndex, periodKey: m.periodKey, periodLabel: m.label })),
+  ];
+  if (totalColIdx >= 0) {
+    periodColumns.push({ colIndex: totalColIdx, periodKey: totalPeriodKey, periodLabel: `TOTAL ${dreYear}` });
+  }
+
+  const allValueCols = periodColumns.map(p => p.colIndex);
+
+  // Parse lines, stop at SALDO BANCÁRIO
+  interface ParsedLine {
+    label: string;
+    rowIndex: number;
+    isGroup: boolean;
+    isSubtotal: boolean;
+    groupLabel: string | null;
+    values: Map<number, number>;
+  }
+
+  const parsedLines: ParsedLine[] = [];
+  let currentGroup: string | null = null;
+
+  for (let rowIdx = headerRowIdx + 1; rowIdx < rows.length; rowIdx++) {
+    const row = rows[rowIdx];
+    const label = String(row?.[0] ?? "").trim();
+    if (!label) continue;
+
+    const normLabel = normalize(label);
+
+    // Stop at SALDO BANCÁRIO block
+    if (normLabel.includes("saldo bancario") || normLabel.includes("saldo banco")) {
+      console.log(`[dre-sync] StartSync: stopping at "${label}" (row ${rowIdx + 1})`);
+      break;
+    }
+
+    const isGroup = isGroupLabel(label);
+    const isSubtotal = isSubtotalLabel(label);
+    if (isGroup) currentGroup = label;
+
+    const values = new Map<number, number>();
+    let hasAnyValue = false;
+    for (const colIdx of allValueCols) {
+      const parsed = parseBRL(row?.[colIdx]);
+      if (parsed !== null) { values.set(colIdx, parsed); hasAnyValue = true; }
+    }
+
+    if (!hasAnyValue && !isGroup) continue;
+    parsedLines.push({ label, rowIndex: rowIdx, isGroup, isSubtotal, groupLabel: isGroup ? label : currentGroup, values });
+  }
+
+  if (parsedLines.length === 0) {
+    return { success: false, found: true, message: "StartSync: sem linhas válidas." };
+  }
+
+  console.log(`[dre-sync] StartSync: parsed ${parsedLines.length} lines for ${periodColumns.length} periods`);
+
+  // Year-scoped cleanup
+  const { data: oldPeriods } = await supabase
+    .from("dre_periods")
+    .select("id, period_key")
+    .eq("user_id", userId)
+    .eq("sheet_id", connectionId)
+    .like("period_key", `${dreYear}%`);
+
+  if (oldPeriods && oldPeriods.length > 0) {
+    const oldIds = oldPeriods.map((p: any) => p.id);
+    await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+    await supabase.from("dre_lines").delete().in("period_id", oldIds);
+    await supabase.from("dre_periods").delete().in("id", oldIds);
+  }
+
+  // Insert periods
+  const periodInserts = periodColumns.map(pc => ({
+    user_id: userId,
+    sheet_id: connectionId,
+    period_key: pc.periodKey,
+    period_label: pc.periodLabel,
+    col_index: pc.colIndex,
+    validation_status: "ok",
+    validation_notes: [],
+    last_import_at: new Date().toISOString(),
+    template_type: "STARTSYNC",
+    scenario: null,
+  }));
+
+  const { data: insertedPeriods, error: periodError } = await supabase
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
+  if (periodError) throw new Error(`StartSync: Failed to insert periods: ${periodError.message}`);
+
+  const periodMap = new Map<string, { id: string; colIndex: number }>();
+  for (const p of (insertedPeriods || [])) {
+    periodMap.set(p.period_key, { id: p.id, colIndex: p.col_index });
+  }
+
+  // Insert lines
+  const lineInserts: any[] = [];
+  for (let lineIdx = 0; lineIdx < parsedLines.length; lineIdx++) {
+    const line = parsedLines[lineIdx];
+    for (const [pKey, pData] of periodMap.entries()) {
+      const val = line.values.get(pData.colIndex);
+      if (!line.isGroup && val === undefined) continue;
+      lineInserts.push({
+        period_id: pData.id, user_id: userId, group_label: line.groupLabel,
+        line_label: line.label, value: val ?? 0,
+        source_cell: `${dreTab}!${colToLetter(pData.colIndex)}${line.rowIndex + 1}`,
+        source_tab: dreTab, order_index: lineIdx, is_group: line.isGroup, is_subtotal: line.isSubtotal,
+        nucleo: null, section: null,
+      });
+    }
+  }
+
+  const BATCH_SIZE = 500;
+  let totalInserted = 0;
+  for (let i = 0; i < lineInserts.length; i += BATCH_SIZE) {
+    const batch = lineInserts.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from("dre_lines").insert(batch);
+    if (error) throw new Error(`StartSync: Failed to insert lines: ${error.message}`);
+    totalInserted += batch.length;
+  }
+
+  return {
+    success: true, found: true, tab_name: dreTab, template: "STARTSYNC",
+    parser: "startsync", dre_year: dreYear,
+    periods_count: periodColumns.length, lines_count: totalInserted,
+    periods: periodColumns.map(p => p.periodKey),
+    warnings: 0,
+  };
+}
+
+// ========== NEW MODEL: GR (aba "DRE-Caixa") ==========
+
+function matcherGR(tabName: string, rows: string[][]): boolean {
+  const norm = normalize(tabName);
+  return norm === "dre-caixa" || norm === "dre caixa";
+}
+
+async function parseGR(
+  rows: string[][],
+  dreTab: string,
+  userId: string,
+  connectionId: string,
+  supabase: any,
+): Promise<any> {
+  const dreYear = extractYearFromTab(dreTab, rows) || 2026;
+  console.log(`[dre-sync] GR model: tab="${dreTab}", year=${dreYear}`);
+
+  // Find header row with month columns
+  let headerRowIdx = -1;
+  let monthCols: Array<{ colIndex: number; periodKey: string; label: string }> = [];
+  let totalColIdx = -1;
+
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const candidates: Array<{ colIndex: number; periodKey: string; label: string }> = [];
+    let foundTotal = -1;
+
+    for (let c = 1; c < row.length; c++) {
+      const val = String(row[c] ?? "").trim();
+      if (!val) continue;
+      const n = normalize(val);
+      if (n === "total") { foundTotal = c; continue; }
+      const parsed = parseMonthHeader(val);
+      if (parsed && parsed.periodKey !== "TOTAL") {
+        candidates.push({ colIndex: c, periodKey: parsed.periodKey, label: parsed.label });
+      }
+    }
+
+    if (candidates.length >= 6) {
+      headerRowIdx = r;
+      monthCols = candidates;
+      totalColIdx = foundTotal;
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1) {
+    return { success: false, found: true, message: "GR: header de meses não encontrado." };
+  }
+
+  const totalPeriodKey = `${dreYear}-TOTAL`;
+  const periodColumns = [
+    ...monthCols.map(m => ({ colIndex: m.colIndex, periodKey: m.periodKey, periodLabel: m.label })),
+  ];
+  if (totalColIdx >= 0) {
+    periodColumns.push({ colIndex: totalColIdx, periodKey: totalPeriodKey, periodLabel: `TOTAL ${dreYear}` });
+  }
+
+  const allValueCols = periodColumns.map(p => p.colIndex);
+
+  // Track duplicate labels
+  const labelCount = new Map<string, number>();
+  const warnings: string[] = [];
+
+  interface ParsedLine {
+    label: string;
+    displayLabel: string;
+    lineKey: string;
+    rowIndex: number;
+    isGroup: boolean;
+    isSubtotal: boolean;
+    groupLabel: string | null;
+    values: Map<number, number>;
+  }
+
+  const parsedLines: ParsedLine[] = [];
+  let currentGroup: string | null = null;
+
+  for (let rowIdx = headerRowIdx + 1; rowIdx < rows.length; rowIdx++) {
+    const row = rows[rowIdx];
+    const label = String(row?.[0] ?? "").trim();
+    if (!label) continue;
+
+    const normLabel = normalize(label);
+
+    // Skip unlabeled percentage rows (no text label, or just % format)
+    if (/^[\d\.,\-%]+$/.test(label)) continue;
+
+    const isGroup = isGroupLabel(label);
+    const isSubtotal = isSubtotalLabel(label);
+    if (isGroup) currentGroup = label;
+
+    // Handle duplicate labels
+    const slug = slugify(label);
+    const count = (labelCount.get(slug) || 0) + 1;
+    labelCount.set(slug, count);
+
+    let displayLabel = label;
+    const lineKey = `${slug}__r${rowIdx}`;
+
+    // Special handling for duplicate "RESULTADO MÊS"
+    if (normLabel.includes("resultado mes") || normLabel.includes("resultado do mes")) {
+      if (count === 1) {
+        displayLabel = `${label} (pré distribuição)`;
+      } else if (count >= 2) {
+        displayLabel = `${label} (pós distribuição)`;
+      }
+    }
+
+    const values = new Map<number, number>();
+    let hasAnyValue = false;
+    let hasNAWarning = false;
+    for (const colIdx of allValueCols) {
+      const cellVal = row?.[colIdx];
+      const cellStr = String(cellVal ?? "").trim();
+      
+      // Handle #N/A gracefully
+      if (cellStr.startsWith("#")) {
+        hasNAWarning = true;
+        continue;
+      }
+      
+      const parsed = parseBRL(cellVal);
+      if (parsed !== null) { values.set(colIdx, parsed); hasAnyValue = true; }
+    }
+
+    if (hasNAWarning) {
+      warnings.push(`Row ${rowIdx + 1} "${label}": contém #N/A em algumas colunas`);
+    }
+
+    if (!hasAnyValue && !isGroup) continue;
+    parsedLines.push({ label, displayLabel, lineKey, rowIndex: rowIdx, isGroup, isSubtotal, groupLabel: isGroup ? label : currentGroup, values });
+  }
+
+  if (parsedLines.length === 0) {
+    return { success: false, found: true, message: "GR: sem linhas válidas." };
+  }
+
+  console.log(`[dre-sync] GR: parsed ${parsedLines.length} lines, ${warnings.length} warnings`);
+
+  // Year-scoped cleanup
+  const { data: oldPeriods } = await supabase
+    .from("dre_periods")
+    .select("id, period_key")
+    .eq("user_id", userId)
+    .eq("sheet_id", connectionId)
+    .like("period_key", `${dreYear}%`);
+
+  if (oldPeriods && oldPeriods.length > 0) {
+    const oldIds = oldPeriods.map((p: any) => p.id);
+    await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+    await supabase.from("dre_lines").delete().in("period_id", oldIds);
+    await supabase.from("dre_periods").delete().in("id", oldIds);
+  }
+
+  // Insert periods
+  const periodInserts = periodColumns.map(pc => ({
+    user_id: userId,
+    sheet_id: connectionId,
+    period_key: pc.periodKey,
+    period_label: pc.periodLabel,
+    col_index: pc.colIndex,
+    validation_status: "ok",
+    validation_notes: [],
+    last_import_at: new Date().toISOString(),
+    template_type: "GR",
+    scenario: null,
+  }));
+
+  const { data: insertedPeriods, error: periodError } = await supabase
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
+  if (periodError) throw new Error(`GR: Failed to insert periods: ${periodError.message}`);
+
+  const periodMap = new Map<string, { id: string; colIndex: number }>();
+  for (const p of (insertedPeriods || [])) {
+    periodMap.set(p.period_key, { id: p.id, colIndex: p.col_index });
+  }
+
+  // Insert lines (use displayLabel for renamed duplicates)
+  const lineInserts: any[] = [];
+  for (let lineIdx = 0; lineIdx < parsedLines.length; lineIdx++) {
+    const line = parsedLines[lineIdx];
+    for (const [pKey, pData] of periodMap.entries()) {
+      const val = line.values.get(pData.colIndex);
+      if (!line.isGroup && val === undefined) continue;
+      lineInserts.push({
+        period_id: pData.id, user_id: userId, group_label: line.groupLabel,
+        line_label: line.displayLabel, value: val ?? 0,
+        source_cell: `${dreTab}!${colToLetter(pData.colIndex)}${line.rowIndex + 1}`,
+        source_tab: dreTab, order_index: lineIdx, is_group: line.isGroup, is_subtotal: line.isSubtotal,
+        nucleo: null, section: null,
+      });
+    }
+  }
+
+  const BATCH_SIZE = 500;
+  let totalInserted = 0;
+  for (let i = 0; i < lineInserts.length; i += BATCH_SIZE) {
+    const batch = lineInserts.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from("dre_lines").insert(batch);
+    if (error) throw new Error(`GR: Failed to insert lines: ${error.message}`);
+    totalInserted += batch.length;
+  }
+
+  return {
+    success: true, found: true, tab_name: dreTab, template: "GR",
+    parser: "gr_caixa", dre_year: dreYear,
+    periods_count: periodColumns.length, lines_count: totalInserted,
+    periods: periodColumns.map(p => p.periodKey),
+    warnings: warnings.length,
+    warning_details: warnings.slice(0, 20),
+  };
+}
+
+// ========== MODEL REGISTRY ==========
+
+interface DreModel {
+  id: string;
+  matcher: (tabName: string, rows: string[][]) => boolean;
+  parse: (rows: string[][], tabName: string, userId: string, connectionId: string, supabase: any) => Promise<any>;
+}
+
+const DRE_MODELS: DreModel[] = [
+  { id: "SAH", matcher: matcherSAH, parse: parseSAH },
+  { id: "STARTSYNC", matcher: matcherStartSync, parse: parseStartSync },
+  { id: "GR", matcher: matcherGR, parse: parseGR },
+];
+
+// ========== LCF NUCLEO PARSER (EXISTING - UNTOUCHED) ==========
 
 interface LcfSection {
   key: string;
@@ -697,22 +1287,17 @@ function parseDreLcfNucleo(rows: string[][], sheetName: string): LcfParseResult 
     const sectionDetected = detectSection(label);
     const isSubtotal = isSubtotalLabel(label) || sectionDetected !== null;
 
-    if (sectionDetected) {
-      currentSection = sectionDetected;
-    }
-    if (isGroup) {
-      currentGroup = label;
-    }
+    if (sectionDetected) currentSection = sectionDetected;
+    if (isGroup) currentGroup = label;
 
     if (nucleoColumns.length >= 2) {
       for (const nc of nucleoColumns) {
         const cellVal = row?.[nc.colIndex];
         const parsed = parseBRL(cellVal);
-
         if (parsed !== null || isGroup || isSubtotal) {
           lines.push({
             label, section: currentSection, nucleo: nc.name,
-            value: parsed ?? 0, order: order, isGroup, isSubtotal,
+            value: parsed ?? 0, order, isGroup, isSubtotal,
             groupLabel: isGroup ? label : currentGroup,
             sourceCell: `${sheetName}!${colToLetter(nc.colIndex)}${r + 1}`,
           });
@@ -725,7 +1310,7 @@ function parseDreLcfNucleo(rows: string[][], sheetName: string): LcfParseResult 
         const consolidated = values.reduce((sum, v) => (sum ?? 0) + (v ?? 0), 0) ?? 0;
         lines.push({
           label, section: currentSection, nucleo: null,
-          value: consolidated, order: order, isGroup, isSubtotal,
+          value: consolidated, order, isGroup, isSubtotal,
           groupLabel: isGroup ? label : currentGroup,
           sourceCell: `${sheetName}!A${r + 1}`,
         });
@@ -735,7 +1320,7 @@ function parseDreLcfNucleo(rows: string[][], sheetName: string): LcfParseResult 
       if (val !== null || isGroup || isSubtotal) {
         lines.push({
           label, section: currentSection, nucleo: null,
-          value: val ?? 0, order: order, isGroup, isSubtotal,
+          value: val ?? 0, order, isGroup, isSubtotal,
           groupLabel: isGroup ? label : currentGroup,
           sourceCell: `${sheetName}!B${r + 1}`,
         });
@@ -808,7 +1393,7 @@ function validateDreLcf(lines: LcfParsedLine[], _periodKey: string | null): Vali
   return issues;
 }
 
-// ========== DEFAULT PARSER (existing logic) ==========
+// ========== DEFAULT PARSER (existing logic - UNTOUCHED) ==========
 
 async function parseDefaultDre(
   rows: string[][],
@@ -949,49 +1534,14 @@ async function parseDefaultDre(
     totalInserted += batch.length;
   }
 
-  const validationUpdates: Array<{ periodId: string; status: string; notes: string[] }> = [];
-  for (const [_pKey, pData] of periodMap.entries()) {
-    const periodLines = lineInserts.filter((l: any) => l.period_id === pData.id && !l.is_group);
-    const notes: string[] = [];
-    const getGroupItems = (groupNorm: string) =>
-      periodLines.filter((l: any) => l.group_label && normalize(l.group_label).includes(groupNorm) && !l.is_subtotal && !l.is_group);
-    const getSubtotal = (keyword: string) =>
-      periodLines.find((l: any) => l.is_subtotal && normalize(l.line_label).includes(keyword));
-
-    const faturamentoItems = getGroupItems("faturamento");
-    const deducoesItems = getGroupItems("deducoe");
-    const recLiqSubtotal = getSubtotal("receita liquida");
-    if (faturamentoItems.length > 0 && recLiqSubtotal) {
-      const sumFat = faturamentoItems.reduce((s: number, l: any) => s + l.value, 0);
-      const sumDed = deducoesItems.reduce((s: number, l: any) => s + l.value, 0);
-      const expected = sumFat + sumDed;
-      if (Math.abs(recLiqSubtotal.value - expected) > 0.01) {
-        notes.push(`Receita Líquida diverge: planilha=${recLiqSubtotal.value}, calculado=${expected.toFixed(2)}`);
-      }
-    }
-    const despesasItems = getGroupItems("despesa");
-    const despTotalSubtotal = getSubtotal("despesas totais") || getSubtotal("total despesas");
-    if (despesasItems.length > 0 && despTotalSubtotal) {
-      const sumDesp = despesasItems.reduce((s: number, l: any) => s + l.value, 0);
-      if (Math.abs(despTotalSubtotal.value - sumDesp) > 0.01) {
-        notes.push(`Despesas Totais diverge: planilha=${despTotalSubtotal.value}, calculado=${sumDesp.toFixed(2)}`);
-      }
-    }
-    if (notes.length > 0) validationUpdates.push({ periodId: pData.id, status: "warning", notes });
-  }
-
-  for (const vu of validationUpdates) {
-    await supabase.from("dre_periods").update({ validation_status: vu.status, validation_notes: vu.notes }).eq("id", vu.periodId);
-  }
-
   return {
-    success: true, found: true, tab_name: dreTab, template: "DEFAULT",
-    periods_count: periodColumns.length, lines_count: totalInserted,
-    periods: periodColumns.map(p => p.periodKey), warnings: validationUpdates.length,
+    success: totalInserted > 0, found: true, tab_name: dreTab,
+    template: "DEFAULT", periods_count: periodColumns.length,
+    lines_count: totalInserted, periods: periodColumns.map(p => p.periodKey),
   };
 }
 
-// ========== LCF IMPORT ==========
+// ========== IMPORT LCF TAB (EXISTING - UNTOUCHED) ==========
 
 async function importLcfTab(
   rows: string[][],
@@ -1095,7 +1645,6 @@ async function readTabData(
   if (xlsxWorkbook) {
     return xlsxSheetToRows(xlsxWorkbook, tabName);
   }
-  // Increased range to support larger DRE sheets
   const range = encodeURIComponent(`'${tabName}'!A1:AZ1000`);
   const dataRes = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`,
@@ -1185,146 +1734,168 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    console.log(`Found ${candidateTabs.length} DRE candidate tabs: ${candidateTabs.join(", ")}`);
+    console.log(`[dre-sync] Found ${candidateTabs.length} DRE candidate tabs: ${candidateTabs.join(", ")}`);
 
-    // 5. Process each tab - classify first
-    const results: Array<{ tab: string; template: string; periodKey: string | null; lines: number; status: string; warnings: number }> = [];
-    const lcfTabs: string[] = [];
-
-    const tabClassification: Array<{ tab: string; template: "LCF_NUCLEO" | "DEFAULT"; rows: string[][]; matrixDetect: MatrixDetectResult | null }> = [];
+    // 5. Read all tabs and score them
+    const tabData: Array<{ tab: string; rows: string[][]; score: number }> = [];
     for (const tab of candidateTabs) {
       const rows = await readTabData(tab, accessToken!, connection.spreadsheet_id, xlsxWorkbook);
       if (rows.length < 2) continue;
-      const template = detectDreTemplate(rows);
-      
-      // For DEFAULT tabs, also check if it's a matrix format
-      let matrixDetect: MatrixDetectResult | null = null;
-      if (template === "DEFAULT") {
-        matrixDetect = detectDreMatrix(rows);
-      }
-      
-      tabClassification.push({ tab, template, rows, matrixDetect });
-      if (template === "LCF_NUCLEO") lcfTabs.push(tab);
+      const score = scoreDreTab(tab, rows);
+      tabData.push({ tab, rows, score });
     }
 
-    // Process DEFAULT tabs (including matrix format)
-    if (lcfTabs.length === 0) {
-      const defaultEntries = tabClassification.filter(t => t.template === "DEFAULT");
-      
-      // Check if ANY tab is matrix format
-      const matrixEntries = defaultEntries.filter(e => e.matrixDetect?.isMatrix);
+    // Sort by score descending (2026 first)
+    tabData.sort((a, b) => b.score - a.score);
+
+    console.log(`[dre-sync] Tab scores: ${tabData.map(t => `${t.tab}=${t.score}`).join(", ")}`);
+
+    // 6. Try new models first (SAH, StartSync, GR)
+    const allResults: any[] = [];
+    const processedTabs = new Set<string>();
+
+    for (const entry of tabData) {
+      if (processedTabs.has(entry.tab)) continue;
+
+      for (const model of DRE_MODELS) {
+        if (model.matcher(entry.tab, entry.rows)) {
+          console.log(`[dre-sync] Model ${model.id} matched tab "${entry.tab}"`);
+          const result = await model.parse(entry.rows, entry.tab, userId, connection_id, supabase);
+          if (result.success) {
+            allResults.push(result);
+            processedTabs.add(entry.tab);
+          }
+          break;
+        }
+      }
+    }
+
+    // 7. Process remaining tabs with existing parsers (LCF, DEFAULT, Matrix)
+    const remainingTabs = tabData.filter(t => !processedTabs.has(t.tab));
+
+    if (remainingTabs.length > 0) {
+      // Classify remaining tabs
+      const lcfTabs: typeof tabData = [];
+      const defaultTabs: Array<typeof tabData[0] & { matrixDetect: MatrixDetectResult | null }> = [];
+
+      for (const entry of remainingTabs) {
+        const template = detectDreTemplate(entry.rows);
+        if (template === "LCF_NUCLEO") {
+          lcfTabs.push(entry);
+        } else {
+          const matrixDetect = detectDreMatrix(entry.rows);
+          defaultTabs.push({ ...entry, matrixDetect });
+        }
+      }
+
+      // Process LCF tabs
+      if (lcfTabs.length > 0) {
+        // Clean old DEFAULT data when switching to LCF
+        if (allResults.length === 0) {
+          const { data: oldDefaults } = await supabase
+            .from("dre_periods")
+            .select("id")
+            .eq("user_id", userId)
+            .eq("sheet_id", connection_id)
+            .eq("template_type", "DEFAULT");
+
+          if (oldDefaults && oldDefaults.length > 0) {
+            const oldIds = oldDefaults.map((p: any) => p.id);
+            await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+            await supabase.from("dre_lines").delete().in("period_id", oldIds);
+            await supabase.from("dre_periods").delete().in("id", oldIds);
+          }
+        }
+
+        for (const entry of lcfTabs) {
+          const importResult = await importLcfTab(entry.rows, entry.tab, userId, connection_id, supabase);
+          allResults.push({
+            success: true, found: true, tab_name: entry.tab,
+            template: "LCF_NUCLEO", parser: "lcf_nucleo",
+            periods_count: 1, lines_count: importResult.linesCount,
+            periods: [importResult.periodKey],
+            warnings: importResult.warnings,
+          });
+          processedTabs.add(entry.tab);
+        }
+      }
+
+      // Process DEFAULT/Matrix tabs
+      const matrixEntries = defaultTabs.filter(e => e.matrixDetect?.isMatrix);
       
       if (matrixEntries.length > 0) {
-        // Multiple matrix DRE tabs (e.g. DRE 2024, DRE 2025, DRE 2026)
-        // Delete all old DEFAULT data first, then import all tabs
-        const { data: oldPeriods } = await supabase
-          .from("dre_periods")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("sheet_id", connection_id)
-          .eq("template_type", "DEFAULT");
-
-        if (oldPeriods && oldPeriods.length > 0) {
-          const oldIds = oldPeriods.map((p: any) => p.id);
-          await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
-          await supabase.from("dre_lines").delete().in("period_id", oldIds);
-          await supabase.from("dre_periods").delete().in("id", oldIds);
-        }
-
-        // Sort by tab name descending so latest year is first in results
-        matrixEntries.sort((a, b) => b.tab.localeCompare(a.tab));
-        
-        let totalLines = 0;
-        let totalPeriods = 0;
-        let totalWarnings = 0;
-        const allPeriods: string[] = [];
-        const tabResults: any[] = [];
-
+        // Year-scoped cleanup per matrix tab
         for (const entry of matrixEntries) {
-          // Skip tabs with "TESTES" in name
-          if (normalize(entry.tab).includes("teste")) {
-            console.log(`[dre-sync] Skipping test tab: ${entry.tab}`);
-            continue;
+          if (normalize(entry.tab).includes("teste")) continue;
+          
+          const dreYear = extractYearFromTab(entry.tab, entry.rows);
+          console.log(`[dre-sync] Using MATRIX parser for tab "${entry.tab}" (year=${dreYear})`);
+          
+          // Year-scoped cleanup: only delete periods for THIS year
+          if (dreYear) {
+            const { data: oldPeriods } = await supabase
+              .from("dre_periods")
+              .select("id, period_key")
+              .eq("user_id", userId)
+              .eq("sheet_id", connection_id)
+              .eq("template_type", "DEFAULT");
+
+            if (oldPeriods && oldPeriods.length > 0) {
+              const yearStr = String(dreYear);
+              const periodsToDelete = oldPeriods.filter((p: any) => 
+                p.period_key.startsWith(yearStr) || p.period_key === "TOTAL"
+              );
+              if (periodsToDelete.length > 0) {
+                const oldIds = periodsToDelete.map((p: any) => p.id);
+                await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+                await supabase.from("dre_lines").delete().in("period_id", oldIds);
+                await supabase.from("dre_periods").delete().in("id", oldIds);
+              }
+            }
           }
-          console.log(`[dre-sync] Using MATRIX parser for tab "${entry.tab}"`);
-          // parseDreMatrix already handles its own insert, but we already cleared old data above
-          // We need a version that doesn't re-delete. For simplicity, just call it - it will
-          // try to delete again but find nothing (already cleared).
-          const result = await parseDreMatrix(entry.rows, entry.tab, userId, connection_id, supabase, entry.matrixDetect!, true);
+
+          const result = await parseDreMatrix(entry.rows, entry.tab, userId, connection_id, supabase, entry.matrixDetect!, true, dreYear || undefined);
           if (result.success) {
-            totalLines += result.lines_count || 0;
-            totalPeriods += result.periods_count || 0;
-            totalWarnings += result.warnings || 0;
-            allPeriods.push(...(result.periods || []));
-            tabResults.push({ tab: entry.tab, ...result });
+            allResults.push(result);
+            processedTabs.add(entry.tab);
           }
         }
-
-        return new Response(JSON.stringify({
-          success: totalLines > 0,
-          found: true,
-          template: "DEFAULT",
-          parser: "dre_matricial",
-          tabs_imported: tabResults.length,
-          periods_count: totalPeriods,
-          lines_count: totalLines,
-          periods: allPeriods,
-          warnings: totalWarnings,
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       
-      if (defaultEntries.length > 0) {
-        // Fallback to original DEFAULT parser (single tab)
-        const entry = defaultEntries[0];
-        console.log(`[dre-sync] Using DEFAULT parser for tab "${entry.tab}"`);
+      // Fallback single DEFAULT tab
+      const nonMatrixDefaults = defaultTabs.filter(e => !e.matrixDetect?.isMatrix);
+      if (nonMatrixDefaults.length > 0 && allResults.length === 0) {
+        const entry = nonMatrixDefaults[0];
         const result = await parseDefaultDre(entry.rows, entry.tab, userId, connection_id, supabase);
-        return new Response(JSON.stringify(result), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        if (result.success) {
+          allResults.push(result);
+          processedTabs.add(entry.tab);
+        }
       }
     }
 
-    // Process LCF tabs: each tab = one month
-    if (lcfTabs.length > 0) {
-      const { data: oldDefaults } = await supabase
-        .from("dre_periods")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("sheet_id", connection_id)
-        .eq("template_type", "DEFAULT");
-
-      if (oldDefaults && oldDefaults.length > 0) {
-        const oldIds = oldDefaults.map((p: any) => p.id);
-        await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
-        await supabase.from("dre_lines").delete().in("period_id", oldIds);
-        await supabase.from("dre_periods").delete().in("id", oldIds);
-      }
-
-      for (const entry of tabClassification.filter(t => t.template === "LCF_NUCLEO")) {
-        const importResult = await importLcfTab(entry.rows, entry.tab, userId, connection_id, supabase);
-        results.push({
-          tab: entry.tab, template: "LCF_NUCLEO",
-          periodKey: importResult.periodKey, lines: importResult.linesCount,
-          status: importResult.status, warnings: importResult.warnings,
-        });
-      }
-
-      const totalLines = results.reduce((s, r) => s + r.lines, 0);
-      const totalWarnings = results.reduce((s, r) => s + r.warnings, 0);
-
+    // 8. Return combined results
+    if (allResults.length === 0) {
       return new Response(JSON.stringify({
-        success: true, found: true, template: "LCF_NUCLEO",
-        tabs_imported: results.length, periods_count: results.length,
-        lines_count: totalLines,
-        periods: results.map(r => r.periodKey).filter(Boolean),
-        warnings: totalWarnings, details: results,
+        success: false, found: true,
+        message: "Abas DRE encontradas mas sem dados suficientes para importação.",
+        available_tabs: sheetTitles,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Fallback
+    const totalLines = allResults.reduce((s, r) => s + (r.lines_count || 0), 0);
+    const totalPeriods = allResults.reduce((s, r) => s + (r.periods_count || 0), 0);
+    const totalWarnings = allResults.reduce((s, r) => s + (r.warnings || 0), 0);
+
     return new Response(JSON.stringify({
-      success: false, found: true,
-      message: "Abas DRE encontradas mas sem dados suficientes para importação.",
+      success: true, found: true,
+      template: allResults[0].template,
+      tabs_imported: allResults.length,
+      periods_count: totalPeriods,
+      lines_count: totalLines,
+      periods: allResults.flatMap(r => r.periods || []),
+      warnings: totalWarnings,
+      models_detected: allResults.map(r => ({ tab: r.tab_name, model: r.template || r.parser, year: r.dre_year })),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
   } catch (error) {

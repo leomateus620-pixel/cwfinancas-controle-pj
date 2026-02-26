@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-
+import { useMemo } from "react";
 
 export interface DREPeriod {
   id: string;
@@ -15,6 +15,7 @@ export interface DREPeriod {
   validation_notes: string[];
   last_import_at: string;
   template_type: string;
+  scenario?: string | null;
 }
 
 export interface DRELine {
@@ -62,18 +63,54 @@ export function useDRE(sheetId?: string) {
     enabled: !!session,
   });
 
-  const periodOptions = (periods || [])
-    .map(p => ({
-      key: p.period_key,
-      label: p.period_label || p.period_key,
-      id: p.id,
-      validationStatus: p.validation_status,
-      templateType: p.template_type || "DEFAULT",
-    }));
+  // Sort periods: 2026 > 2025 > 2024, TOTAL last within each year
+  const sortedPeriods = useMemo(() => {
+    if (!periods) return [];
+    return [...periods].sort((a, b) => {
+      const yearA = a.period_key.match(/^(\d{4})/)?.[1] || "0000";
+      const yearB = b.period_key.match(/^(\d{4})/)?.[1] || "0000";
+      // Higher year first
+      if (yearA !== yearB) return yearB.localeCompare(yearA);
+      // TOTAL at the beginning of each year group
+      const isTotalA = a.period_key.includes("TOTAL");
+      const isTotalB = b.period_key.includes("TOTAL");
+      if (isTotalA && !isTotalB) return -1;
+      if (!isTotalA && isTotalB) return 1;
+      return a.period_key.localeCompare(b.period_key);
+    });
+  }, [periods]);
 
-  // Detect active template from periods
-  const activeTemplate = (periods || []).length > 0
-    ? (periods![0].template_type || "DEFAULT")
+  const periodOptions = sortedPeriods.map(p => ({
+    key: p.period_key,
+    label: p.period_label || p.period_key,
+    id: p.id,
+    validationStatus: p.validation_status,
+    templateType: p.template_type || "DEFAULT",
+    scenario: (p as any).scenario as string | null,
+  }));
+
+  // Available years (sorted desc: 2026, 2025, 2024)
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    for (const p of sortedPeriods) {
+      const match = p.period_key.match(/^(\d{4})/);
+      if (match) years.add(parseInt(match[1]));
+    }
+    return Array.from(years).sort((a, b) => b - a);
+  }, [sortedPeriods]);
+
+  // Available scenarios (for SAH model)
+  const availableScenarios = useMemo(() => {
+    const scenarios = new Set<string>();
+    for (const p of sortedPeriods) {
+      const s = (p as any).scenario;
+      if (s) scenarios.add(s);
+    }
+    return Array.from(scenarios);
+  }, [sortedPeriods]);
+
+  const activeTemplate = sortedPeriods.length > 0
+    ? (sortedPeriods[0].template_type || "DEFAULT")
     : "DEFAULT";
 
   function useLines(periodId?: string) {
@@ -106,10 +143,10 @@ export function useDRE(sheetId?: string) {
       queryClient.invalidateQueries({ queryKey: ["dre-periods-v2"] });
       queryClient.invalidateQueries({ queryKey: ["dre-lines-v2"] });
       if (data.success) {
-        const templateLabel = data.template === "LCF_NUCLEO" ? "LCF por Núcleo" : "padrão";
+        const models = data.models_detected?.map((m: any) => `${m.tab}(${m.model})`).join(", ") || "";
         toast({
           title: "DRE sincronizada",
-          description: `${data.lines_count} linhas importadas em ${data.periods_count} períodos (formato ${templateLabel}).`,
+          description: `${data.lines_count} linhas em ${data.periods_count} períodos.${models ? ` Modelos: ${models}` : ""}`,
         });
       } else if (!data.found) {
         toast({
@@ -139,12 +176,10 @@ export function useDRE(sheetId?: string) {
       ? lines.filter(l => l.nucleo === null)
       : lines;
 
-    // For DEFAULT template, use original logic
-    if (activeTemplate === "DEFAULT") {
+    if (activeTemplate === "DEFAULT" || activeTemplate === "SAH" || activeTemplate === "STARTSYNC" || activeTemplate === "GR") {
       return calculateDefaultKPIs(filtered);
     }
 
-    // LCF template KPIs (consolidated lines only for KPIs)
     const consolidatedLines = lines.filter(l => l.nucleo === null);
     return calculateLcfKPIs(consolidatedLines);
   }
@@ -173,7 +208,7 @@ export function useDRE(sheetId?: string) {
       ? recLiqLine.value
       : faturamento + getGroupItemsSum("deducoe");
 
-    const despTotalLine = findSubtotal("despesas totais") || findSubtotal("total despesas");
+    const despTotalLine = findSubtotal("despesas totais") || findSubtotal("total despesas") || findSubtotal("gastos");
     const despesasTotais = despTotalLine
       ? despTotalLine.value
       : getGroupItemsSum("despesa");
@@ -201,7 +236,7 @@ export function useDRE(sheetId?: string) {
 
     const faturamento = receitaBruta?.value ?? 0;
     const despesasTotais = (despesasNucleo?.value ?? 0) + (despesasEscritorio?.value ?? 0);
-    const receitaLiquida = faturamento; // In LCF, receita bruta = receita líquida
+    const receitaLiquida = faturamento;
     const resultadoVal = resultado?.value ?? (faturamento + despesasTotais);
 
     const margemLiquida = faturamento !== 0
@@ -211,7 +246,6 @@ export function useDRE(sheetId?: string) {
     return { faturamento, receitaLiquida, despesasTotais, resultado: resultadoVal, margemLiquida };
   }
 
-  // Get unique nucleos from lines
   function getNucleos(lines: DRELine[]): string[] {
     const set = new Set<string>();
     lines.forEach(l => { if (l.nucleo) set.add(l.nucleo); });
@@ -221,7 +255,7 @@ export function useDRE(sheetId?: string) {
   const hasData = (periods || []).length > 0;
 
   return {
-    periods,
+    periods: sortedPeriods,
     periodOptions,
     isLoadingPeriods,
     useLines,
@@ -230,5 +264,7 @@ export function useDRE(sheetId?: string) {
     getNucleos,
     hasData,
     activeTemplate,
+    availableYears,
+    availableScenarios,
   };
 }
