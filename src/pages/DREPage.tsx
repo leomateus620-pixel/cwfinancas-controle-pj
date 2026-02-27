@@ -64,15 +64,23 @@ export default function DREPage() {
     });
   }, [periodOptions, selectedYear]);
 
-  // Auto-select TOTAL period for current year, or first period
+  // Auto-select period: prefer latest month, fallback to TOTAL
   useEffect(() => {
     if (filteredPeriodOptions.length > 0) {
-      const totalKey = `${selectedYear}-TOTAL`;
-      const hasTotal = filteredPeriodOptions.some(p => p.key === totalKey);
-      if (hasTotal && selectedPeriodKey !== totalKey) {
-        setSelectedPeriodKey(totalKey);
-      } else if (!filteredPeriodOptions.some(p => p.key === selectedPeriodKey)) {
-        setSelectedPeriodKey(filteredPeriodOptions[0].key);
+      // If current selection is valid, keep it
+      if (filteredPeriodOptions.some(p => p.key === selectedPeriodKey)) return;
+      
+      // Prefer latest monthly period (not TOTAL)
+      const monthlyPeriods = filteredPeriodOptions.filter(p => !p.key.includes("TOTAL"));
+      if (monthlyPeriods.length > 0) {
+        // Pick the last month (highest period key)
+        const latest = monthlyPeriods[monthlyPeriods.length - 1];
+        setSelectedPeriodKey(latest.key);
+      } else {
+        // Fallback to TOTAL or first available
+        const totalKey = `${selectedYear}-TOTAL`;
+        const hasTotal = filteredPeriodOptions.some(p => p.key === totalKey);
+        setSelectedPeriodKey(hasTotal ? totalKey : filteredPeriodOptions[0].key);
       }
     }
   }, [filteredPeriodOptions, selectedYear, selectedPeriodKey]);
@@ -93,7 +101,7 @@ export default function DREPage() {
 
   const kpis = lines ? calculateKPIs(lines, viewMode) : null;
   const nucleos = lines ? getNucleos(lines) : [];
-  const isLcf = activeTemplate === "LCF_NUCLEO";
+  const isLcf = activeTemplate === "LCF_NUCLEO" || (periodOptions || []).some(p => p.templateType === "LCF_NUCLEO");
   const isSyncing = syncDRE.isPending;
 
   const handleSync = () => {

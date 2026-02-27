@@ -109,9 +109,21 @@ export function useDRE(sheetId?: string) {
     return Array.from(scenarios);
   }, [sortedPeriods]);
 
-  const activeTemplate = sortedPeriods.length > 0
-    ? (sortedPeriods[0].template_type || "DEFAULT")
-    : "DEFAULT";
+  // Derive activeTemplate from ALL periods (most frequent template wins)
+  const activeTemplate = useMemo(() => {
+    if (!sortedPeriods || sortedPeriods.length === 0) return "DEFAULT";
+    const counts = new Map<string, number>();
+    for (const p of sortedPeriods) {
+      const t = p.template_type || "DEFAULT";
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    let best = "DEFAULT";
+    let bestCount = 0;
+    for (const [t, c] of counts) {
+      if (c > bestCount) { best = t; bestCount = c; }
+    }
+    return best;
+  }, [sortedPeriods]);
 
   function useLines(periodId?: string) {
     return useQuery({
