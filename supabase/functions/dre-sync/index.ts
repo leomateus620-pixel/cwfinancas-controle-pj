@@ -624,8 +624,8 @@ const SAH_MONTH_COLS: Array<{ month: string; prevCol: number; realCol: number }>
 
 function matcherSAH(tabName: string, rows: string[][]): boolean {
   const norm = normalize(tabName);
-  // Match "DRE 2026" (exact or close)
-  if (!norm.match(/^dre\s+2026$/)) return false;
+  // Match "DRE YYYY" pattern (any year)
+  if (!norm.match(/^dre\s+20\d{2}$/)) return false;
   
   // Check for dual-row header pattern: row 3 = months, row 4 = Previsto/Realizado
   if (rows.length < 5) return false;
@@ -711,12 +711,13 @@ async function parseSAH(
 
   console.log(`[dre-sync] SAH: parsed ${parsedLines.length} lines`);
 
-  // Year-scoped cleanup
+  // Year-scoped cleanup — scoped by template_type SAH
   const { data: oldPeriods } = await supabase
     .from("dre_periods")
     .select("id, period_key")
     .eq("user_id", userId)
     .eq("sheet_id", connectionId)
+    .eq("template_type", "SAH")
     .like("period_key", `${dreYear}%`);
 
   if (oldPeriods && oldPeriods.length > 0) {
@@ -741,7 +742,7 @@ async function parseSAH(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index, scenario");
+    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key,scenario" }).select("id, period_key, col_index, scenario");
   if (periodError) throw new Error(`SAH: Failed to insert periods: ${periodError.message}`);
 
   // Insert lines
@@ -785,7 +786,7 @@ async function parseSAH(
 function matcherStartSync(tabName: string, rows: string[][]): boolean {
   const norm = normalize(tabName);
   // Match "2026 DRE" pattern
-  if (!norm.match(/^2026\s+dre$/)) return false;
+  if (!norm.match(/^20\d{2}\s+dre$/)) return false;
   // Verify B:M columns exist with month data
   if (rows.length < 3) return false;
   return true;
@@ -894,12 +895,13 @@ async function parseStartSync(
 
   console.log(`[dre-sync] StartSync: parsed ${parsedLines.length} lines for ${periodColumns.length} periods`);
 
-  // Year-scoped cleanup
+  // Year-scoped cleanup — scoped by template_type STARTSYNC
   const { data: oldPeriods } = await supabase
     .from("dre_periods")
     .select("id, period_key")
     .eq("user_id", userId)
     .eq("sheet_id", connectionId)
+    .eq("template_type", "STARTSYNC")
     .like("period_key", `${dreYear}%`);
 
   if (oldPeriods && oldPeriods.length > 0) {
@@ -924,7 +926,7 @@ async function parseStartSync(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
+    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
   if (periodError) throw new Error(`StartSync: Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
@@ -1108,12 +1110,13 @@ async function parseGR(
 
   console.log(`[dre-sync] GR: parsed ${parsedLines.length} lines, ${warnings.length} warnings`);
 
-  // Year-scoped cleanup
+  // Year-scoped cleanup — scoped by template_type GR
   const { data: oldPeriods } = await supabase
     .from("dre_periods")
     .select("id, period_key")
     .eq("user_id", userId)
     .eq("sheet_id", connectionId)
+    .eq("template_type", "GR")
     .like("period_key", `${dreYear}%`);
 
   if (oldPeriods && oldPeriods.length > 0) {
@@ -1138,7 +1141,7 @@ async function parseGR(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
+    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
   if (periodError) throw new Error(`GR: Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
@@ -1471,21 +1474,31 @@ async function parseDefaultDre(
     ...monthCols.map(m => ({ colIndex: m.colIndex, periodKey: m.periodKey, periodLabel: m.label })),
   ];
   if (totalColIndex >= 0) {
-    periodColumns.push({ colIndex: totalColIndex, periodKey: "TOTAL", periodLabel: "TOTAL" });
+    const defYear = extractYearFromTab(dreTab, rows);
+    const defTotalKey = defYear ? `${defYear}-TOTAL` : "TOTAL";
+    periodColumns.push({ colIndex: totalColIndex, periodKey: defTotalKey, periodLabel: `TOTAL ${defYear || ""}`.trim() });
   }
 
+  // Year-scoped cleanup for DEFAULT template
+  const defCleanupYear = extractYearFromTab(dreTab, rows);
   const { data: oldPeriods } = await supabase
     .from("dre_periods")
-    .select("id")
+    .select("id, period_key")
     .eq("user_id", userId)
     .eq("sheet_id", connectionId)
     .eq("template_type", "DEFAULT");
 
   if (oldPeriods && oldPeriods.length > 0) {
-    const oldIds = oldPeriods.map((p: any) => p.id);
-    await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
-    await supabase.from("dre_lines").delete().in("period_id", oldIds);
-    await supabase.from("dre_periods").delete().in("id", oldIds);
+    const yearStr = defCleanupYear ? String(defCleanupYear) : null;
+    const periodsToDelete = yearStr
+      ? oldPeriods.filter((p: any) => p.period_key.startsWith(yearStr) || p.period_key === "TOTAL")
+      : oldPeriods;
+    if (periodsToDelete.length > 0) {
+      const oldIds = periodsToDelete.map((p: any) => p.id);
+      await supabase.from("dre_validation_issues").delete().in("period_id", oldIds);
+      await supabase.from("dre_lines").delete().in("period_id", oldIds);
+      await supabase.from("dre_periods").delete().in("id", oldIds);
+    }
   }
 
   const periodInserts = periodColumns.map(pc => ({
@@ -1498,10 +1511,11 @@ async function parseDefaultDre(
     validation_notes: [],
     last_import_at: new Date().toISOString(),
     template_type: "DEFAULT",
+    scenario: null,
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
+    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
   if (periodError) throw new Error(`Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
@@ -1760,10 +1774,18 @@ Deno.serve(async (req) => {
       for (const model of DRE_MODELS) {
         if (model.matcher(entry.tab, entry.rows)) {
           console.log(`[dre-sync] Model ${model.id} matched tab "${entry.tab}"`);
-          const result = await model.parse(entry.rows, entry.tab, userId, connection_id, supabase);
-          if (result.success) {
-            allResults.push(result);
-            processedTabs.add(entry.tab);
+          try {
+            const result = await model.parse(entry.rows, entry.tab, userId, connection_id, supabase);
+            if (result.success) {
+              allResults.push(result);
+              processedTabs.add(entry.tab);
+            }
+          } catch (modelErr) {
+            console.error(`[dre-sync] Model ${model.id} failed for tab "${entry.tab}":`, modelErr);
+            allResults.push({
+              success: false, found: true, tab_name: entry.tab, template: model.id,
+              error: modelErr instanceof Error ? modelErr.message : "Unknown error",
+            });
           }
           break;
         }
