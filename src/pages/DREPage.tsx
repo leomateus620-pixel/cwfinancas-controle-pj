@@ -271,6 +271,7 @@ export default function DREPage() {
               despesasTotais={kpis.despesasTotais}
               resultado={kpis.resultado}
               margemLiquida={kpis.margemLiquida}
+              isConsistent={kpis.isConsistent}
             />
           )}
 

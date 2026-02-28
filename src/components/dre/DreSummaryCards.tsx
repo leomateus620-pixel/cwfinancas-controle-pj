@@ -8,6 +8,7 @@ interface DreSummaryCardsProps {
   despesasTotais: number;
   resultado: number;
   margemLiquida: number | null;
+  isConsistent?: boolean;
 }
 
 function formatBRL(value: number | null | undefined): string {

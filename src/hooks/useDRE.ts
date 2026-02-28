@@ -69,9 +69,7 @@ export function useDRE(sheetId?: string) {
     return [...periods].sort((a, b) => {
       const yearA = a.period_key.match(/^(\d{4})/)?.[1] || "0000";
       const yearB = b.period_key.match(/^(\d{4})/)?.[1] || "0000";
-      // Higher year first
       if (yearA !== yearB) return yearB.localeCompare(yearA);
-      // TOTAL at the beginning of each year group
       const isTotalA = a.period_key.includes("TOTAL");
       const isTotalB = b.period_key.includes("TOTAL");
       if (isTotalA && !isTotalB) return -1;
@@ -89,7 +87,6 @@ export function useDRE(sheetId?: string) {
     scenario: (p as any).scenario as string | null,
   }));
 
-  // Available years (sorted desc: 2026, 2025, 2024)
   const availableYears = useMemo(() => {
     const years = new Set<number>();
     for (const p of sortedPeriods) {
@@ -99,7 +96,6 @@ export function useDRE(sheetId?: string) {
     return Array.from(years).sort((a, b) => b - a);
   }, [sortedPeriods]);
 
-  // Available scenarios (for SAH model)
   const availableScenarios = useMemo(() => {
     const scenarios = new Set<string>();
     for (const p of sortedPeriods) {
@@ -109,7 +105,6 @@ export function useDRE(sheetId?: string) {
     return Array.from(scenarios);
   }, [sortedPeriods]);
 
-  // Derive activeTemplate from ALL periods (most frequent template wins)
   const activeTemplate = useMemo(() => {
     if (!sortedPeriods || sortedPeriods.length === 0) return "DEFAULT";
     const counts = new Map<string, number>();
@@ -176,65 +171,101 @@ export function useDRE(sheetId?: string) {
     },
     onError: (error) => {
       toast({
-        title: "Erro ao sincronizar DRE",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
+        title: "Não foi possível sincronizar agora",
+        description: "Tente novamente em alguns instantes.",
         variant: "destructive",
       });
     },
   });
 
+  /**
+   * ROBUST KPI CALCULATION — tries multiple strategies to find each KPI value:
+   * 1. Find as subtotal line (is_subtotal + keyword match)
+   * 2. Find as group line with non-zero value (is_group + keyword match)
+   * 3. Find ANY line with keyword match (fallback)
+   * 4. Sum children under group (last resort)
+   */
   function calculateKPIs(lines: DRELine[], viewMode: "consolidated" | "by_nucleo" = "consolidated") {
     const filtered = viewMode === "consolidated"
       ? lines.filter(l => l.nucleo === null)
       : lines;
 
-    if (activeTemplate === "DEFAULT" || activeTemplate === "SAH" || activeTemplate === "STARTSYNC" || activeTemplate === "GR") {
-      return calculateDefaultKPIs(filtered);
+    if (activeTemplate === "LCF_NUCLEO") {
+      const consolidatedLines = lines.filter(l => l.nucleo === null);
+      return calculateLcfKPIs(consolidatedLines);
     }
 
-    const consolidatedLines = lines.filter(l => l.nucleo === null);
-    return calculateLcfKPIs(consolidatedLines);
+    return calculateDefaultKPIs(filtered);
+  }
+
+  function findLineValue(lines: DRELine[], keyword: string): number | null {
+    // Strategy 1: subtotal line with keyword
+    const subtotal = lines.find(l => l.is_subtotal && normalize(l.line_label).includes(keyword));
+    if (subtotal && subtotal.value !== 0) return subtotal.value;
+
+    // Strategy 2: group line with non-zero value
+    const group = lines.find(l => l.is_group && normalize(l.line_label).includes(keyword));
+    if (group && group.value !== 0) return group.value;
+
+    // Strategy 3: any line where label starts with/equals the keyword (exact match preferred)
+    const exact = lines.find(l => {
+      const n = normalize(l.line_label);
+      return n === keyword || n.startsWith(keyword + " ") || n.startsWith(keyword + ":");
+    });
+    if (exact && exact.value !== 0) return exact.value;
+
+    // Strategy 4: subtotal with value 0 (legitimate zero)
+    if (subtotal) return subtotal.value;
+    if (group) return group.value;
+
+    // Strategy 5: sum children under group
+    const children = lines.filter(
+      l => l.group_label && normalize(l.group_label).includes(keyword) && !l.is_group && !l.is_subtotal
+    );
+    if (children.length > 0) {
+      return children.reduce((sum, l) => sum + l.value, 0);
+    }
+
+    return null;
   }
 
   function calculateDefaultKPIs(lines: DRELine[]) {
-    const findSubtotal = (keyword: string) =>
-      lines.find(l => l.is_subtotal && normalize(l.line_label).includes(keyword));
+    // Find faturamento
+    const faturamento = findLineValue(lines, "faturamento") ?? 0;
 
-    const findGroupLine = (keyword: string) =>
-      lines.find(l => l.is_group && normalize(l.line_label).includes(keyword));
+    // Find receita líquida
+    const receitaLiquida = findLineValue(lines, "receita liquida")
+      ?? (faturamento + (findLineValue(lines, "deducoe") ?? findLineValue(lines, "impostos") ?? 0));
 
-    const getGroupItemsSum = (groupKeyword: string) => {
-      const items = lines.filter(
-        l => l.group_label && normalize(l.group_label).includes(groupKeyword) && !l.is_group && !l.is_subtotal
-      );
-      return items.reduce((sum, l) => sum + l.value, 0);
-    };
+    // Find despesas totais
+    const despesasTotais = findLineValue(lines, "despesas totais")
+      ?? findLineValue(lines, "total despesas")
+      ?? findLineValue(lines, "gastos")
+      ?? (() => {
+        // Sum all lines under "despesa" groups
+        const despChildren = lines.filter(
+          l => l.group_label && normalize(l.group_label).includes("despesa") && !l.is_group && !l.is_subtotal
+        );
+        return despChildren.length > 0 ? despChildren.reduce((sum, l) => sum + l.value, 0) : 0;
+      })();
 
-    const fatGroup = findGroupLine("faturamento");
-    const faturamento = fatGroup && fatGroup.value !== 0
-      ? fatGroup.value
-      : getGroupItemsSum("faturamento");
+    // Find resultado
+    const resultado = findLineValue(lines, "resultado")
+      ?? findLineValue(lines, "lucro liquido")
+      ?? findLineValue(lines, "lucro operacional")
+      ?? (receitaLiquida + despesasTotais);
 
-    const recLiqLine = findSubtotal("receita liquida");
-    const receitaLiquida = recLiqLine
-      ? recLiqLine.value
-      : faturamento + getGroupItemsSum("deducoe");
+    // Margem
+    const margemLiquida = faturamento !== 0
+      ? (resultado / faturamento) * 100
+      : receitaLiquida !== 0
+        ? (resultado / receitaLiquida) * 100
+        : null;
 
-    const despTotalLine = findSubtotal("despesas totais") || findSubtotal("total despesas") || findSubtotal("gastos");
-    const despesasTotais = despTotalLine
-      ? despTotalLine.value
-      : getGroupItemsSum("despesa");
+    // Consistency check
+    const isConsistent = Math.abs(resultado - (receitaLiquida + despesasTotais)) <= 0.01 || despesasTotais === 0;
 
-    const resultadoLine = findSubtotal("resultado");
-    const resultado = resultadoLine
-      ? resultadoLine.value
-      : receitaLiquida + despesasTotais;
-
-    const margemLiquida = receitaLiquida !== 0
-      ? (resultado / receitaLiquida) * 100
-      : null;
-
-    return { faturamento, receitaLiquida, despesasTotais, resultado, margemLiquida };
+    return { faturamento, receitaLiquida, despesasTotais, resultado, margemLiquida, isConsistent };
   }
 
   function calculateLcfKPIs(lines: DRELine[]) {
@@ -255,7 +286,9 @@ export function useDRE(sheetId?: string) {
       ? (resultadoVal / faturamento) * 100
       : null;
 
-    return { faturamento, receitaLiquida, despesasTotais, resultado: resultadoVal, margemLiquida };
+    const isConsistent = Math.abs(resultadoVal - (faturamento + despesasTotais)) <= 0.01 || despesasTotais === 0;
+
+    return { faturamento, receitaLiquida, despesasTotais, resultado: resultadoVal, margemLiquida, isConsistent };
   }
 
   function getNucleos(lines: DRELine[]): string[] {
