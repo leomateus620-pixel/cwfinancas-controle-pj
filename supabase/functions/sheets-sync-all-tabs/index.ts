@@ -45,7 +45,8 @@ function classifyTab(tabName: string, defaultYear: number): ClassifiedTab {
   const normalized = tabName.trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  if (/^dre$/i.test(tabName.trim()) || normalized.includes("demonstracao") || normalized.includes("resultado")) {
+  // Match any tab containing "DRE" (DRE, DRE 2026, DRE-Caixa, DRE Jan26, etc.)
+  if (/\bdre\b/i.test(tabName.trim()) || normalized.includes("demonstracao") || normalized.includes("resultado")) {
     return { title: tabName, route: "DRE_ONLY" };
   }
 
