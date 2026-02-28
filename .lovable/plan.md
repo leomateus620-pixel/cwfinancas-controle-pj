@@ -1,93 +1,86 @@
 
 
-## Diagnosis
+## Diagnosis: Complete Bug Map
 
-After reading the full `dre-sync/index.ts` (1908 lines), `DREPage.tsx`, `useDRE.ts`, and all DRE components, here are the root causes:
+### Critical Bug: ALL upsert calls fail (500 error)
+**Location:** `dre-sync/index.ts` lines 562, 745, 929, 1144, 1518
+**Cause:** The unique index `dre_periods_unique_period_scenario` uses expression `COALESCE(scenario, '__none__')`, which cannot be matched by `.upsert({ onConflict: "user_id,sheet_id,period_key" })`. PostgreSQL requires the `ON CONFLICT` target to match a constraint exactly. Expression indexes don't qualify.
+**Fix:** Replace all `.upsert()` calls with `.insert()`. The cleanup-then-insert pattern already guarantees idempotency. Each parser already deletes old periods before inserting new ones.
 
-### Bug 1: "Only TOTAL" — Month-by-month view lost
-- **Root cause (UI)**: `DREPage.tsx` lines 68-78 auto-selects `${selectedYear}-TOTAL` as the default period. There's no UI affordance to switch to individual months easily — the period dropdown is small and TOTAL is always pre-selected.
-- **Root cause (Backend)**: `parseDefaultDre` (line 1474) uses bare `"TOTAL"` instead of year-scoped `"2026-TOTAL"`, causing filtering issues. Monthly periods ARE imported but the UI hides them by defaulting to TOTAL.
+### Bug 2: Missing "Abr" month in Sonho de Consumo DRE
+**Location:** `detectDreMatrix()` line 375 and `parseDefaultDre()` line 1401
+**Cause:** Month headers span 2 rows in this spreadsheet (Jan-Mar on row 6, Abr+TOTAL on row 7). The detector only scans one row at a time.
+**Fix:** After finding the primary header row, scan the adjacent row (headerRow+1) for additional month columns and TOTAL that were not found on the primary row. Merge them into the detection result.
 
-### Bug 2: SAH connection error
-- **Root cause**: `matcherSAH` (line 628) uses rigid regex `^dre\s+2026$` — only matches exactly "DRE 2026". Any variation (extra space, different year) fails.
-- **Root cause**: `parseSAH` uses `.insert()` (line 744) not `.upsert()` for periods. On re-sync, if year-scoped cleanup fails to delete (e.g., scenario mismatch), insert fails with unique constraint violation → 500 error.
-- **Root cause**: Year-scoped cleanup (line 720) uses `LIKE '${dreYear}%'` but doesn't filter by `template_type`, so it could delete periods from other models.
+### Bug 3: FLUXO DE CAIXA block leaks into DRE data
+**Location:** `MATRIX_DRE_STOP_KEYWORDS` line 357
+**Cause:** Stop keywords include "lucro operacional" and "lucro liquido" which cuts the DRE too early — missing DISTRIBUIÇÃO DE LUCRO and RESULTADO DO EXERCÍCIO. Meanwhile FLUXO DE CAIXA has no stop.
+**Fix:** Replace stop keywords with non-DRE block keywords: "fluxo de caixa", "saldo bancario". This lets the parser import through RESULTADO DO EXERCÍCIO and stop before FLUXO DE CAIXA.
 
-### Bug 3: Similar spreadsheets fail
-- **Root cause**: All 3 new matchers are hardcoded to exact tab names:
-  - SAH: `^dre\s+2026$` (line 628)
-  - StartSync: `^2026\s+dre$` (line 788)
-  - GR: `dre-caixa` or `dre caixa` (line 974)
-- Any year change or slight naming variation = no match → falls through to DEFAULT parser which may also fail.
+### Bug 4: Percentage rows (e.g. "% CMV", "% Imposto") parsed as DRE lines
+**Location:** `parseDefaultDre()` line 1453-1470
+**Cause:** No filter for percentage-only rows in the DEFAULT/Matrix parser (GR parser has this filter at line 1059 but others don't).
+**Fix:** Add check in `parseDefaultDre` and `parseDreMatrix` to skip rows where the label starts with "%" or the label is purely a percentage indicator.
 
-### Bug 4: LCF lost nucleos
-- **Root cause**: LCF parser itself is intact. The regression is in the UI: `DREPage.tsx` shows the nucleo toggle ONLY when `activeTemplate === "LCF_NUCLEO"` (line 96) AND `nucleos.length >= 2` (line 222). But `activeTemplate` is derived from `sortedPeriods[0].template_type` — if a DEFAULT period sorts before LCF periods (higher year), the template shows as DEFAULT and nucleos toggle disappears.
-
-### Bug 5: Cleanup cascade between models/years
-- **Root cause**: SAH/StartSync/GR cleanup uses `LIKE '${dreYear}%'` without filtering by `template_type`, so importing SAH for 2026 can delete DEFAULT or GR periods for the same year. Also, DEFAULT parser (line 1477) deletes ALL DEFAULT periods regardless of year.
+### Bug 5: UI shows only TOTAL period by default
+**Location:** `DREPage.tsx` lines 68-78
+**Cause:** Auto-selection prefers TOTAL. The code tries monthly periods but the fallback logic resolves to TOTAL.
+**Status:** Already partially fixed in last iteration. Verify and ensure latest month is selected.
 
 ---
 
 ## Implementation Plan
 
-### 1. Fix matchers — make year-flexible
+### Step 1: Fix upsert → insert (all parsers)
 **File:** `supabase/functions/dre-sync/index.ts`
+- Line 562: Change `.upsert(periodInserts, { onConflict: ... })` to `.insert(periodInserts)`
+- Line 745: Same for SAH parser
+- Line 929: Same for StartSync parser
+- Line 1144: Same for GR parser
+- Line 1518: Same for DEFAULT parser
+- All 5 parsers already do cleanup before insert, so idempotency is maintained
 
-- `matcherSAH`: Change from `^dre\s+2026$` to `^dre\s+20\d{2}$` + keep dual-header check (Previsto/Realizado)
-- `matcherStartSync`: Change from `^2026\s+dre$` to `^20\d{2}\s+dre$`
-- `matcherGR`: Keep as-is (name-based, not year-dependent)
-- All matchers must extract year dynamically from tab name, not assume 2026
-
-### 2. Fix period insertion — use upsert everywhere
+### Step 2: Fix multi-row header detection
 **File:** `supabase/functions/dre-sync/index.ts`
+- In `detectDreMatrix()` (line 393-432): After finding the primary header row with ≥2 months, scan headerRow+1 for additional month columns and TOTAL that aren't already in `candidates`
+- In `parseDefaultDre()` (line 1412-1432): Same logic — after finding header row, scan adjacent row
+- In `parseStartSync()` (line 810-833): Same logic
 
-- `parseSAH` line 744: Change `.insert()` to `.upsert()` with `onConflict`
-- `parseStartSync` line 927: Same
-- `parseGR` line 1141: Same
-- `parseDefaultDre` line 1504: Same
-- Year-scope the DEFAULT TOTAL: change `"TOTAL"` (line 1474) to `"${dreYear}-TOTAL"` using year detection
-
-### 3. Fix cleanup — scope by template_type + year
+### Step 3: Fix stop keywords for matrix/default parsers
 **File:** `supabase/functions/dre-sync/index.ts`
+- Line 357-359: Replace `MATRIX_DRE_STOP_KEYWORDS` content:
+  - Remove: "lucro operacional", "resultado operacional", "lucro liquido", "resultado liquido"
+  - Add: "fluxo de caixa", "saldo bancario", "saldo banco"
+- This lets the parser import through the full DRE (including RESULTADO DO EXERCÍCIO) and stop at non-DRE blocks
 
-- All cleanup queries must filter by BOTH `template_type` AND year prefix
-- SAH cleanup: add `.eq("template_type", "SAH")` 
-- StartSync cleanup: add `.eq("template_type", "STARTSYNC")`
-- GR cleanup: add `.eq("template_type", "GR")`
-- DEFAULT/Matrix cleanup: already filters by `template_type = DEFAULT`
+### Step 4: Skip percentage rows in DEFAULT/Matrix parsers
+**File:** `supabase/functions/dre-sync/index.ts`
+- In `parseDreMatrix()` around line 490-494: Add `if (/^%/.test(label.trim())) continue;`
+- In `parseDefaultDre()` around line 1456: Same check
 
-### 4. Fix UI — restore month-by-month + nucleos
+### Step 5: Verify UI period selection
 **File:** `src/pages/DREPage.tsx`
+- Confirm the auto-selection logic prefers the latest monthly period over TOTAL
+- Already partially fixed in previous iteration; verify no regression
 
-- Change default period selection: prefer latest month (e.g., `2026-01`) instead of TOTAL. Only fall back to TOTAL if no monthly periods exist.
-- Fix `activeTemplate` derivation: instead of using `sortedPeriods[0]`, detect template from ALL periods for the selected connection (use most frequent or connection-specific template)
-- Show nucleo toggle when ANY period has `LCF_NUCLEO` template, not just the first sorted period
-
-**File:** `src/hooks/useDRE.ts`
-
-- Fix `activeTemplate` (line 112-114): scan all periods for the selected connection, return the template that has the most periods (or the one matching the selected year)
-- When `sheetId` filter is active, ensure periods are filtered correctly
-
-### 5. Fix DEFAULT parser TOTAL key
+### Step 6: Verify EXCLUDE keywords don't block legitimate DRE lines
 **File:** `supabase/functions/dre-sync/index.ts`
-
-- In `parseDefaultDre`, detect year from month headers and scope TOTAL: `${dreYear}-TOTAL` instead of bare `"TOTAL"`
-- Add `scenario: null` to period inserts (line 1495-1501)
-
-### 6. Improve error handling
-**File:** `supabase/functions/dre-sync/index.ts`
-
-- Wrap each model parse in try/catch so one model failure doesn't abort the entire sync
-- Log the specific error per tab and continue processing other tabs
-- Return partial results with error details
+- Line 361-365: `MATRIX_EXCLUDE_KEYWORDS` contains "distribuicao" which would incorrectly exclude "DISTRIBUIÇÃO DE LUCRO" lines from import
+- Fix: Remove "distribuicao" from exclude keywords, or make the exclusion more specific (only exclude when combined with personal names like "chris", "michelle")
 
 ---
 
-### Files to modify:
-- `supabase/functions/dre-sync/index.ts` — matcher flexibility, upsert, cleanup scoping, DEFAULT TOTAL fix, error handling
-- `src/pages/DREPage.tsx` — default period selection (prefer monthly), template detection fix
-- `src/hooks/useDRE.ts` — `activeTemplate` derivation fix
+### Technical Details
 
-### No database migration needed
-The existing schema already has `scenario` column and the unique constraint.
+**Files to modify:**
+- `supabase/functions/dre-sync/index.ts` — 6 targeted changes (upsert→insert, header detection, stop keywords, percentage filter, exclude keywords)
+- `src/pages/DREPage.tsx` — verify/fix period selection
+
+**No database migration needed.** The existing unique index works fine with insert (it prevents true duplicates). The cleanup logic ensures no conflicts.
+
+**Testing:** After deploying the edge function, invoke dre-sync against the Sonho de Consumo connection to verify:
+- All 12 months + TOTAL detected (including Abr)
+- Lines imported correctly up to RESULTADO DO EXERCÍCIO
+- No FLUXO DE CAIXA data leaking in
+- No 500 error on sync
 
