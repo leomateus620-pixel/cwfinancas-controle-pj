@@ -355,13 +355,13 @@ function extractPeriodFromContent(rows: string[][]): string | null {
 // ========== MATRIX DRE FORMAT DETECTION (Format C - Baladão & Fagundes) ==========
 
 const MATRIX_DRE_STOP_KEYWORDS = [
-  "lucro operacional", "resultado operacional", "lucro liquido", "resultado liquido",
+  "fluxo de caixa", "saldo bancario", "saldo banco",
 ];
 
 const MATRIX_EXCLUDE_KEYWORDS = [
   "chris", "michelle", "denise", "controle denise", "total denise",
-  "total recebido direto", "total a receber", "rateio", "comissao", "distribuicao",
-  "participacao", "participacoes", "reserva",
+  "total recebido direto", "total a receber", "rateio", "comissao",
+  "participacao", "participacoes",
 ];
 
 interface MatrixDetectResult {
@@ -411,6 +411,21 @@ function detectDreMatrix(rows: string[][]): MatrixDetectResult {
     }
 
     if (candidates.length >= 2) {
+      // Scan adjacent row (headerRow+1) for additional month columns and TOTAL
+      const nextRow = rows[rowIdx + 1];
+      if (nextRow) {
+        for (let colIdx = 0; colIdx < nextRow.length; colIdx++) {
+          const val = String(nextRow[colIdx] ?? "").trim();
+          if (!val) continue;
+          const n = normalize(val);
+          if (n === "total" && foundTotal < 0) { foundTotal = colIdx; continue; }
+          const parsed = parseMonthHeader(val);
+          if (parsed && parsed.periodKey !== "TOTAL" && !candidates.some(c => c.colIndex === colIdx)) {
+            candidates.push({ colIndex: colIdx, periodKey: parsed.periodKey, label: parsed.label });
+          }
+        }
+      }
+
       const firstMonthCol = Math.min(...candidates.map(c => c.colIndex));
       let labelCol = firstMonthCol > 0 ? firstMonthCol - 1 : 0;
       
@@ -423,7 +438,7 @@ function detectDreMatrix(rows: string[][]): MatrixDetectResult {
         isMatrix: true,
         headerRowIndex: rowIdx,
         labelColIndex: labelCol,
-        monthCols: candidates,
+        monthCols: candidates.sort((a, b) => a.colIndex - b.colIndex),
         totalColIndex: foundTotal,
       };
     }
@@ -492,6 +507,7 @@ async function parseDreMatrix(
     if (MATRIX_EXCLUDE_KEYWORDS.some(kw => normLabel.includes(kw))) continue;
     if (/^R\$?\s*$/.test(label)) continue;
     if (/^DRE\s+\d{4}/i.test(label)) continue;
+    if (/^%/.test(label.trim())) continue;
 
     const isGroup = isGroupLabel(label);
     const isSubtotal = isSubtotalLabel(label);
@@ -559,7 +575,7 @@ async function parseDreMatrix(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
   if (periodError) throw new Error(`Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
@@ -742,7 +758,7 @@ async function parseSAH(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key,scenario" }).select("id, period_key, col_index, scenario");
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index, scenario");
   if (periodError) throw new Error(`SAH: Failed to insert periods: ${periodError.message}`);
 
   // Insert lines
@@ -824,10 +840,27 @@ async function parseStartSync(
       }
     }
 
-    if (candidates.length >= 6) {
+    if (candidates.length >= 2) {
       headerRowIdx = r;
       monthCols = candidates;
       totalColIdx = foundTotal;
+
+      // Scan adjacent row for additional month columns and TOTAL
+      const nextRow = rows[r + 1];
+      if (nextRow) {
+        for (let c = 1; c < nextRow.length; c++) {
+          const val = String(nextRow[c] ?? "").trim();
+          if (!val) continue;
+          const n = normalize(val);
+          if (n === "total" && totalColIdx < 0) { totalColIdx = c; continue; }
+          const parsed = parseMonthHeader(val);
+          if (parsed && parsed.periodKey !== "TOTAL" && !monthCols.some(m => m.colIndex === c)) {
+            monthCols.push({ colIndex: c, periodKey: parsed.periodKey, label: parsed.label });
+          }
+        }
+        monthCols.sort((a, b) => a.colIndex - b.colIndex);
+      }
+
       break;
     }
   }
@@ -926,7 +959,7 @@ async function parseStartSync(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
   if (periodError) throw new Error(`StartSync: Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
@@ -1141,7 +1174,7 @@ async function parseGR(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
   if (periodError) throw new Error(`GR: Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
@@ -1428,6 +1461,23 @@ async function parseDefaultDre(
       headerRowIndex = rowIdx;
       monthCols = candidates;
       totalColIndex = foundTotal;
+
+      // Scan adjacent row for additional month columns and TOTAL
+      const nextRow = rows[rowIdx + 1];
+      if (nextRow) {
+        for (let colIdx = 1; colIdx < nextRow.length; colIdx++) {
+          const val = nextRow[colIdx];
+          if (!val || !String(val).trim()) continue;
+          const n = normalize(String(val));
+          if (n === "total" && totalColIndex < 0) { totalColIndex = colIdx; continue; }
+          const parsed = parseMonthHeader(String(val));
+          if (parsed && parsed.periodKey !== "TOTAL" && !monthCols.some(c => c.colIndex === colIdx)) {
+            monthCols.push({ colIndex: colIdx, periodKey: parsed.periodKey, label: parsed.label });
+          }
+        }
+        monthCols.sort((a, b) => a.colIndex - b.colIndex);
+      }
+
       break;
     }
   }
@@ -1454,6 +1504,7 @@ async function parseDefaultDre(
     const row = rows[rowIdx];
     const label = row?.[0]?.trim() || "";
     if (!label) continue;
+    if (/^%/.test(label)) continue;
 
     const isGroup = isGroupLabel(label);
     const isSubtotal = isSubtotalLabel(label);
@@ -1515,7 +1566,7 @@ async function parseDefaultDre(
   }));
 
   const { data: insertedPeriods, error: periodError } = await supabase
-    .from("dre_periods").upsert(periodInserts, { onConflict: "user_id,sheet_id,period_key" }).select("id, period_key, col_index");
+    .from("dre_periods").insert(periodInserts).select("id, period_key, col_index");
   if (periodError) throw new Error(`Failed to insert periods: ${periodError.message}`);
 
   const periodMap = new Map<string, { id: string; colIndex: number }>();
