@@ -330,6 +330,67 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
   return mapping;
 }
 
+// ============ Density-Based Amount Column Detection ============
+// Fallback when header-based mapping fails to find amount/credit/debit columns.
+// Scans first N data rows to find the column with highest parseable monetary value density.
+
+function detectAmountByDensity(
+  headers: string[],
+  dataRows: unknown[][],
+  mapping: Record<string, string>,
+  requestId: string
+): void {
+  // Only activate if no amount/credit/debit mapped
+  if (mapping.amount || mapping.credit || mapping.debit) return;
+
+  // Build set of already-mapped column indices
+  const mappedIndices = new Set<number>();
+  for (const field of Object.values(mapping)) {
+    const idx = headers.indexOf(field);
+    if (idx >= 0) mappedIndices.add(idx);
+  }
+
+  const sampleSize = Math.min(dataRows.length, 50);
+  if (sampleSize === 0) return;
+
+  let bestColIdx = -1;
+  let bestDensity = 0;
+
+  for (let colIdx = 0; colIdx < headers.length; colIdx++) {
+    if (mappedIndices.has(colIdx)) continue;
+
+    let parseable = 0;
+    for (let rowIdx = 0; rowIdx < sampleSize; rowIdx++) {
+      const row = dataRows[rowIdx];
+      if (!Array.isArray(row)) continue;
+      const cellVal = row[colIdx];
+      if (cellVal === null || cellVal === undefined) continue;
+      if (looksLikeDate(cellVal)) continue;
+      const parsed = parseBRL(cellVal as string | number);
+      if (parsed !== null) parseable++;
+    }
+
+    const density = parseable / sampleSize;
+    if (density > bestDensity) {
+      bestDensity = density;
+      bestColIdx = colIdx;
+    }
+  }
+
+  if (bestColIdx >= 0 && bestDensity > 0.3) {
+    // Use synthetic key if header is empty
+    const headerKey = headers[bestColIdx] && safeStr(headers[bestColIdx]).trim()
+      ? headers[bestColIdx]
+      : `__col_${bestColIdx}`;
+    mapping.amount = headerKey;
+    // Also update the headers array to use synthetic key for empty headers
+    if (!headers[bestColIdx] || !safeStr(headers[bestColIdx]).trim()) {
+      headers[bestColIdx] = headerKey;
+    }
+    console.log(`[${requestId}] DENSITY FALLBACK: col ${bestColIdx} ("${headerKey}") detected as amount (density=${(bestDensity * 100).toFixed(0)}%)`);
+  }
+}
+
 // ============ Post-Mapping Validation with Data Analysis ============
 
 function validateAndFixMapping(
@@ -1119,6 +1180,8 @@ Deno.serve(async (req) => {
       const headers = allRows[headerRowIndex].map(h => safeStr(h));
       const dataRows = allRows.slice(headerRowIndex + 1);
       const rawMapping = autoDetectMapping(headers);
+      // Density-based fallback for amount column (handles empty headers)
+      detectAmountByDensity(headers, dataRows, rawMapping, requestId);
       const mapping = validateAndFixMapping(rawMapping, headers, dataRows, requestId);
 
       // Fix description mapping: if mapped column is mostly empty but another "descricao" column has data, switch
@@ -1217,7 +1280,10 @@ Deno.serve(async (req) => {
         try {
           // Build row object
           const rowObj: Record<string, unknown> = {};
-          headers.forEach((h, i) => { rowObj[safeStr(h)] = row[i] ?? ""; });
+          headers.forEach((h, i) => {
+            const key = safeStr(h).trim() || `__col_${i}`;
+            rowObj[key] = row[i] ?? "";
+          });
 
           // Check if all cells are empty
           const hasAnyContent = row.some(cell => cell !== null && cell !== undefined && safeStr(cell).trim().length > 0);

@@ -385,6 +385,60 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
   return mapping;
 }
 
+// ============ Density-Based Amount Column Detection ============
+function detectAmountByDensity(
+  headers: string[],
+  dataRows: unknown[][],
+  mapping: Record<string, string>,
+  requestId: string
+): void {
+  if (mapping.amount || mapping.credit || mapping.debit) return;
+
+  const mappedIndices = new Set<number>();
+  for (const field of Object.values(mapping)) {
+    const idx = headers.indexOf(field);
+    if (idx >= 0) mappedIndices.add(idx);
+  }
+
+  const sampleSize = Math.min(dataRows.length, 50);
+  if (sampleSize === 0) return;
+
+  let bestColIdx = -1;
+  let bestDensity = 0;
+
+  for (let colIdx = 0; colIdx < headers.length; colIdx++) {
+    if (mappedIndices.has(colIdx)) continue;
+
+    let parseable = 0;
+    for (let rowIdx = 0; rowIdx < sampleSize; rowIdx++) {
+      const row = dataRows[rowIdx];
+      if (!Array.isArray(row)) continue;
+      const cellVal = row[colIdx];
+      if (cellVal === null || cellVal === undefined) continue;
+      if (looksLikeDate(cellVal)) continue;
+      const parsed = parseBRL(cellVal as string | number);
+      if (parsed !== null) parseable++;
+    }
+
+    const density = parseable / sampleSize;
+    if (density > bestDensity) {
+      bestDensity = density;
+      bestColIdx = colIdx;
+    }
+  }
+
+  if (bestColIdx >= 0 && bestDensity > 0.3) {
+    const headerKey = headers[bestColIdx] && String(headers[bestColIdx]).trim()
+      ? headers[bestColIdx]
+      : `__col_${bestColIdx}`;
+    mapping.amount = headerKey;
+    if (!headers[bestColIdx] || !String(headers[bestColIdx]).trim()) {
+      headers[bestColIdx] = headerKey;
+    }
+    console.log(`[${requestId}] DENSITY FALLBACK: col ${bestColIdx} detected as amount (density=${(bestDensity * 100).toFixed(0)}%)`);
+  }
+}
+
 /**
  * Extract amount and type from row, supporting both single amount column
  * and separate credit/debit columns
@@ -608,6 +662,8 @@ Deno.serve(async (req) => {
       let mapping = connection.column_mapping || {};
       if (auto_detect || Object.keys(mapping).length === 0) {
         mapping = autoDetectMapping(headers);
+        // Density-based fallback for amount column (handles empty headers)
+        detectAmountByDensity(headers, rows, mapping, requestId);
         console.log(`[${requestId}] Auto-detected mapping:`, mapping);
         
         await supabase
@@ -677,7 +733,8 @@ Deno.serve(async (req) => {
           // Create row object from headers
           const rowObj: Record<string, unknown> = {};
           headers.forEach((h, i) => {
-            rowObj[h] = row[i] || "";
+            const key = String(h || "").trim() || `__col_${i}`;
+            rowObj[key] = row[i] || "";
           });
 
           // Extract description
