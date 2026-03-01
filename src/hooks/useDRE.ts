@@ -230,8 +230,10 @@ export function useDRE(sheetId?: string) {
   }
 
   function calculateDefaultKPIs(lines: DRELine[]) {
-    // Find faturamento
-    const faturamento = findLineValue(lines, "faturamento") ?? 0;
+    // Find faturamento — try "faturamento" first, then "receita bruta" as synonym
+    const faturamento = findLineValue(lines, "faturamento")
+      ?? findLineValue(lines, "receita bruta")
+      ?? 0;
 
     // Find receita líquida
     const receitaLiquida = findLineValue(lines, "receita liquida")
@@ -249,8 +251,9 @@ export function useDRE(sheetId?: string) {
         return despChildren.length > 0 ? despChildren.reduce((sum, l) => sum + l.value, 0) : 0;
       })();
 
-    // Find resultado
-    const resultado = findLineValue(lines, "resultado")
+    // Find resultado — try specific "resultado do exercicio" first, then generic
+    const resultado = findLineValue(lines, "resultado do exercicio")
+      ?? findLineValue(lines, "resultado")
       ?? findLineValue(lines, "lucro liquido")
       ?? findLineValue(lines, "lucro operacional")
       ?? (receitaLiquida + despesasTotais);
