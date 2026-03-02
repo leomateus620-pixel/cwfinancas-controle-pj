@@ -151,7 +151,7 @@ function parseMonthHeader(raw: string): { periodKey: string; label: string } | n
 
   if (norm === "total") return { periodKey: "TOTAL", label };
 
-  const m1 = norm.match(/^([a-z]{3,})\.?\s*[\/\-]\s*(\d{2,4})$/);
+  const m1 = norm.match(/^([a-z]{3,})\.?\s*[\/\-\s]\s*(\d{2,4})$/);
   if (m1) {
     const monthNum = MONTH_ABBREVS[m1[1]];
     if (monthNum) {
@@ -526,6 +526,24 @@ async function parseDreMatrix(
 
     if (MATRIX_DRE_STOP_KEYWORDS.some(kw => normLabel.includes(kw))) {
       reachedStop = true;
+    }
+  }
+
+  // Auto-calculate TOTAL for lines where TOTAL cell is empty but month values exist
+  if (totalColIndex >= 0) {
+    const monthColIndices = monthCols.map(m => m.colIndex);
+    for (const line of parsedLines) {
+      if (!line.values.has(totalColIndex)) {
+        let sum = 0;
+        let hasMonthValue = false;
+        for (const mci of monthColIndices) {
+          const v = line.values.get(mci);
+          if (v !== undefined) { sum += v; hasMonthValue = true; }
+        }
+        if (hasMonthValue) {
+          line.values.set(totalColIndex, Math.round(sum * 100) / 100);
+        }
+      }
     }
   }
 

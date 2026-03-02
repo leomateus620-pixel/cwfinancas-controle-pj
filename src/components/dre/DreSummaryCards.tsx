@@ -1,4 +1,4 @@
-import { HelpCircle, TrendingUp, TrendingDown, DollarSign, Receipt, Wallet, PiggyBank, Percent } from "lucide-react";
+import { HelpCircle, DollarSign, Receipt, Wallet, PiggyBank, Percent } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCurrencyBR } from "@/lib/currency";
 
@@ -9,6 +9,7 @@ interface DreSummaryCardsProps {
   resultado: number;
   margemLiquida: number | null;
   isConsistent?: boolean;
+  deducoes?: number;
 }
 
 function formatBRL(value: number | null | undefined): string {
@@ -35,7 +36,7 @@ const cards = [
     label: "Impostos e taxas",
     tooltip: "Impostos e deduções aplicadas sobre o faturamento.",
     icon: Receipt,
-    getValue: (p: DreSummaryCardsProps) => formatBRL(p.receitaLiquida - p.faturamento),
+    getValue: (p: DreSummaryCardsProps) => formatBRL(p.deducoes ?? (p.receitaLiquida - p.faturamento)),
     getColor: () => "text-foreground",
   },
   {

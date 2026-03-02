@@ -230,45 +230,68 @@ export function useDRE(sheetId?: string) {
   }
 
   function calculateDefaultKPIs(lines: DRELine[]) {
-    // Find faturamento — try "faturamento" first, then "receita bruta" as synonym
+    // Extract all DRE components individually
     const faturamento = findLineValue(lines, "faturamento")
       ?? findLineValue(lines, "receita bruta")
       ?? 0;
 
-    // Find receita líquida
-    const receitaLiquida = findLineValue(lines, "receita liquida")
-      ?? (faturamento + (findLineValue(lines, "deducoe") ?? findLineValue(lines, "impostos") ?? 0));
+    const deducoes = findLineValue(lines, "deducoe")
+      ?? findLineValue(lines, "deducao")
+      ?? findLineValue(lines, "impostos sobre")
+      ?? 0;
 
-    // Find despesas totais
+    const cmv = findLineValue(lines, "cmv")
+      ?? findLineValue(lines, "custo mercadoria")
+      ?? 0;
+
+    const custoDeVenda = findLineValue(lines, "custo de venda")
+      ?? findLineValue(lines, "custos de venda")
+      ?? 0;
+
+    const receitaLiquida = findLineValue(lines, "receita liquida")
+      ?? (faturamento + deducoes);
+
     const despesasTotais = findLineValue(lines, "despesas totais")
       ?? findLineValue(lines, "total despesas")
-      ?? findLineValue(lines, "gastos")
       ?? (() => {
-        // Sum all lines under "despesa" groups
         const despChildren = lines.filter(
           l => l.group_label && normalize(l.group_label).includes("despesa") && !l.is_group && !l.is_subtotal
         );
         return despChildren.length > 0 ? despChildren.reduce((sum, l) => sum + l.value, 0) : 0;
       })();
 
-    // Find resultado — try specific "resultado do exercicio" first, then generic
+    const lucroOperacional = findLineValue(lines, "lucro operacional")
+      ?? findLineValue(lines, "resultado operacional")
+      ?? null;
+
+    const distribuicao = findLineValue(lines, "distribuicao")
+      ?? findLineValue(lines, "distribuicoes")
+      ?? findLineValue(lines, "pro-labore")
+      ?? 0;
+
     const resultado = findLineValue(lines, "resultado do exercicio")
+      ?? findLineValue(lines, "resultado exercicio")
       ?? findLineValue(lines, "resultado")
       ?? findLineValue(lines, "lucro liquido")
-      ?? findLineValue(lines, "lucro operacional")
+      ?? lucroOperacional
       ?? (receitaLiquida + despesasTotais);
+
+    // Compute totalSaiu = faturamento - resultado (guarantees Entrou - Saiu = Sobrou)
+    const totalSaiu = faturamento - resultado;
 
     // Margem
     const margemLiquida = faturamento !== 0
       ? (resultado / faturamento) * 100
-      : receitaLiquida !== 0
-        ? (resultado / receitaLiquida) * 100
-        : null;
+      : null;
 
     // Consistency check
     const isConsistent = Math.abs(resultado - (receitaLiquida + despesasTotais)) <= 0.01 || despesasTotais === 0;
 
-    return { faturamento, receitaLiquida, despesasTotais, resultado, margemLiquida, isConsistent };
+    return {
+      faturamento, receitaLiquida, despesasTotais, resultado,
+      margemLiquida, isConsistent,
+      deducoes, cmv, custoDeVenda, lucroOperacional, distribuicao, totalSaiu,
+    };
   }
 
   function calculateLcfKPIs(lines: DRELine[]) {

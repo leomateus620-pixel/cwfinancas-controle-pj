@@ -272,15 +272,15 @@ export default function DREPage() {
               resultado={kpis.resultado}
               margemLiquida={kpis.margemLiquida}
               isConsistent={kpis.isConsistent}
+              deducoes={(kpis as any).deducoes}
             />
           )}
 
           {kpis && (
             <DreStoryFlow
               faturamento={kpis.faturamento}
-              despesasTotais={kpis.despesasTotais}
-              receitaLiquida={kpis.receitaLiquida}
               resultado={kpis.resultado}
+              totalSaiu={(kpis as any).totalSaiu}
             />
           )}
 

@@ -3,17 +3,17 @@ import { formatCurrencyBR } from "@/lib/currency";
 
 interface DreStoryFlowProps {
   faturamento: number;
-  despesasTotais: number;
-  receitaLiquida: number;
   resultado: number;
+  totalSaiu?: number;
 }
 
 function formatBRL(value: number): string {
   return formatCurrencyBR(value);
 }
 
-export function DreStoryFlow({ faturamento, despesasTotais, receitaLiquida, resultado }: DreStoryFlowProps) {
-  const saiu = Math.abs(faturamento - receitaLiquida) + Math.abs(despesasTotais);
+export function DreStoryFlow({ faturamento, resultado, totalSaiu }: DreStoryFlowProps) {
+  // Derive Saiu = Entrou - Sobrou (guarantees mathematical consistency)
+  const saiu = totalSaiu ?? (faturamento - resultado);
 
   const steps = [
     {
@@ -29,7 +29,7 @@ export function DreStoryFlow({ faturamento, despesasTotais, receitaLiquida, resu
     {
       key: "saiu",
       title: "Saiu",
-      value: -saiu,
+      value: -Math.abs(saiu),
       description: "Impostos, custos e despesas",
       icon: TrendingDown,
       color: "text-warning",
