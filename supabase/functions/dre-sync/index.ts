@@ -267,6 +267,9 @@ const SUBTOTAL_KEYWORDS = [
   "resultado operacional", "resultado liquido", "lucro liquido",
   "total geral", "resultado final", "lucro operacional",
   "faturamento", "deducoes", "custos totais", "custos diretos",
+  "receita bruta total", "receita bruta", "cmv", "custo de venda",
+  "custos de venda", "distribuicao de lucro", "distribuicao",
+  "resultado do exercicio",
 ];
 
 function isSubtotalLabel(label: string): boolean {
@@ -940,6 +943,24 @@ async function parseStartSync(
     parsedLines.push({ label, rowIndex: rowIdx, isGroup, isSubtotal, groupLabel: isGroup ? label : currentGroup, values });
   }
 
+  // Auto-calculate TOTAL for lines where TOTAL cell is empty but month values exist
+  if (totalColIdx >= 0) {
+    const monthColIndices = monthCols.map(m => m.colIndex);
+    for (const line of parsedLines) {
+      if (!line.values.has(totalColIdx)) {
+        let sum = 0;
+        let hasMonthValue = false;
+        for (const mci of monthColIndices) {
+          const v = line.values.get(mci);
+          if (v !== undefined) { sum += v; hasMonthValue = true; }
+        }
+        if (hasMonthValue) {
+          line.values.set(totalColIdx, Math.round(sum * 100) / 100);
+        }
+      }
+    }
+  }
+
   if (parsedLines.length === 0) {
     return { success: false, found: true, message: "StartSync: sem linhas válidas." };
   }
@@ -1153,6 +1174,24 @@ async function parseGR(
 
     if (!hasAnyValue && !isGroup) continue;
     parsedLines.push({ label, displayLabel, lineKey, rowIndex: rowIdx, isGroup, isSubtotal, groupLabel: isGroup ? label : currentGroup, values });
+  }
+
+  // Auto-calculate TOTAL for lines where TOTAL cell is empty but month values exist
+  if (totalColIdx >= 0) {
+    const monthColIndices = monthCols.map(m => m.colIndex);
+    for (const line of parsedLines) {
+      if (!line.values.has(totalColIdx)) {
+        let sum = 0;
+        let hasMonthValue = false;
+        for (const mci of monthColIndices) {
+          const v = line.values.get(mci);
+          if (v !== undefined) { sum += v; hasMonthValue = true; }
+        }
+        if (hasMonthValue) {
+          line.values.set(totalColIdx, Math.round(sum * 100) / 100);
+        }
+      }
+    }
   }
 
   if (parsedLines.length === 0) {
@@ -1546,6 +1585,24 @@ async function parseDefaultDre(
     const defYear = extractYearFromTab(dreTab, rows);
     const defTotalKey = defYear ? `${defYear}-TOTAL` : "TOTAL";
     periodColumns.push({ colIndex: totalColIndex, periodKey: defTotalKey, periodLabel: `TOTAL ${defYear || ""}`.trim() });
+  }
+
+  // Auto-calculate TOTAL for lines where TOTAL cell is empty but month values exist
+  if (totalColIndex >= 0) {
+    const monthColIndices = monthCols.map(m => m.colIndex);
+    for (const line of parsedLines) {
+      if (!line.values.has(totalColIndex)) {
+        let sum = 0;
+        let hasMonthValue = false;
+        for (const mci of monthColIndices) {
+          const v = line.values.get(mci);
+          if (v !== undefined) { sum += v; hasMonthValue = true; }
+        }
+        if (hasMonthValue) {
+          line.values.set(totalColIndex, Math.round(sum * 100) / 100);
+        }
+      }
+    }
   }
 
   // Year-scoped cleanup for DEFAULT template

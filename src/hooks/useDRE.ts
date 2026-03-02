@@ -199,28 +199,47 @@ export function useDRE(sheetId?: string) {
   }
 
   function findLineValue(lines: DRELine[], keyword: string): number | null {
+    // Clean the keyword for matching - strip common prefixes like (-), (=)
+    const cleanKeyword = keyword.replace(/^[\(\)\-\=\s]+/, "").trim();
+    
+    const matchesKeyword = (label: string): boolean => {
+      const n = normalize(label);
+      // Strip (-), (=), (+) prefixes from label too for matching
+      const cleanN = n.replace(/^[\(\)\-\=\+\s]+/, "").trim();
+      return cleanN.includes(cleanKeyword) || n.includes(cleanKeyword);
+    };
+
+    const matchesExact = (label: string): boolean => {
+      const n = normalize(label);
+      const cleanN = n.replace(/^[\(\)\-\=\+\s]+/, "").trim();
+      return cleanN === cleanKeyword || cleanN.startsWith(cleanKeyword + " ") || cleanN.startsWith(cleanKeyword + ":");
+    };
+
     // Strategy 1: subtotal line with keyword
-    const subtotal = lines.find(l => l.is_subtotal && normalize(l.line_label).includes(keyword));
+    const subtotal = lines.find(l => l.is_subtotal && matchesKeyword(l.line_label));
     if (subtotal && subtotal.value !== 0) return subtotal.value;
 
     // Strategy 2: group line with non-zero value
-    const group = lines.find(l => l.is_group && normalize(l.line_label).includes(keyword));
+    const group = lines.find(l => l.is_group && matchesKeyword(l.line_label));
     if (group && group.value !== 0) return group.value;
 
     // Strategy 3: any line where label starts with/equals the keyword (exact match preferred)
-    const exact = lines.find(l => {
-      const n = normalize(l.line_label);
-      return n === keyword || n.startsWith(keyword + " ") || n.startsWith(keyword + ":");
-    });
+    const exact = lines.find(l => matchesExact(l.line_label));
     if (exact && exact.value !== 0) return exact.value;
 
-    // Strategy 4: subtotal with value 0 (legitimate zero)
+    // Strategy 4: any line that includes keyword (broader match)
+    const broad = lines.find(l => matchesKeyword(l.line_label) && !l.is_group);
+    if (broad && broad.value !== 0) return broad.value;
+
+    // Strategy 5: subtotal/group with value 0 (legitimate zero)
     if (subtotal) return subtotal.value;
     if (group) return group.value;
+    if (exact) return exact.value;
+    if (broad) return broad.value;
 
-    // Strategy 5: sum children under group
+    // Strategy 6: sum children under group
     const children = lines.filter(
-      l => l.group_label && normalize(l.group_label).includes(keyword) && !l.is_group && !l.is_subtotal
+      l => l.group_label && matchesKeyword(l.group_label) && !l.is_group && !l.is_subtotal
     );
     if (children.length > 0) {
       return children.reduce((sum, l) => sum + l.value, 0);
@@ -232,10 +251,11 @@ export function useDRE(sheetId?: string) {
   function calculateDefaultKPIs(lines: DRELine[]) {
     // Extract all DRE components individually
     const faturamento = findLineValue(lines, "faturamento")
+      ?? findLineValue(lines, "receita bruta total")
       ?? findLineValue(lines, "receita bruta")
       ?? 0;
 
-    const deducoes = findLineValue(lines, "deducoe")
+    const deducoes = findLineValue(lines, "deducoes")
       ?? findLineValue(lines, "deducao")
       ?? findLineValue(lines, "impostos sobre")
       ?? 0;
@@ -249,7 +269,7 @@ export function useDRE(sheetId?: string) {
       ?? 0;
 
     const receitaLiquida = findLineValue(lines, "receita liquida")
-      ?? (faturamento + deducoes);
+      ?? Math.round((faturamento + deducoes) * 100) / 100;
 
     const despesasTotais = findLineValue(lines, "despesas totais")
       ?? findLineValue(lines, "total despesas")
@@ -264,24 +284,39 @@ export function useDRE(sheetId?: string) {
       ?? findLineValue(lines, "resultado operacional")
       ?? null;
 
-    const distribuicao = findLineValue(lines, "distribuicao")
+    const distribuicao = findLineValue(lines, "distribuicao de lucro")
+      ?? findLineValue(lines, "distribuicao")
       ?? findLineValue(lines, "distribuicoes")
       ?? findLineValue(lines, "pro-labore")
       ?? 0;
 
+    // For "resultado", search from bottom since final result is usually the last occurrence
+    const findLastLineValue = (lines: DRELine[], keyword: string): number | null => {
+      const reversed = [...lines].reverse();
+      // Look for subtotal first
+      const sub = reversed.find(l => l.is_subtotal && normalize(l.line_label).replace(/^[\(\)\-\=\+\s]+/, "").includes(keyword));
+      if (sub && sub.value !== 0) return sub.value;
+      const grp = reversed.find(l => l.is_group && normalize(l.line_label).replace(/^[\(\)\-\=\+\s]+/, "").includes(keyword));
+      if (grp && grp.value !== 0) return grp.value;
+      if (sub) return sub.value;
+      if (grp) return grp.value;
+      return null;
+    };
+
     const resultado = findLineValue(lines, "resultado do exercicio")
       ?? findLineValue(lines, "resultado exercicio")
-      ?? findLineValue(lines, "resultado")
+      ?? findLineValue(lines, "resultado final")
       ?? findLineValue(lines, "lucro liquido")
+      ?? findLastLineValue(lines, "resultado")
       ?? lucroOperacional
-      ?? (receitaLiquida + despesasTotais);
+      ?? Math.round((receitaLiquida + despesasTotais) * 100) / 100;
 
     // Compute totalSaiu = faturamento - resultado (guarantees Entrou - Saiu = Sobrou)
-    const totalSaiu = faturamento - resultado;
+    const totalSaiu = Math.round((faturamento - resultado) * 100) / 100;
 
     // Margem
     const margemLiquida = faturamento !== 0
-      ? (resultado / faturamento) * 100
+      ? Math.round((resultado / faturamento) * 10000) / 100
       : null;
 
     // Consistency check
