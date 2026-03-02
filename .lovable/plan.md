@@ -2,47 +2,67 @@
 
 ## Diagnosis
 
-### A) "0 importadas de 1544 processadas" — 3 Root Causes
+### Bug 1: "Saiu" math is broken (Entrou - Saiu ≠ Sobrou)
+**File:** `src/components/dre/DreStoryFlow.tsx` line 16
+**Cause:** `saiu = abs(faturamento - receitaLiquida) + abs(despesasTotais)` only accounts for deductions + despesas. It misses CMV (-66,711), Custo de Venda (-5,910), and Distribuição de Lucro (-100,000). So Entrou(271k) - Saiu(126k) = 144k, but Sobrou shows -27k. Mathematically impossible.
+**Fix:** Derive `saiu = faturamento - resultado`. This guarantees Entrou - Saiu = Sobrou always.
 
-1. **Empty header on Valor column (PRIMARY CAUSE)**. The XLSX shows headers: `Data | Conta | Categoria | Fornecedor | [EMPTY] | ...`. Column E (the amount column with values like `$(3,216.74)`) has NO header text. `autoDetectMapping` only matches by header keywords, so `amount` is never mapped. Every row returns `value: null` from `extractAmount` → all skipped as `VALUE_PARSE_FAIL`.
+### Bug 2: `parseMonthHeader` doesn't match "Abr 2026" (space separator)
+**File:** `supabase/functions/dre-sync/index.ts` line 154
+**Cause:** Regex `/^([a-z]{3,})\.?\s*[\/\-]\s*(\d{2,4})$/` requires `/` or `-` between month and year. "Abr 2026" uses a space.
+**Fix:** Add `\s` to the separator character class: `[\/\-\s]`.
 
-2. **No fallback density-based detection**. When header-based mapping fails to find an `amount` column, there is no fallback that scans data rows to find which column has the highest percentage of parseable monetary values.
+### Bug 3: TOTAL not calculated when cell is empty
+**File:** `supabase/functions/dre-sync/index.ts` (parseDreMatrix + parseDefaultDre)
+**Cause:** If the TOTAL cell is blank for a line (e.g., "Distribuição de Lucro" has -50k in Jan and -50k in Feb but TOTAL is empty), the line gets `undefined` for TOTAL period and is skipped. So TOTAL shows 0 for that line.
+**Fix:** After parsing values, if TOTAL column exists and a line has no value there but has values in month columns, auto-compute TOTAL = sum of month values.
 
-3. **The values use US dollar format** (`$3,216.74`, `$(50,000.00)`). The `parseBRL` parser already handles this correctly (removes `$`, detects comma-before-dot as thousands separator), so parsing itself is fine once the column is detected.
+### Bug 4: KPIs miss CMV, Custo de Venda, Distribuição
+**File:** `src/hooks/useDRE.ts` `calculateDefaultKPIs`
+**Cause:** Only extracts faturamento, receitaLiquida, despesasTotais, resultado. The "despesasTotais" from `findLineValue` doesn't include CMV, Custo de Venda, or Distribuição. These are separate DRE line groups.
+**Fix:** Extract all components individually and compute a proper `totalSaiu`.
 
-### B) KPIs errados na DRE — 2 Root Causes
+### Bug 5: DreSummaryCards "Impostos e taxas" shows wrong value
+**File:** `src/components/dre/DreSummaryCards.tsx` line 38
+**Cause:** Shows `receitaLiquida - faturamento`. If receitaLiquida is read directly from DRE (already includes CMV deduction in some formats), this shows an incorrect "tax" number.
+**Fix:** Pass `deducoes` explicitly from KPI calculation.
 
-1. **"Faturamento" keyword doesn't match "RECEITA BRUTA TOTAL"**. In `calculateDefaultKPIs`, `findLineValue(lines, "faturamento")` searches for the word "faturamento" but this DRE uses "RECEITA BRUTA TOTAL". After normalization, "receita bruta total" does NOT contain "faturamento" → returns 0. Cards show Faturamento = R$ 0.
+---
 
-2. **"resultado" matches wrong line**. `findLineValue(lines, "resultado")` can match "RESULTADO DO EXERCÍCIO" but also "RESULTADO" from the FLUXO DE CAIXA block if it leaked into imported data. The stop keyword fix from the last iteration should prevent FLUXO DE CAIXA leaking, but the synonym list for faturamento is still missing.
+## Implementation Plan
 
-## Execution Plan (5 Steps)
+### Step 1: Fix `parseMonthHeader` to accept space separator
+**File:** `supabase/functions/dre-sync/index.ts` line 154
+Change regex from `[\/\-]` to `[\/\-\s]`. One-line change.
 
-### Step 1 — Fix amount column detection by data density
-**File:** `supabase/functions/sheets-sync-all-tabs/index.ts`
-- After `autoDetectMapping`, if `mapping.amount` is not set AND `mapping.credit`/`mapping.debit` are not set, scan first 50 data rows to find the column with highest parseable monetary value density using `parseBRL`. Exclude columns already mapped to `date`, `category`, `account`, `description`.
-- Set `mapping.amount = headers[bestColIdx]` if density > 30%. If header is empty, use the column index as a synthetic key.
+### Step 2: Add TOTAL auto-calculation for empty cells
+**File:** `supabase/functions/dre-sync/index.ts`
+In both `parseDreMatrix` (after line 529) and `parseDefaultDre` (after line 1521): iterate `parsedLines`, and for each line that has month values but no TOTAL value, set `values.set(totalColIndex, sumOfMonthValues)`.
 
-### Step 2 — Handle empty-header columns in row object construction
-**File:** `supabase/functions/sheets-sync-all-tabs/index.ts`
-- When building `rowObj` from `headers` and `row`, if a header is empty string, use `__col_${i}` as the key. Update the mapping to reference this synthetic key when amount is detected by density on an empty-header column.
+### Step 3: Fix KPI calculation with full component extraction
+**File:** `src/hooks/useDRE.ts` — rewrite `calculateDefaultKPIs` to:
+- Extract: faturamento, deducoes, cmv, custoDeVenda, receitaLiquida, despesasTotais, lucroOperacional, distribuicao, resultadoExercicio
+- Compute `totalSaiu = abs(deducoes) + abs(cmv) + abs(custoDeVenda) + abs(despesasTotais) + abs(distribuicao)`
+- Return all components including `deducoes` and `totalSaiu`
 
-### Step 3 — Fix KPI keyword synonyms for "faturamento"
-**File:** `src/hooks/useDRE.ts`
-- In `calculateDefaultKPIs`, add "receita bruta" as a synonym for faturamento: try `findLineValue(lines, "faturamento")` first, then fallback to `findLineValue(lines, "receita bruta")`.
-- Add "resultado do exercicio" as synonym for resultado (more specific, avoids matching FLUXO DE CAIXA's "RESULTADO").
+### Step 4: Fix DreStoryFlow — derive "Saiu" from Entrou and Sobrou
+**File:** `src/components/dre/DreStoryFlow.tsx`
+Change props to receive `totalSaiu` from KPIs or compute `saiu = faturamento - resultado`. This ensures the three-step narrative is always mathematically consistent.
 
-### Step 4 — Fix `google-sheets-sync` (single-tab sync) with same density fallback
-**File:** `supabase/functions/google-sheets-sync/index.ts`
-- Apply the same density-based amount detection fallback to maintain consistency with multi-tab sync.
+### Step 5: Fix DreSummaryCards — show actual deduções
+**File:** `src/components/dre/DreSummaryCards.tsx`
+Add `deducoes` prop and use it directly instead of computing `receitaLiquida - faturamento`.
 
-### Step 5 — Verify no regression
-- The density fallback only activates when header-based mapping fails to find amount/credit/debit. Existing spreadsheets with proper "Valor" headers are unaffected.
-- KPI synonym additions are additive (try new keyword only if old one returns null). No change for spreadsheets already matching "faturamento".
+### Step 6: Update DREPage to pass new props
+**File:** `src/pages/DREPage.tsx`
+Pass new KPI fields (deducoes, totalSaiu) to child components.
 
-## Files to Modify
+---
 
-1. `supabase/functions/sheets-sync-all-tabs/index.ts` — add density-based amount column detection + empty-header handling
-2. `supabase/functions/google-sheets-sync/index.ts` — same density fallback for single-tab sync
-3. `src/hooks/useDRE.ts` — add "receita bruta" synonym for faturamento, "resultado do exercicio" for resultado
+### Files to modify:
+1. `supabase/functions/dre-sync/index.ts` — parseMonthHeader regex + TOTAL auto-calc
+2. `src/hooks/useDRE.ts` — full KPI extraction with all DRE components
+3. `src/components/dre/DreStoryFlow.tsx` — consistent Saiu calculation
+4. `src/components/dre/DreSummaryCards.tsx` — use explicit deduções prop
+5. `src/pages/DREPage.tsx` — pass new KPI fields
 
