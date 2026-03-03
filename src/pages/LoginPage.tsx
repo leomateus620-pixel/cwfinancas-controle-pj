@@ -60,7 +60,7 @@ export function LoginPage() {
       <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="text-center mb-8">
-          <img src={logoFull} alt="CW Finanças" className="w-[150px] h-[150px] mx-auto object-contain" />
+          <img src={logoFull} alt="CW Finanças" className="w-[250px] h-[250px] mx-auto object-contain" />
         </div>
 
         {/* Glass Card */}
