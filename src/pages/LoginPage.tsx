@@ -58,11 +58,9 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center home-glass-bg relative overflow-hidden p-4">
       <div className="w-full max-w-md relative z-10">
-        {/* Logo + Branding */}
+        {/* Logo */}
         <div className="text-center mb-8">
-          <img src={logoFull} alt="CW Finanças" className="h-16 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">CW Finanças</h1>
-          <p className="text-muted-foreground mt-1 text-sm font-medium tracking-wide uppercase">Controle PJ</p>
+          <img src={logoFull} alt="CW Finanças" className="w-[150px] h-[150px] mx-auto object-contain" />
         </div>
 
         {/* Glass Card */}
