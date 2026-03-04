@@ -339,7 +339,7 @@ export function IncomePage() {
                 <TableRow className="bg-muted/30">
                   <TableHead>Descrição</TableHead>
                   <TableHead>Categoria</TableHead>
-                  <TableHead>Cliente</TableHead>
+                  <TableHead>Conta/Banco</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
                 </TableRow>
