@@ -136,27 +136,26 @@ export default function DREPage() {
           <BarChart3 className="h-7 w-7 text-primary" />
           <h1 className="text-2xl font-bold text-foreground">Resultado Financeiro</h1>
         </div>
-        <div className="liquid-glass p-10 text-center space-y-4">
-          <FileSpreadsheet className="h-16 w-16 text-muted-foreground/30 mx-auto" />
-          <h3 className="text-lg font-semibold text-foreground">Nenhum resultado importado</h3>
-          <p className="text-muted-foreground max-w-md mx-auto">
-            Conecte uma planilha com uma aba <strong>"DRE"</strong> para ver o resumo financeiro da sua empresa de forma simples e visual.
-          </p>
-          <div className="bg-muted/30 rounded-xl p-4 text-left text-sm text-muted-foreground max-w-md mx-auto">
-            <p className="font-medium text-foreground mb-2">Formatos aceitos:</p>
-            <ul className="space-y-1 list-disc list-inside">
-              <li>DRE padrão (colunas mensais)</li>
-              <li>DRE por Núcleo (LCF)</li>
-              <li>DRE Previsto/Realizado (SAH)</li>
-              <li>DRE em regime de caixa (GR)</li>
-            </ul>
+        <div className="liquid-glass p-12 text-center space-y-6 relative overflow-hidden">
+          {/* Decorative gradient orbs */}
+          <div className="absolute -top-20 -right-20 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-primary/3 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="relative z-10 space-y-4">
+            <div className="p-3 rounded-2xl bg-primary/5 w-fit mx-auto">
+              <FileSpreadsheet className="h-12 w-12 text-primary/40" />
+            </div>
+            <h3 className="text-lg font-semibold text-foreground">Nenhum resultado importado</h3>
+            <p className="text-muted-foreground max-w-sm mx-auto text-sm leading-relaxed">
+              Conecte uma planilha com uma aba <strong className="text-foreground/80">"DRE"</strong> para ver o resumo financeiro da sua empresa de forma simples e visual.
+            </p>
+            {connections && connections.length > 0 && (
+              <Button onClick={() => syncDRE.mutate(connections[0].id)} disabled={isSyncing} className="mt-2">
+                <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
+                Importar DRE
+              </Button>
+            )}
           </div>
-          {connections && connections.length > 0 && (
-            <Button onClick={() => syncDRE.mutate(connections[0].id)} disabled={isSyncing} className="mt-4">
-              <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-              Importar DRE
-            </Button>
-          )}
         </div>
       </div>
     );

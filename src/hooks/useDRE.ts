@@ -303,10 +303,10 @@ export function useDRE(sheetId?: string) {
       return null;
     };
 
-    const resultado = findLineValue(lines, "resultado do exercicio")
+    const resultado = findLineValue(lines, "lucro liquido")
+      ?? findLineValue(lines, "resultado do exercicio")
       ?? findLineValue(lines, "resultado exercicio")
       ?? findLineValue(lines, "resultado final")
-      ?? findLineValue(lines, "lucro liquido")
       ?? findLastLineValue(lines, "resultado")
       ?? lucroOperacional
       ?? Math.round((receitaLiquida + despesasTotais) * 100) / 100;
