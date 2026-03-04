@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { TrendingDown, Plus, Filter, Download, CreditCard, Building2, ArrowUpRight, AlertTriangle, Loader2 } from "lucide-react";
+import { TrendingDown, Plus, Filter, Download, CreditCard, Building2, ArrowUpRight, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,8 +88,6 @@ export function ExpensesPage() {
     return Object.entries(grouped).map(([month, despesas]) => ({ month, despesas }));
   }, [transactions]);
 
-  const budgetTotal = totals.expense * 1.2;
-  const budgetUsed = budgetTotal > 0 ? (totals.expense / budgetTotal) * 100 : 0;
   const topCategory = categoryBreakdown.length > 0 
     ? categoryBreakdown.sort((a, b) => b.amount - a.amount)[0]?.category 
     : "-";
@@ -157,29 +155,31 @@ export function ExpensesPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KPICard
-          title="Total de Despesas"
-          value={formatCurrencyBR(totals.expense)}
-          changeLabel="no período selecionado"
-          icon={<CreditCard className="w-5 h-5 text-destructive" />}
-          trend="down"
-        />
-        <KPICard
-          title="Maior Categoria"
-          value={topCategory}
-          changeLabel="categoria principal"
-          icon={<Building2 className="w-5 h-5 text-primary" />}
-          trend="neutral"
-        />
-        <KPICard
-          title="Orçamento Usado"
-          value={`${budgetUsed.toFixed(1)}%`}
-          change={budgetUsed > 100 ? budgetUsed - 100 : 100 - budgetUsed}
-          changeLabel={budgetUsed > 100 ? "acima do orçamento" : "dentro do orçamento"}
-          icon={<AlertTriangle className="w-5 h-5 text-warning" />}
-          trend={budgetUsed > 100 ? "down" : "up"}
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="liquid-glass relative overflow-hidden p-0">
+          <div className="absolute -top-12 -right-12 w-32 h-32 bg-destructive/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10">
+            <KPICard
+              title="Total de Despesas"
+              value={formatCurrencyBR(totals.expense)}
+              changeLabel="no período selecionado"
+              icon={<CreditCard className="w-5 h-5 text-destructive" />}
+              trend="down"
+            />
+          </div>
+        </div>
+        <div className="liquid-glass relative overflow-hidden p-0">
+          <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10">
+            <KPICard
+              title="Maior Categoria"
+              value={topCategory}
+              changeLabel="categoria principal"
+              icon={<Building2 className="w-5 h-5 text-primary" />}
+              trend="neutral"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Gráficos */}
@@ -328,7 +328,7 @@ export function ExpensesPage() {
                 <TableRow className="bg-muted/30">
                   <TableHead>Descrição</TableHead>
                   <TableHead>Categoria</TableHead>
-                  <TableHead>Fornecedor</TableHead>
+                  <TableHead>Conta/Banco</TableHead>
                   <TableHead>Data</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
                 </TableRow>

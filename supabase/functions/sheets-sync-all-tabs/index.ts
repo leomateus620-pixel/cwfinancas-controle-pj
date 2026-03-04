@@ -1312,7 +1312,7 @@ Deno.serve(async (req) => {
           const date = parseDate(dateRaw as string | number | null);
 
           // Get description
-          const description = mapping.description ? safeStr(rowObj[mapping.description]).trim() : "";
+          let description = mapping.description ? safeStr(rowObj[mapping.description]).trim() : "";
 
           // Skip check
           const skipCheck = isSkippableRow(rowObj, description, !!date);
@@ -1330,7 +1330,15 @@ Deno.serve(async (req) => {
           if (category !== "Geral" && looksLikeBankName(category)) {
             category = "Sem categoria";
           }
-          const clientVendor = mapping.client_vendor ? safeStr(rowObj[mapping.client_vendor]).trim() || null : null;
+          let clientVendor: string | null = mapping.client_vendor ? safeStr(rowObj[mapping.client_vendor]).trim() || null : null;
+          const accountName: string | null = mapping.account ? safeStr(rowObj[mapping.account]).trim() || null : null;
+
+          // Heuristic: if description is empty/generic but client_vendor has real data, swap them
+          // Then populate client_vendor with account/bank info
+          if ((!description || description === "Sem descrição") && clientVendor) {
+            description = clientVendor;
+            clientVendor = accountName;
+          }
 
           // ===== STABLE KEY (position-based, relative to header) =====
           const dataRowIndex = rowIndex; // 0-based relative to header
