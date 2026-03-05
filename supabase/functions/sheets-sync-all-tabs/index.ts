@@ -200,6 +200,91 @@ function parseBRL(value: string | number | null | undefined): number | null {
   return isNegative ? -num : num;
 }
 
+// ============ Bank Balance Extraction ============
+
+function format_period_now(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+interface BankBalanceExtracted {
+  rows: Array<{ bankName: string; opening: number | null; closing: number | null }>;
+  warnings: string[];
+}
+
+function extractBankBalances(
+  allRows: string[][],
+  tab: ClassifiedTab,
+  parseFn: (v: string | number | null | undefined) => number | null
+): BankBalanceExtracted {
+  const result: BankBalanceExtracted = { rows: [], warnings: [] };
+  const normalize = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  let anchorRow = -1;
+  let anchorCol = -1;
+  for (let r = 0; r < allRows.length; r++) {
+    for (let c = 0; c < (allRows[r]?.length || 0); c++) {
+      const cell = normalize(safeStr(allRows[r][c]));
+      if (cell.includes("saldo bancario")) {
+        anchorRow = r;
+        anchorCol = c;
+        break;
+      }
+    }
+    if (anchorRow >= 0) break;
+  }
+
+  if (anchorRow < 0) return result;
+
+  let headerRow = -1;
+  let openingCol = -1;
+  let closingCol = -1;
+  const bankNameCol = anchorCol;
+
+  for (let r = anchorRow; r < Math.min(anchorRow + 4, allRows.length); r++) {
+    const row = allRows[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const cell = normalize(safeStr(row[c]));
+      if (cell.includes("saldo inicial") || (cell.includes("inicial") && !cell.includes("bancario"))) {
+        openingCol = c;
+        headerRow = r;
+      }
+      if (cell.includes("saldo final") || cell === "final") {
+        closingCol = c;
+        headerRow = r;
+      }
+    }
+    if (headerRow >= 0) break;
+  }
+
+  if (headerRow < 0) {
+    headerRow = anchorRow;
+    openingCol = anchorCol + 1;
+    closingCol = anchorCol + 2;
+    result.warnings.push("Header 'Saldo inicial/final' nao encontrado, usando posicao fixa.");
+  }
+
+  for (let r = headerRow + 1; r < allRows.length; r++) {
+    const row = allRows[r] || [];
+    const bankName = safeStr(row[bankNameCol]).trim();
+    if (!bankName) break;
+    const normBank = normalize(bankName);
+    if (normBank.includes("total") || normBank.includes("soma")) break;
+
+    const opening = parseFn(row[openingCol]);
+    const closing = parseFn(row[closingCol]);
+
+    if (opening === null && closing === null) {
+      result.warnings.push(`Banco "${bankName}": ambos saldos vazios.`);
+    }
+
+    result.rows.push({ bankName, opening, closing });
+  }
+
+  return result;
+}
+
 function looksLikeDate(value: unknown): boolean {
   if (value === null || value === undefined) return false;
   const str = safeStr(value).trim();
@@ -1400,6 +1485,37 @@ Deno.serve(async (req) => {
         skip_reasons: { ...skipReasons, tab_fingerprint: tabFingerprint, noOps: upsertResult.noOps },
         errors: tabErrors.slice(0, 20),
       });
+
+      // ===== BANK BALANCES EXTRACTION (soft fail) =====
+      try {
+        const bankBalances = extractBankBalances(allRows, tab, parseBRL);
+        if (bankBalances.rows.length > 0) {
+          const balanceRows = bankBalances.rows.map(b => ({
+            user_id: userId,
+            connection_id: connectionId,
+            period_key: tab.periodKey || format_period_now(),
+            bank_name: b.bankName,
+            opening_balance: b.opening !== null ? Math.round(b.opening * 100) / 100 : null,
+            closing_balance: b.closing !== null ? Math.round(b.closing * 100) / 100 : null,
+            tab_name: tab.title,
+            updated_at: new Date().toISOString(),
+          }));
+          const { error: bbErr } = await supabase.from("bank_balances").upsert(balanceRows, {
+            onConflict: "user_id,connection_id,period_key,bank_name",
+          });
+          if (bbErr) {
+            console.warn(`[${requestId}] Bank balances upsert error for ${tab.title}:`, bbErr.message);
+          } else {
+            console.log(`[${requestId}] Bank balances: ${balanceRows.length} rows upserted for ${tab.title}`);
+          }
+        }
+        if (bankBalances.warnings.length > 0) {
+          console.warn(`[${requestId}] Bank balance warnings for ${tab.title}:`, bankBalances.warnings);
+        }
+      } catch (bbError: unknown) {
+        const msg = bbError instanceof Error ? bbError.message : "unknown";
+        console.warn(`[${requestId}] Bank balance extraction failed for ${tab.title}: ${msg}`);
+      }
 
       totalImported += tabImported;
       totalSkipped += tabSkipped;
