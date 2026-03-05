@@ -16,6 +16,8 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
+import bankCaixinhaImg from "@/assets/bank-caixinha.png";
+import bankSicrediImg from "@/assets/bank-sicredi.jpg";
 
 interface CaixaAtualCardProps {
   currentBalance: number;
@@ -26,6 +28,13 @@ interface CaixaAtualCardProps {
 
 const currentPeriodKey = format(new Date(), "yyyy-MM");
 const monthLabel = format(new Date(), "MMMM yyyy", { locale: ptBR });
+
+function getBankLogo(name: string): string | null {
+  const n = name.toLowerCase();
+  if (n.includes("caixinha")) return bankCaixinhaImg;
+  if (n.includes("sicredi")) return bankSicrediImg;
+  return null;
+}
 
 export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, delay = 0 }: CaixaAtualCardProps) {
   const { rows, isLoading, isEmpty } = useBankBalances(currentPeriodKey);
@@ -71,16 +80,33 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
               const opening = row.opening_balance ?? 0;
               const delta = opening !== 0 ? ((closing - opening) / Math.abs(opening)) * 100 : 0;
               const deltaPositive = delta >= 0;
+              const logo = getBankLogo(row.bank_name);
 
               return (
                 <div
                   key={row.id}
-                  className="opacity-0 animate-fade-in-up relative rounded-2xl border border-border/30 bg-card/40 backdrop-blur-sm p-5 transition-all duration-300 hover:bg-card/60"
+                  className="opacity-0 animate-fade-in-up relative rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/50 backdrop-blur-xl p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-all duration-300 hover:bg-white/70 dark:hover:bg-card/60"
                   style={{ animationDelay: `${delay + 120 * (idx + 1)}ms`, animationFillMode: "forwards" }}
                 >
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70 mb-3">
-                    {row.bank_name}
-                  </p>
+                  {/* Bank identity */}
+                  <div className="flex items-center gap-2.5 mb-3">
+                    {logo ? (
+                      <img
+                        src={logo}
+                        alt={row.bank_name}
+                        className="w-8 h-8 rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-0.5 border border-white/50 dark:border-border/20"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted/40 border border-white/50 dark:border-border/20">
+                        <Wallet className="w-4 h-4 text-muted-foreground/60" />
+                      </div>
+                    )}
+                    <p className="text-xs font-semibold tracking-wide text-muted-foreground/80 uppercase">
+                      {row.bank_name}
+                    </p>
+                  </div>
+
+                  {/* Value + delta */}
                   <div className="flex items-end justify-between gap-2">
                     <AnimatedValue
                       value={closing}
@@ -88,15 +114,15 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                       format="currency"
                       decimals={2}
                       color="default"
-                      className="text-2xl md:text-[1.75rem] font-bold text-foreground"
+                      className="text-[1.6rem] md:text-[1.75rem] font-bold tracking-tight text-foreground"
                     />
                     {opening !== 0 && (
                       <span
                         className={cn(
-                          "flex items-center gap-0.5 text-[10px] font-medium tabular-nums",
+                          "flex items-center gap-0.5 text-[10px] font-medium tabular-nums px-1.5 py-0.5 rounded-full",
                           deltaPositive
-                            ? "text-muted-foreground/60"
-                            : "text-destructive/70"
+                            ? "text-muted-foreground/60 bg-muted/30"
+                            : "text-destructive/60 bg-destructive/5"
                         )}
                       >
                         <ArrowDownRight className={cn("w-3 h-3", deltaPositive && "rotate-180")} />
@@ -157,13 +183,27 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                     const closing = row.closing_balance ?? 0;
                     const delta = closing - opening;
                     const deltaPositive = delta >= 0;
+                    const logo = getBankLogo(row.bank_name);
 
                     return (
                       <div
                         key={row.id}
-                        className="rounded-2xl border border-border/30 bg-card/40 p-4"
+                        className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
                       >
-                        <p className="text-sm font-semibold text-foreground mb-3">{row.bank_name}</p>
+                        <div className="flex items-center gap-2.5 mb-3">
+                          {logo ? (
+                            <img
+                              src={logo}
+                              alt={row.bank_name}
+                              className="w-7 h-7 rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-0.5 border border-white/50 dark:border-border/20"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted/40">
+                              <Wallet className="w-3.5 h-3.5 text-muted-foreground/60" />
+                            </div>
+                          )}
+                          <p className="text-sm font-semibold text-foreground">{row.bank_name}</p>
+                        </div>
                         <div className="grid grid-cols-3 gap-3">
                           <div>
                             <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Inicial</p>
@@ -196,15 +236,15 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                   Movimentações do Mês
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-2xl border border-border/30 bg-card/40 p-4 text-center">
+                  <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
                     <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Entradas</p>
                     <p className="text-base font-semibold tabular-nums text-foreground">{formatCompactBR(monthIncome)}</p>
                   </div>
-                  <div className="rounded-2xl border border-border/30 bg-card/40 p-4 text-center">
+                  <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
                     <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Saídas</p>
                     <p className="text-base font-semibold tabular-nums text-foreground">{formatCompactBR(monthExpense)}</p>
                   </div>
-                  <div className="rounded-2xl border border-border/30 bg-card/40 p-4 text-center">
+                  <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
                     <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Resultado</p>
                     <p className={cn(
                       "text-base font-semibold tabular-nums",
