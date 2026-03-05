@@ -212,68 +212,85 @@ interface BankBalanceExtracted {
   warnings: string[];
 }
 
+/**
+ * Dedicated Google Sheets read for the bank balance block (columns H-J).
+ * Tries tight range H3:J5 first, then fallback H1:J20.
+ */
+async function readBankBalanceRange(
+  accessToken: string,
+  spreadsheetId: string,
+  tabTitle: string,
+  requestId: string
+): Promise<string[][]> {
+  for (const range of [`'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`]) {
+    try {
+      const resp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!resp.ok) {
+        console.log(`[${requestId}] [bank-balance] range=${range} status=${resp.status}, skipping`);
+        continue;
+      }
+      const data = await resp.json();
+      const values: string[][] = data.values || [];
+      if (values.length > 0) {
+        console.log(`[${requestId}] [bank-balance] tab=${tabTitle} range=${range} rows=${values.length} cols=${values[0]?.length}`);
+        return values;
+      }
+    } catch (e) {
+      console.warn(`[${requestId}] [bank-balance] fetch error for range=${range}:`, e);
+    }
+  }
+  console.log(`[${requestId}] [bank-balance] tab=${tabTitle} no data in H-J ranges`);
+  return [];
+}
+
+/**
+ * Extract bank balances from a 3-column array (H-J data).
+ * Col 0 = bank name or header, Col 1 = opening, Col 2 = closing.
+ */
 function extractBankBalances(
-  allRows: string[][],
+  rows: string[][],
   tab: ClassifiedTab,
   parseFn: (v: string | number | null | undefined) => number | null
 ): BankBalanceExtracted {
   const result: BankBalanceExtracted = { rows: [], warnings: [] };
+  if (!rows || rows.length === 0) return result;
+
   const normalize = (s: string) =>
     s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
-  let anchorRow = -1;
-  let anchorCol = -1;
-  for (let r = 0; r < allRows.length; r++) {
-    for (let c = 0; c < (allRows[r]?.length || 0); c++) {
-      const cell = normalize(safeStr(allRows[r][c]));
-      if (cell.includes("saldo bancario")) {
-        anchorRow = r;
-        anchorCol = c;
-        break;
-      }
+  // Find header row: contains "saldo bancario" or "saldo inicial"/"saldo final"
+  let dataStartRow = 0;
+  for (let r = 0; r < rows.length; r++) {
+    const cells = (rows[r] || []).map(c => normalize(safeStr(c)));
+    const joined = cells.join(" ");
+    if (joined.includes("saldo bancario") || joined.includes("saldo inicial") || joined.includes("inicial")) {
+      dataStartRow = r + 1;
+      break;
     }
-    if (anchorRow >= 0) break;
   }
 
-  if (anchorRow < 0) return result;
-
-  let headerRow = -1;
-  let openingCol = -1;
-  let closingCol = -1;
-  const bankNameCol = anchorCol;
-
-  for (let r = anchorRow; r < Math.min(anchorRow + 4, allRows.length); r++) {
-    const row = allRows[r] || [];
-    for (let c = 0; c < row.length; c++) {
-      const cell = normalize(safeStr(row[c]));
-      if (cell.includes("saldo inicial") || (cell.includes("inicial") && !cell.includes("bancario"))) {
-        openingCol = c;
-        headerRow = r;
-      }
-      if (cell.includes("saldo final") || cell === "final") {
-        closingCol = c;
-        headerRow = r;
-      }
+  // If no header found and we have rows, assume row 0 is header (tight range H3:J3 scenario)
+  if (dataStartRow === 0 && rows.length > 1) {
+    // Check if row 0 looks like a header (non-numeric col 0)
+    const firstCell = normalize(safeStr(rows[0]?.[0]));
+    if (firstCell && parseFn(rows[0]?.[0]) === null) {
+      dataStartRow = 1;
     }
-    if (headerRow >= 0) break;
-  }
-
-  if (headerRow < 0) {
-    headerRow = anchorRow;
-    openingCol = anchorCol + 1;
-    closingCol = anchorCol + 2;
     result.warnings.push("Header 'Saldo inicial/final' nao encontrado, usando posicao fixa.");
   }
 
-  for (let r = headerRow + 1; r < allRows.length; r++) {
-    const row = allRows[r] || [];
-    const bankName = safeStr(row[bankNameCol]).trim();
+  for (let r = dataStartRow; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const bankName = safeStr(row[0]).trim();
     if (!bankName) break;
     const normBank = normalize(bankName);
     if (normBank.includes("total") || normBank.includes("soma")) break;
 
-    const opening = parseFn(row[openingCol]);
-    const closing = parseFn(row[closingCol]);
+    const opening = parseFn(row[1]);
+    const closing = parseFn(row[2]);
 
     if (opening === null && closing === null) {
       result.warnings.push(`Banco "${bankName}": ambos saldos vazios.`);
@@ -1488,33 +1505,56 @@ Deno.serve(async (req) => {
 
       // ===== BANK BALANCES EXTRACTION (soft fail) =====
       try {
-        const bankBalances = extractBankBalances(allRows, tab, parseBRL);
-        if (bankBalances.rows.length > 0) {
-          const balanceRows = bankBalances.rows.map(b => ({
-            user_id: userId,
-            connection_id: connectionId,
-            period_key: tab.periodKey || format_period_now(),
-            bank_name: b.bankName,
-            opening_balance: b.opening !== null ? Math.round(b.opening * 100) / 100 : null,
-            closing_balance: b.closing !== null ? Math.round(b.closing * 100) / 100 : null,
-            tab_name: tab.title,
-            updated_at: new Date().toISOString(),
-          }));
-          const { error: bbErr } = await supabase.from("bank_balances").upsert(balanceRows, {
-            onConflict: "user_id,connection_id,period_key,bank_name",
-          });
-          if (bbErr) {
-            console.warn(`[${requestId}] Bank balances upsert error for ${tab.title}:`, bbErr.message);
-          } else {
-            console.log(`[${requestId}] Bank balances: ${balanceRows.length} rows upserted for ${tab.title}`);
-          }
+        const txCols = allRows[0]?.length || 0;
+        console.log(`[${requestId}] [bank-balance] tab=${tab.title} txCols=${txCols}`);
+
+        let bankBalanceRows: string[][] = [];
+        if (!xlsxWorkbook && accessToken) {
+          bankBalanceRows = await readBankBalanceRange(accessToken!, connection.spreadsheet_id, tab.title, requestId);
+        } else if (xlsxWorkbook) {
+          // For xlsx: extract H-J columns from allRows (indices 7-9)
+          bankBalanceRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]).filter(r => r[0] || r[1] || r[2]);
         }
-        if (bankBalances.warnings.length > 0) {
-          console.warn(`[${requestId}] Bank balance warnings for ${tab.title}:`, bankBalances.warnings);
+
+        if (bankBalanceRows.length > 0) {
+          const bankBalances = extractBankBalances(bankBalanceRows, tab, parseBRL);
+          console.log(`[${requestId}] [bank-balance] tab=${tab.title} extracted=${bankBalances.rows.length} warnings=${bankBalances.warnings.length}`);
+
+          if (bankBalances.rows.length > 0) {
+            const periodKey = tab.periodKey || format_period_now();
+            const balanceRows = bankBalances.rows.map(b => ({
+              user_id: userId,
+              connection_id: connectionId,
+              period_key: periodKey,
+              bank_name: b.bankName,
+              opening_balance: b.opening !== null ? Math.round(b.opening * 100) / 100 : null,
+              closing_balance: b.closing !== null ? Math.round(b.closing * 100) / 100 : null,
+              tab_name: tab.title,
+              updated_at: new Date().toISOString(),
+            }));
+            const { error: bbErr } = await supabase.from("bank_balances").upsert(balanceRows, {
+              onConflict: "user_id,connection_id,period_key,bank_name",
+            });
+            if (bbErr) {
+              console.warn(`[${requestId}] [bank-balance] upsert error for ${tab.title}:`, bbErr.message);
+            } else {
+              // Confirmation query
+              const { count } = await supabase.from("bank_balances")
+                .select("*", { count: "exact", head: true })
+                .eq("user_id", userId)
+                .eq("period_key", periodKey);
+              console.log(`[${requestId}] [bank-balance] confirm persisted count=${count} tab=${tab.title} period=${periodKey}`);
+            }
+          }
+          if (bankBalances.warnings.length > 0) {
+            console.warn(`[${requestId}] [bank-balance] warnings for ${tab.title}:`, bankBalances.warnings);
+          }
+        } else {
+          console.log(`[${requestId}] [bank-balance] tab=${tab.title} no H-J data found, skipping`);
         }
       } catch (bbError: unknown) {
         const msg = bbError instanceof Error ? bbError.message : "unknown";
-        console.warn(`[${requestId}] Bank balance extraction failed for ${tab.title}: ${msg}`);
+        console.warn(`[${requestId}] [bank-balance] extraction failed for ${tab.title}: ${msg}`);
       }
 
       totalImported += tabImported;
