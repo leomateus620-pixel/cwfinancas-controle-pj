@@ -1,20 +1,12 @@
 
 
-## Plan: Improve Contrast in Drawer Details
+## Plan: Improve Header Text Contrast in Caixa Atual Card
 
-The drawer's text labels and values have low contrast due to heavy use of opacity modifiers (`text-muted-foreground/50`, `text-foreground/80`, etc.). I'll increase contrast across all text in the drawer.
+The "CAIXA ATUAL" label and "Março 2026" subtitle use low-opacity classes making them nearly invisible.
 
 ### Changes in `src/components/home/CaixaAtualCard.tsx`
 
-**Section headers** (~lines 172, 225): `text-muted-foreground/60` → `text-muted-foreground`
-
-**Per-bank drawer cards (~lines 204-220):**
-- "INICIAL" / "FINAL" / "VARIAÇÃO" labels: `text-muted-foreground/50` → `text-muted-foreground/80`
-- Opening balance value: `text-foreground/80` → `text-foreground`
-- Variation value (negative): `text-destructive/80` → `text-destructive`
-- Variation value (positive): `text-foreground/70` → `text-foreground`
-
-**Monthly summary cards (~lines 230-250):**
-- "ENTRADAS" / "SAÍDAS" / "RESULTADO" labels: `text-muted-foreground/50` → `text-muted-foreground/80`
-- Result negative: `text-destructive/80` → `text-destructive`
+- **"CAIXA ATUAL"** (~line 64): `text-muted-foreground` → `text-foreground/80` — stronger contrast
+- **"Março 2026"** (~line 67): `text-muted-foreground/40` → `text-muted-foreground/70` — visible but still secondary
+- **Wallet icon** (~line 61): `text-muted-foreground` → `text-foreground/60` — slightly bolder to match
 
