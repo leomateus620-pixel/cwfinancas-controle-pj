@@ -1,20 +1,20 @@
 
 
-## Plan: Enlarge Bank Logos in Caixa Atual Card
+## Plan: Improve Contrast in Drawer Details
 
-The bank logos are currently `w-8 h-8` (32px) which is too small. I'll increase them and improve their presentation.
+The drawer's text labels and values have low contrast due to heavy use of opacity modifiers (`text-muted-foreground/50`, `text-foreground/80`, etc.). I'll increase contrast across all text in the drawer.
 
 ### Changes in `src/components/home/CaixaAtualCard.tsx`
 
-**Main card (lines 92-107):** Change layout to stack logo above bank name (centered), increase logo to `w-12 h-12` (48px):
-```
-<div className="flex flex-col items-center mb-3">
-  <img className="w-12 h-12 rounded-xl object-contain ..." />
-  <p className="text-xs font-semibold ...">bank name</p>
-</div>
-```
+**Section headers** (~lines 172, 225): `text-muted-foreground/60` → `text-muted-foreground`
 
-**Drawer section (~lines 165-180):** Increase drawer logos from `w-7 h-7` to `w-10 h-10`.
+**Per-bank drawer cards (~lines 204-220):**
+- "INICIAL" / "FINAL" / "VARIAÇÃO" labels: `text-muted-foreground/50` → `text-muted-foreground/80`
+- Opening balance value: `text-foreground/80` → `text-foreground`
+- Variation value (negative): `text-destructive/80` → `text-destructive`
+- Variation value (positive): `text-foreground/70` → `text-foreground`
 
-**Fallback icon (no logo):** Scale up to match `w-12 h-12` / `w-10 h-10`.
+**Monthly summary cards (~lines 230-250):**
+- "ENTRADAS" / "SAÍDAS" / "RESULTADO" labels: `text-muted-foreground/50` → `text-muted-foreground/80`
+- Result negative: `text-destructive/80` → `text-destructive`
 
