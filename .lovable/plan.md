@@ -1,94 +1,57 @@
 
+Diagnóstico confirmado (com dados reais):
+- A conexão ativa está em `data_type=transactions` e `sheet_name=Mar2026`.
+- O botão de sincronizar dessa conexão chama `google-sheets-sync` (não `sheets-sync-all-tabs`).
+- A extração de `SALDO BANCÁRIO` foi implementada só em `sheets-sync-all-tabs`.
+- Resultado: `bank_balances` está vazio (`SELECT` retornou 0 linhas) e o card fica em estado “Sem dados”.
 
-## Plan: Fix Bank Balance Extraction with Dedicated H-J Read
+Plano de correção (foco em funcionar 100% no fluxo real usado hoje):
 
-### Root Cause
-The Google Sheets API returns ragged arrays — each row only contains columns up to the last non-empty cell in that row. If the "SALDO BANCÁRIO" block (columns H-J) is on rows that also have transaction data in A-F, the H-J data might exist at indices 7-9. But if those rows have empty A-G cells, the API may shift column positions. Most critically, the bank balance rows likely sit below the transaction data area, and those rows may only have content in H-J — meaning the API returns them at indices 0-2, not 7-9. This makes anchor detection unreliable.
+1) Corrigir o fluxo certo: `supabase/functions/google-sheets-sync/index.ts`
+- Adicionar instrumentação `[bank-balance]`:
+  - `tab`, `txCols`, `foundAnchor` no dataset de transações.
+  - range usado para saldo (`H3:J5` e fallback `H1:J20`), quantidade de linhas/colunas.
+- Implementar segunda leitura dedicada para saldos (sem mexer no range atual de transações):
+  - Tentar `'<aba>'!H3:J5`
+  - Fallback `'<aba>'!H1:J20`
+- Para `.xlsx`, extrair bloco H-J da aba parseada (colunas 7-9), limitado ao topo (H1:J20), mantendo o pipeline atual intacto.
 
-### Solution: Second Targeted Read for H-J
+2) Robustez do parser de saldo (no mesmo arquivo)
+- Portar/adaptar `extractBankBalances` para matriz 3 colunas (banco/inicial/final).
+- Suportar:
+  - Modo âncora (“SALDO BANCÁRIO”)
+  - Modo fixo (header na primeira linha do bloco)
+- Parse BRL robusto (incluindo negativos), `null` + warning quando inválido.
+- Soft-fail total: erro no saldo nunca interrompe sync de transações.
 
-**File:** `supabase/functions/sheets-sync-all-tabs/index.ts`
+3) `period_key` consistente
+- Adicionar helper no `google-sheets-sync` para derivar `YYYY-MM` de `sheet_name` (ex.: `Mar2026`, `Jan26`).
+- Fallback para mês atual apenas se não conseguir inferir.
+- Log obrigatório: `tab`, `period_key`, `rowsExtracted`.
 
-#### Change 1: Add a dedicated function to read bank balance range
+4) Persistência e validação pós-upsert
+- Upsert em `bank_balances` com conflito `user_id,connection_id,period_key,bank_name`.
+- Após upsert, confirmar com `count` por `user_id+connection_id+period_key`.
+- Logar warnings e contexto de erro sem abortar sync.
 
-```typescript
-async function readBankBalanceRange(
-  accessToken: string,
-  spreadsheetId: string,
-  tabTitle: string,
-  requestId: string
-): Promise<string[][]> {
-  // Try tight range first (H3:J5), then fallback to H1:J20
-  for (const range of [`'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`]) {
-    const resp = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!resp.ok) continue;
-    const data = await resp.json();
-    const values: string[][] = data.values || [];
-    if (values.length > 0) {
-      console.log(`[${requestId}] [bank-balance] tab=${tabTitle} range=${range} rows=${values.length}`);
-      return values;
-    }
-  }
-  return [];
-}
-```
+5) Garantir atualização imediata no front
+- `src/hooks/useGoogleSheets.ts`:
+  - Em `syncData.onSuccess`, invalidar também:
+    - `["bank-balances"]`
+    - `["home-dashboard"]`
+- (Opcional de diagnóstico) `useBankBalances.ts`: logar `periodKey` e quantidade retornada em modo dev.
 
-#### Change 2: Update `extractBankBalances` to work with 3-column H-J data
+Teste de validação (end-to-end):
+- Executar sincronização manual da conexão ativa.
+- Verificar logs do `google-sheets-sync` contendo `[bank-balance]` com range e `period_key`.
+- Validar banco:
+  - `SELECT period_key, bank_name, opening_balance, closing_balance FROM bank_balances WHERE connection_id='<id>' ORDER BY bank_name;`
+- Validar UI Home:
+  - card mostra totais inicial/final,
+  - lista bancos (Sicredi/Caixinha etc.),
+  - “Ver detalhes” abre e exibe tabela completa.
+- Regressão:
+  - contagem de transações importadas permanece equivalente ao comportamento atual (sem quebra do pipeline A–F).
 
-When called with the dedicated H-J read (3 columns only), the function should:
-- Col 0 = bank name or "SALDO BANCÁRIO" header
-- Col 1 = opening balance / "Saldo inicial"  
-- Col 2 = closing balance / "Saldo final"
-
-Detect header row (containing "SALDO BANCÁRIO" or "Saldo inicial"/"Saldo final"), then read bank rows below it. This is simpler since columns are always 0, 1, 2.
-
-#### Change 3: Replace current bank balance extraction call (line ~1489-1518)
-
-Instead of calling `extractBankBalances(allRows, ...)` with the transaction data, do a separate read:
-
-```typescript
-// ===== BANK BALANCES EXTRACTION (soft fail) =====
-try {
-  let bankBalanceRows: string[][] = [];
-  if (!xlsxWorkbook && accessToken) {
-    bankBalanceRows = await readBankBalanceRange(accessToken, connection.spreadsheet_id, tab.title, requestId);
-  } else if (xlsxWorkbook) {
-    // For xlsx: extract H-J columns from allRows (indices 7-9)
-    bankBalanceRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]);
-  }
-  
-  if (bankBalanceRows.length > 0) {
-    const bankBalances = extractBankBalances(bankBalanceRows, tab, parseBRL);
-    // ... upsert as before
-  }
-} catch ...
-```
-
-#### Change 4: Simplify `extractBankBalances` for 3-column input
-
-Since the input will always be a 3-column array (col 0=bank/header, col 1=opening, col 2=closing):
-- Scan for anchor ("saldo bancario") or header ("saldo inicial") in row
-- If not found, assume row 0 is header (for tight range H3:J3)
-- Read data rows from header+1 onward
-- `bankNameCol=0`, `openingCol=1`, `closingCol=2`
-
-#### Change 5: Add confirmation log after upsert
-
-```typescript
-const { count } = await supabase.from("bank_balances")
-  .select("*", { count: "exact", head: true })
-  .eq("user_id", userId)
-  .eq("period_key", tab.periodKey || format_period_now());
-console.log(`[bank-balance] confirm persisted count=${count} tab=${tab.title} period=${tab.periodKey}`);
-```
-
-### Files to modify
-| File | Change |
-|------|--------|
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Add `readBankBalanceRange()`, rewrite extraction call to use dedicated H-J read, simplify `extractBankBalances` for 3-col input, add confirmation logs |
-
-No changes needed to `useBankBalances.ts` or `BankBalanceCard.tsx` — the frontend is correct, it just has no data to display.
-
+Critério de aceite final:
+- Mesmo usando sync padrão (`google-sheets-sync`), o card deixa de ficar vazio e passa a refletir os valores de H3:J5 (fallback H1:J20), com `period_key` correto e sem impacto no fluxo existente de transações.
