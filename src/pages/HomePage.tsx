@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useHomeDashboard } from "@/hooks/useHomeDashboard";
 import { HomeKPICard } from "@/components/home/HomeKPICard";
+import { CaixaAtualCard } from "@/components/home/CaixaAtualCard";
 import { DailySummary } from "@/components/home/DailySummary";
 import { HealthScore } from "@/components/home/HealthScore";
 import { AlertsPanel } from "@/components/home/AlertsPanel";
@@ -8,7 +9,7 @@ import { TopCategories } from "@/components/home/TopCategories";
 import { ProfitQuality } from "@/components/home/ProfitQuality";
 import { HomeEmptyState } from "@/components/home/HomeEmptyState";
 import { HomeSkeletonLoading } from "@/components/home/HomeSkeletonLoading";
-import { BankBalanceCard } from "@/components/home/BankBalanceCard";
+
 import {
   Wallet,
   TrendingUp,
@@ -91,18 +92,12 @@ export default function HomePage() {
           <div className="space-y-5">
             {/* KPI Mosaic */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <HomeKPICard
-                  label="Caixa Atual"
-                  value={formatCompactBR(data.currentBalance)}
-                  icon={<Wallet className="w-5 h-5 text-blue-600" />}
-                  tooltip="Saldo líquido: total de receitas menos despesas de todas as transações importadas."
-                  href="/cash-flow"
-                  large
-                  valueColor={data.currentBalance >= 0 ? "text-emerald-600" : "text-red-600"}
-                  delay={0}
-                />
-              </div>
+              <CaixaAtualCard
+                currentBalance={data.currentBalance}
+                monthIncome={data.monthIncome}
+                monthExpense={data.monthExpense}
+                delay={0}
+              />
               <HomeKPICard
                 label="Entradas do Mês"
                 value={formatCompactBR(data.monthIncome)}
@@ -146,8 +141,7 @@ export default function HomePage() {
               />
             </div>
 
-            {/* Bank Balance Card */}
-            <BankBalanceCard periodKey={currentPeriodKey} delay={240} />
+
 
             {/* Middle row: Summary + Health */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
