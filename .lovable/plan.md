@@ -1,57 +1,45 @@
 
-Diagnóstico confirmado (com dados reais):
-- A conexão ativa está em `data_type=transactions` e `sheet_name=Mar2026`.
-- O botão de sincronizar dessa conexão chama `google-sheets-sync` (não `sheets-sync-all-tabs`).
-- A extração de `SALDO BANCÁRIO` foi implementada só em `sheets-sync-all-tabs`.
-- Resultado: `bank_balances` está vazio (`SELECT` retornou 0 linhas) e o card fica em estado “Sem dados”.
 
-Plano de correção (foco em funcionar 100% no fluxo real usado hoje):
+## Plan: Redesign "Caixa Atual" Card with Per-Bank Closing Balances
 
-1) Corrigir o fluxo certo: `supabase/functions/google-sheets-sync/index.ts`
-- Adicionar instrumentação `[bank-balance]`:
-  - `tab`, `txCols`, `foundAnchor` no dataset de transações.
-  - range usado para saldo (`H3:J5` e fallback `H1:J20`), quantidade de linhas/colunas.
-- Implementar segunda leitura dedicada para saldos (sem mexer no range atual de transações):
-  - Tentar `'<aba>'!H3:J5`
-  - Fallback `'<aba>'!H1:J20`
-- Para `.xlsx`, extrair bloco H-J da aba parseada (colunas 7-9), limitado ao topo (H1:J20), mantendo o pipeline atual intacto.
+### What Changes
 
-2) Robustez do parser de saldo (no mesmo arquivo)
-- Portar/adaptar `extractBankBalances` para matriz 3 colunas (banco/inicial/final).
-- Suportar:
-  - Modo âncora (“SALDO BANCÁRIO”)
-  - Modo fixo (header na primeira linha do bloco)
-- Parse BRL robusto (incluindo negativos), `null` + warning quando inválido.
-- Soft-fail total: erro no saldo nunca interrompe sync de transações.
+Replace the current simple `HomeKPICard` for "Caixa Atual" (lines 94-105 in HomePage.tsx) with a new premium component `CaixaAtualCard` that:
 
-3) `period_key` consistente
-- Adicionar helper no `google-sheets-sync` para derivar `YYYY-MM` de `sheet_name` (ex.: `Mar2026`, `Jan26`).
-- Fallback para mês atual apenas se não conseguir inferir.
-- Log obrigatório: `tab`, `period_key`, `rowsExtracted`.
+1. **Main view**: Shows each bank's **closing balance** from `bank_balances`, with the bank name displayed above each value. Uses `AnimatedValue` for count-up animation and `GlassCard` with highlight variant.
 
-4) Persistência e validação pós-upsert
-- Upsert em `bank_balances` com conflito `user_id,connection_id,period_key,bank_name`.
-- Após upsert, confirmar com `count` por `user_id+connection_id+period_key`.
-- Logar warnings e contexto de erro sem abortar sync.
+2. **"Ver detalhes" drawer**: Opens a detailed view per bank showing:
+   - Opening balance, closing balance, and delta (variation)
+   - Month's transaction summary (total income/expense from `useHomeDashboard` data, since transactions aren't linked to specific banks)
 
-5) Garantir atualização imediata no front
-- `src/hooks/useGoogleSheets.ts`:
-  - Em `syncData.onSuccess`, invalidar também:
-    - `["bank-balances"]`
-    - `["home-dashboard"]`
-- (Opcional de diagnóstico) `useBankBalances.ts`: logar `periodKey` e quantidade retornada em modo dev.
+3. **Remove the separate `BankBalanceCard`** from HomePage (line 150), since the bank data is now integrated into "Caixa Atual".
 
-Teste de validação (end-to-end):
-- Executar sincronização manual da conexão ativa.
-- Verificar logs do `google-sheets-sync` contendo `[bank-balance]` com range e `period_key`.
-- Validar banco:
-  - `SELECT period_key, bank_name, opening_balance, closing_balance FROM bank_balances WHERE connection_id='<id>' ORDER BY bank_name;`
-- Validar UI Home:
-  - card mostra totais inicial/final,
-  - lista bancos (Sicredi/Caixinha etc.),
-  - “Ver detalhes” abre e exibe tabela completa.
-- Regressão:
-  - contagem de transações importadas permanece equivalente ao comportamento atual (sem quebra do pipeline A–F).
+### Files
 
-Critério de aceite final:
-- Mesmo usando sync padrão (`google-sheets-sync`), o card deixa de ficar vazio e passa a refletir os valores de H3:J5 (fallback H1:J20), com `period_key` correto e sem impacto no fluxo existente de transações.
+| File | Action |
+|------|--------|
+| `src/components/home/CaixaAtualCard.tsx` | **Create** — New premium card consuming `useBankBalances` + receiving `monthIncome`/`monthExpense` as props |
+| `src/pages/HomePage.tsx` | **Edit** — Replace `HomeKPICard` for "Caixa Atual" with `CaixaAtualCard`, remove standalone `BankBalanceCard`, pass transaction totals as props |
+
+### CaixaAtualCard Design
+
+- `GlassCard variant="highlight"` spanning `md:col-span-2`
+- Header: Wallet icon + "CAIXA ATUAL" label + tooltip + month subtitle
+- Body: Grid of bank cards, each showing:
+  - Bank name (bold, above value)
+  - Closing balance as large animated number (red if negative, green/default if positive)
+  - Small delta badge showing % change from opening
+- Footer: "Ver detalhes ›" button always visible
+- Drawer: Full breakdown per bank (opening/closing/delta) + overall month summary (entradas/saídas/resultado)
+- Staggered fade-in animations per bank card (120ms delay each)
+- Empty state falls back to showing `currentBalance` from transactions (existing behavior)
+
+### Data Flow
+
+```text
+useBankBalances(periodKey) → rows[] → CaixaAtualCard
+useHomeDashboard → monthIncome, monthExpense → passed as props for drawer details
+```
+
+No backend changes needed — all data already available.
+
