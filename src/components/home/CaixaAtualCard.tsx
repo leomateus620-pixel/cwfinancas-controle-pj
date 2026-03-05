@@ -89,19 +89,19 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                   style={{ animationDelay: `${delay + 120 * (idx + 1)}ms`, animationFillMode: "forwards" }}
                 >
                   {/* Bank identity */}
-                  <div className="flex items-center gap-2.5 mb-3">
+                  <div className="flex flex-col items-center mb-3">
                     {logo ? (
                       <img
                         src={logo}
                         alt={row.bank_name}
-                        className="w-8 h-8 rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-0.5 border border-white/50 dark:border-border/20"
+                        className="w-12 h-12 rounded-xl object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
                       />
                     ) : (
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-muted/40 border border-white/50 dark:border-border/20">
-                        <Wallet className="w-4 h-4 text-muted-foreground/60" />
+                      <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted/40 border border-white/50 dark:border-border/20">
+                        <Wallet className="w-5 h-5 text-muted-foreground/60" />
                       </div>
                     )}
-                    <p className="text-xs font-semibold tracking-wide text-muted-foreground/80 uppercase">
+                    <p className="text-xs font-semibold tracking-wide text-muted-foreground/80 uppercase mt-2">
                       {row.bank_name}
                     </p>
                   </div>
@@ -190,16 +190,16 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                         key={row.id}
                         className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
                       >
-                        <div className="flex items-center gap-2.5 mb-3">
+                        <div className="flex items-center gap-3 mb-3">
                           {logo ? (
                             <img
                               src={logo}
                               alt={row.bank_name}
-                              className="w-7 h-7 rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-0.5 border border-white/50 dark:border-border/20"
+                              className="w-10 h-10 rounded-xl object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
                             />
                           ) : (
-                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted/40">
-                              <Wallet className="w-3.5 h-3.5 text-muted-foreground/60" />
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/40">
+                              <Wallet className="w-4.5 h-4.5 text-muted-foreground/60" />
                             </div>
                           )}
                           <p className="text-sm font-semibold text-foreground">{row.bank_name}</p>
