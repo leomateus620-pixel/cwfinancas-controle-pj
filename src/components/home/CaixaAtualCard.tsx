@@ -53,13 +53,13 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
         <div className="flex items-start justify-between mb-5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/60">
-              <Wallet className="w-[18px] h-[18px] text-muted-foreground" />
+              <Wallet className="w-[18px] h-[18px] text-foreground/60" />
             </div>
             <div>
-              <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-widest">
+              <p className="text-foreground/80 text-[11px] font-semibold uppercase tracking-widest">
                 Caixa Atual
               </p>
-              <p className="text-muted-foreground/40 text-[10px] capitalize mt-0.5">{monthLabel}</p>
+              <p className="text-muted-foreground/70 text-[10px] capitalize mt-0.5">{monthLabel}</p>
             </div>
           </div>
           <Tooltip>
