@@ -515,6 +515,117 @@ function extractAmount(
   return { value: null, type: "income" };
 }
 
+// ============ Bank Balance Helpers ============
+
+const MONTH_MAP: Record<string, string> = {
+  jan: "01", janeiro: "01", january: "01",
+  fev: "02", fevereiro: "02", february: "02", feb: "02",
+  mar: "03", março: "03", marco: "03", march: "03",
+  abr: "04", abril: "04", april: "04", apr: "04",
+  mai: "05", maio: "05", may: "05",
+  jun: "06", junho: "06", june: "06",
+  jul: "07", julho: "07", july: "07",
+  ago: "08", agosto: "08", august: "08", aug: "08",
+  set: "09", setembro: "09", september: "09", sep: "09",
+  out: "10", outubro: "10", october: "10", oct: "10",
+  nov: "11", novembro: "11", november: "11",
+  dez: "12", dezembro: "12", december: "12", dec: "12",
+};
+
+/** Derive YYYY-MM from tab name like "Mar2026", "Jan26", "Fevereiro2026" */
+function derivePeriodKey(tabName: string): string {
+  const normalized = tabName.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  // Try pattern: MonthYear (e.g. Mar2026, Jan26, Fevereiro2026)
+  const m = normalized.match(/^([a-z]+)\s*(\d{2,4})$/);
+  if (m) {
+    const monthNum = MONTH_MAP[m[1]];
+    if (monthNum) {
+      let year = m[2];
+      if (year.length === 2) {
+        year = parseInt(year) > 50 ? `19${year}` : `20${year}`;
+      }
+      return `${year}-${monthNum}`;
+    }
+  }
+  // Fallback: current month
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Read bank balance block from dedicated H-J range */
+async function readBankBalanceRange(
+  accessToken: string,
+  spreadsheetId: string,
+  tabTitle: string,
+  requestId: string,
+): Promise<string[][]> {
+  const ranges = [`'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`];
+  for (const range of ranges) {
+    try {
+      const resp = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (!resp.ok) {
+        console.warn(`[${requestId}] [bank-balance] fetch ${range} failed: ${resp.status}`);
+        continue;
+      }
+      const data = await resp.json();
+      const vals: string[][] = data.values || [];
+      if (vals.length > 0) {
+        console.log(`[${requestId}] [bank-balance] range=${range} rows=${vals.length}`);
+        return vals;
+      }
+    } catch (e) {
+      console.warn(`[${requestId}] [bank-balance] error fetching ${range}:`, e);
+    }
+  }
+  return [];
+}
+
+/** Extract bank balances from 3-column H-J data */
+function extractBankBalances(
+  rows: string[][],
+  requestId: string,
+): Array<{ bank_name: string; opening: number | null; closing: number | null }> {
+  const results: Array<{ bank_name: string; opening: number | null; closing: number | null }> = [];
+
+  // Find data start: skip header/anchor rows
+  let startIdx = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const joined = (rows[i] || []).map(c => String(c || "").toLowerCase().trim()).join(" ");
+    if (joined.includes("saldo banc") || joined.includes("saldo inicial") || joined.includes("banco")) {
+      startIdx = i + 1;
+      break;
+    }
+  }
+  // If no header found, assume first row is header if it looks textual
+  if (startIdx === 0 && rows.length > 1) {
+    const firstCell = String(rows[0]?.[0] || "").trim().toLowerCase();
+    if (firstCell && parseBRL(firstCell) === null) {
+      startIdx = 1; // first row is header
+    }
+  }
+
+  for (let i = startIdx; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const bankName = String(row[0] || "").trim();
+    if (!bankName) break; // stop at first empty bank name
+
+    const opening = parseBRL(row[1]);
+    const closing = parseBRL(row[2]);
+
+    if (opening === null && closing === null) {
+      console.warn(`[${requestId}] [bank-balance] skipping "${bankName}": no valid values`);
+      continue;
+    }
+
+    results.push({ bank_name: bankName, opening, closing });
+  }
+
+  return results;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -899,6 +1010,68 @@ Deno.serve(async (req) => {
 
       console.log(`[${requestId}] Sync completed: read=${result.rows_read}, upserted=${result.rows_upserted}, skipped=${result.rows_skipped}, failed=${result.rows_failed}`);
       console.log(`[${requestId}] Skip breakdown:`, result.skip_breakdown);
+
+      // ===== BANK BALANCES EXTRACTION (soft fail — never blocks transactions) =====
+      try {
+        const tabName = connection.sheet_name || "Sheet1";
+        const periodKey = derivePeriodKey(tabName);
+        console.log(`[${requestId}] [bank-balance] tab=${tabName} period_key=${periodKey}`);
+
+        let bankBalanceRows: string[][] = [];
+
+        if (isXlsx) {
+          // For xlsx: extract columns H-J (indices 7-9) from the top 20 rows
+          const topRows = values.slice(0, 21); // include header row
+          bankBalanceRows = topRows.map(r => [
+            String(r[7] ?? ""),
+            String(r[8] ?? ""),
+            String(r[9] ?? ""),
+          ]);
+          console.log(`[${requestId}] [bank-balance] xlsx extracted ${bankBalanceRows.length} rows from cols H-J`);
+        } else if (accessToken) {
+          bankBalanceRows = await readBankBalanceRange(accessToken, connection.spreadsheet_id, tabName, requestId);
+        }
+
+        if (bankBalanceRows.length > 0) {
+          const extracted = extractBankBalances(bankBalanceRows, requestId);
+          console.log(`[${requestId}] [bank-balance] extracted ${extracted.length} bank(s)`);
+
+          if (extracted.length > 0) {
+            for (const bank of extracted) {
+              const { error: upsertErr } = await supabase
+                .from("bank_balances")
+                .upsert({
+                  user_id: userId,
+                  connection_id: connection_id,
+                  period_key: periodKey,
+                  bank_name: bank.bank_name,
+                  opening_balance: bank.opening,
+                  closing_balance: bank.closing,
+                  tab_name: tabName,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: "user_id,connection_id,period_key,bank_name" });
+
+              if (upsertErr) {
+                console.warn(`[${requestId}] [bank-balance] upsert error for ${bank.bank_name}:`, upsertErr.message);
+              }
+            }
+
+            // Confirm persistence
+            const { count } = await supabase
+              .from("bank_balances")
+              .select("*", { count: "exact", head: true })
+              .eq("user_id", userId)
+              .eq("connection_id", connection_id)
+              .eq("period_key", periodKey);
+            console.log(`[${requestId}] [bank-balance] confirmed persisted count=${count} period=${periodKey}`);
+          }
+        } else {
+          console.log(`[${requestId}] [bank-balance] no data found in H-J range`);
+        }
+      } catch (bankErr: unknown) {
+        const msg = bankErr instanceof Error ? bankErr.message : String(bankErr);
+        console.warn(`[${requestId}] [bank-balance] extraction failed (non-blocking): ${msg}`);
+      }
 
       return new Response(
         JSON.stringify({

@@ -347,6 +347,8 @@ export function useGoogleSheets() {
       queryClient.invalidateQueries({ queryKey: ["invoices"] });
       queryClient.invalidateQueries({ queryKey: ["balance-sheet"] });
       queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["bank-balances"] });
+      queryClient.invalidateQueries({ queryKey: ["home-dashboard"] });
       toast({
         title: "Sincronização concluída",
         description: `${data.rows_imported} linhas importadas de ${data.rows_processed} processadas.`,
