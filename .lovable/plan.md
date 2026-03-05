@@ -1,122 +1,94 @@
 
 
-## Plan: Add "Saldo Bancário" Card to Home Dashboard
+## Plan: Fix Bank Balance Extraction with Dedicated H-J Read
 
-This feature adds a new card to the Home page that reads bank balance data ("SALDO BANCÁRIO" block) directly from the spreadsheet during sync, stores it in a new table, and displays it in a Liquid Glass Premium card.
+### Root Cause
+The Google Sheets API returns ragged arrays — each row only contains columns up to the last non-empty cell in that row. If the "SALDO BANCÁRIO" block (columns H-J) is on rows that also have transaction data in A-F, the H-J data might exist at indices 7-9. But if those rows have empty A-G cells, the API may shift column positions. Most critically, the bank balance rows likely sit below the transaction data area, and those rows may only have content in H-J — meaning the API returns them at indices 0-2, not 7-9. This makes anchor detection unreliable.
 
-### Architecture Overview
-
-```text
-Spreadsheet Tab (e.g. Mar2026)
-  ┌──────────────────────────────────┐
-  │  ... transaction rows ...        │
-  │  SALDO BANCÁRIO                  │
-  │  Banco    | Saldo Inicial | Final│
-  │  Sicredi  | 55.757,94    | ...   │
-  │  Caixinha | ...           | ...   │
-  └──────────────────────────────────┘
-       │ (extracted during sync)
-       ▼
-  DB: bank_balances table
-       │ (queried by hook)
-       ▼
-  HomePage → BankBalanceCard
-```
-
-### Task 1: Create `bank_balances` database table
-
-New migration:
-
-```sql
-CREATE TABLE public.bank_balances (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  connection_id UUID REFERENCES public.google_sheet_connections(id) ON DELETE CASCADE,
-  period_key TEXT NOT NULL,          -- "2026-03"
-  bank_name TEXT NOT NULL,
-  opening_balance NUMERIC(14,2),     -- nullable = unknown
-  closing_balance NUMERIC(14,2),
-  tab_name TEXT,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(user_id, connection_id, period_key, bank_name)
-);
-
-ALTER TABLE public.bank_balances ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users can read own bank balances"
-  ON public.bank_balances FOR SELECT TO authenticated
-  USING (user_id = auth.uid());
-
-CREATE POLICY "Service can manage bank balances"
-  ON public.bank_balances FOR ALL TO service_role
-  USING (true) WITH CHECK (true);
-```
-
-### Task 2: Extract bank balances during sync
+### Solution: Second Targeted Read for H-J
 
 **File:** `supabase/functions/sheets-sync-all-tabs/index.ts`
 
-Add a function `extractBankBalances(rows, tab, parseBRL)` that:
-1. Scans rows for a cell containing "SALDO BANCÁRIO" (case-insensitive, accent-normalized)
-2. From that anchor, identifies the header row below it with "Saldo inicial" / "Saldo final" columns
-3. Reads bank rows below until empty row
-4. Returns `{ rows: [{bankName, opening, closing}], warnings: [] }`
+#### Change 1: Add a dedicated function to read bank balance range
 
-Call this function **after** the existing transaction processing loop for each tab, so it runs in parallel without interfering. Upsert results into `bank_balances` table using the unique constraint.
-
-### Task 3: Create `useBankBalances` hook
-
-**File:** `src/hooks/useBankBalances.ts`
-
-- Query `bank_balances` table filtered by current month's `period_key` (e.g. "2026-03")
-- Compute `openingTotal` and `closingTotal` sums
-- Return rows, totals, loading state, and empty state flag
-
-### Task 4: Create `BankBalanceCard` component
-
-**File:** `src/components/home/BankBalanceCard.tsx`
-
-Liquid Glass Premium card with:
-- Title "Saldo Bancário" + subtitle with month name
-- Two highlighted totals: Saldo Inicial / Saldo Final (formatted BRL)
-- List of banks (max 3 visible + "ver mais" expandable)
-- Each row: bank name + opening + closing values
-- Closing total < 0 → red highlight
-- Empty state: "Saldo bancário não encontrado na planilha deste mês."
-- Skeleton loading state
-- "Ver detalhes" opens a Drawer with full bank list + any warnings
-- Uses `GlassCard` with existing liquid-glass classes
-
-### Task 5: Integrate card into HomePage
-
-**File:** `src/pages/HomePage.tsx`
-
-Add `BankBalanceCard` to the bottom grid row (currently 3 cards in `lg:grid-cols-3`). Change to `lg:grid-cols-4` or place it in the KPI mosaic area as a 2-col span card alongside "Caixa Atual". Position it prominently since it's balance data.
-
-Place it after the KPI grid and before the middle row, as a standalone full-width-ish card:
-```
-<BankBalanceCard periodKey={currentPeriodKey} delay={240} />
+```typescript
+async function readBankBalanceRange(
+  accessToken: string,
+  spreadsheetId: string,
+  tabTitle: string,
+  requestId: string
+): Promise<string[][]> {
+  // Try tight range first (H3:J5), then fallback to H1:J20
+  for (const range of [`'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`]) {
+    const resp = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!resp.ok) continue;
+    const data = await resp.json();
+    const values: string[][] = data.values || [];
+    if (values.length > 0) {
+      console.log(`[${requestId}] [bank-balance] tab=${tabTitle} range=${range} rows=${values.length}`);
+      return values;
+    }
+  }
+  return [];
+}
 ```
 
-### Task 6: Update `useHomeDashboard` (minimal)
+#### Change 2: Update `extractBankBalances` to work with 3-column H-J data
 
-Add the current period key export (`format(now, "yyyy-MM")`) so HomePage can pass it to the bank balance card. The bank balance hook is separate — not embedded in useHomeDashboard — to keep concerns isolated.
+When called with the dedicated H-J read (3 columns only), the function should:
+- Col 0 = bank name or "SALDO BANCÁRIO" header
+- Col 1 = opening balance / "Saldo inicial"  
+- Col 2 = closing balance / "Saldo final"
 
-### Files to create/modify
+Detect header row (containing "SALDO BANCÁRIO" or "Saldo inicial"/"Saldo final"), then read bank rows below it. This is simpler since columns are always 0, 1, 2.
 
-| File | Action |
+#### Change 3: Replace current bank balance extraction call (line ~1489-1518)
+
+Instead of calling `extractBankBalances(allRows, ...)` with the transaction data, do a separate read:
+
+```typescript
+// ===== BANK BALANCES EXTRACTION (soft fail) =====
+try {
+  let bankBalanceRows: string[][] = [];
+  if (!xlsxWorkbook && accessToken) {
+    bankBalanceRows = await readBankBalanceRange(accessToken, connection.spreadsheet_id, tab.title, requestId);
+  } else if (xlsxWorkbook) {
+    // For xlsx: extract H-J columns from allRows (indices 7-9)
+    bankBalanceRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]);
+  }
+  
+  if (bankBalanceRows.length > 0) {
+    const bankBalances = extractBankBalances(bankBalanceRows, tab, parseBRL);
+    // ... upsert as before
+  }
+} catch ...
+```
+
+#### Change 4: Simplify `extractBankBalances` for 3-column input
+
+Since the input will always be a 3-column array (col 0=bank/header, col 1=opening, col 2=closing):
+- Scan for anchor ("saldo bancario") or header ("saldo inicial") in row
+- If not found, assume row 0 is header (for tight range H3:J3)
+- Read data rows from header+1 onward
+- `bankNameCol=0`, `openingCol=1`, `closingCol=2`
+
+#### Change 5: Add confirmation log after upsert
+
+```typescript
+const { count } = await supabase.from("bank_balances")
+  .select("*", { count: "exact", head: true })
+  .eq("user_id", userId)
+  .eq("period_key", tab.periodKey || format_period_now());
+console.log(`[bank-balance] confirm persisted count=${count} tab=${tab.title} period=${tab.periodKey}`);
+```
+
+### Files to modify
+| File | Change |
 |------|--------|
-| Migration SQL | Create `bank_balances` table |
-| `supabase/functions/sheets-sync-all-tabs/index.ts` | Add `extractBankBalances()` + upsert after tab processing |
-| `src/hooks/useBankBalances.ts` | New hook to query bank balances |
-| `src/components/home/BankBalanceCard.tsx` | New Liquid Glass Premium card |
-| `src/pages/HomePage.tsx` | Add BankBalanceCard to layout |
+| `supabase/functions/sheets-sync-all-tabs/index.ts` | Add `readBankBalanceRange()`, rewrite extraction call to use dedicated H-J read, simplify `extractBankBalances` for 3-col input, add confirmation logs |
 
-### Error handling
-
-- If "SALDO BANCÁRIO" block not found → no rows inserted, card shows empty state
-- Parse failures → null values + warnings logged in sync audit
-- Card never blocks the rest of Home — fully independent query
-- Sync never fails due to bank balance extraction — wrapped in try/catch with soft fail
+No changes needed to `useBankBalances.ts` or `BankBalanceCard.tsx` — the frontend is correct, it just has no data to display.
 
