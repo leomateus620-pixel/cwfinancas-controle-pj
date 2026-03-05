@@ -175,7 +175,7 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
               {/* Per-bank breakdown */}
               {hasBanks && (
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                    <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                     Saldos por Banco
                   </h4>
                   {rows.map((row) => {
@@ -206,18 +206,18 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                         </div>
                         <div className="grid grid-cols-3 gap-3">
                           <div>
-                            <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Inicial</p>
-                            <p className="text-sm font-medium tabular-nums text-foreground/80">{formatCompactBR(opening)}</p>
+                            <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Inicial</p>
+                            <p className="text-sm font-medium tabular-nums text-foreground">{formatCompactBR(opening)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Final</p>
+                            <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Final</p>
                             <p className="text-sm font-medium tabular-nums text-foreground">{formatCompactBR(closing)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Variação</p>
+                            <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Variação</p>
                             <p className={cn(
                               "text-sm font-medium tabular-nums flex items-center gap-1",
-                              deltaPositive ? "text-foreground/70" : "text-destructive/80"
+                              deltaPositive ? "text-foreground" : "text-destructive"
                             )}>
                               {deltaPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                               {formatCompactBR(Math.abs(delta))}
@@ -232,23 +232,23 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
 
               {/* Monthly summary */}
               <div className="space-y-3">
-                <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
+                <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   Movimentações do Mês
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
-                    <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Entradas</p>
+                    <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Entradas</p>
                     <p className="text-base font-semibold tabular-nums text-foreground">{formatCompactBR(monthIncome)}</p>
                   </div>
                   <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
-                    <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Saídas</p>
+                    <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Saídas</p>
                     <p className="text-base font-semibold tabular-nums text-foreground">{formatCompactBR(monthExpense)}</p>
                   </div>
                   <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
-                    <p className="text-[10px] text-muted-foreground/50 uppercase tracking-wider mb-1">Resultado</p>
+                    <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Resultado</p>
                     <p className={cn(
                       "text-base font-semibold tabular-nums",
-                      monthResult >= 0 ? "text-foreground" : "text-destructive/80"
+                      monthResult >= 0 ? "text-foreground" : "text-destructive"
                     )}>
                       {formatCompactBR(monthResult)}
                     </p>
