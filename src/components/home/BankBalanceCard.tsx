@@ -10,9 +10,10 @@ import {
   DrawerTitle,
   DrawerDescription,
 } from "@/components/ui/drawer";
-import { Landmark, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
+import { Landmark, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { format, parse } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { AnimatedValue } from "@/components/ui/animated-value";
 
 interface BankBalanceCardProps {
   periodKey?: string;
@@ -20,11 +21,9 @@ interface BankBalanceCardProps {
 }
 
 export function BankBalanceCard({ periodKey, delay = 0 }: BankBalanceCardProps) {
-  const { rows, openingTotal, closingTotal, isLoading, isEmpty, periodKey: pk } = useBankBalances(periodKey);
-  const [expanded, setExpanded] = useState(false);
+  const { rows, isLoading, isEmpty, periodKey: pk } = useBankBalances(periodKey);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Format month label
   let monthLabel = "Mês atual";
   try {
     const d = parse(pk, "yyyy-MM", new Date());
@@ -32,24 +31,20 @@ export function BankBalanceCard({ periodKey, delay = 0 }: BankBalanceCardProps) 
     monthLabel = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
   } catch { /* fallback */ }
 
-  const visibleRows = expanded ? rows : rows.slice(0, 3);
-  const hasMore = rows.length > 3;
-
   if (isLoading) {
     return (
       <GlassCard className="p-6" variant="highlight">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-5">
           <Skeleton className="h-10 w-10 rounded-xl" />
           <div className="space-y-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-3 w-24" />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <Skeleton className="h-16 rounded-xl" />
-          <Skeleton className="h-16 rounded-xl" />
+        <div className="space-y-4">
+          <Skeleton className="h-24 rounded-2xl" />
+          <Skeleton className="h-24 rounded-2xl" />
         </div>
-        <Skeleton className="h-10 w-full rounded-lg" />
       </GlassCard>
     );
   }
@@ -73,73 +68,117 @@ export function BankBalanceCard({ periodKey, delay = 0 }: BankBalanceCardProps) 
     );
   }
 
-  const isClosingNegative = (closingTotal ?? 0) < 0;
-
   return (
     <>
       <GlassCard
-        className={`p-6 animate-in fade-in slide-in-from-bottom-2`}
+        className="p-6 animate-in fade-in slide-in-from-bottom-2"
         variant="highlight"
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10 shadow-sm">
               <Landmark className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-foreground">Saldo Bancário</h3>
-              <p className="text-xs text-muted-foreground">{monthLabel}</p>
+              <h3 className="text-sm font-semibold text-foreground tracking-tight">Saldo Bancário</h3>
+              <p className="text-xs text-muted-foreground/70">{monthLabel}</p>
             </div>
           </div>
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="text-xs text-primary hover:text-primary/80 font-medium transition-colors"
-          >
-            Ver detalhes
-          </button>
+          {rows.length > 2 && (
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+            >
+              Ver detalhes
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
-        {/* Totals */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="rounded-xl bg-muted/30 p-3 text-center">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Saldo Inicial</p>
-            <p className="text-lg font-bold text-foreground">
-              {openingTotal !== null ? formatCurrencyBR(openingTotal) : "—"}
-            </p>
-          </div>
-          <div className={`rounded-xl p-3 text-center ${isClosingNegative ? "bg-destructive/10" : "bg-muted/30"}`}>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Saldo Final</p>
-            <p className={`text-lg font-bold ${isClosingNegative ? "text-destructive" : "text-foreground"}`}>
-              {closingTotal !== null ? formatCurrencyBR(closingTotal) : "—"}
-            </p>
-          </div>
-        </div>
+        {/* Individual Bank Cards */}
+        <div className="space-y-3">
+          {rows.map((row, idx) => {
+            const opening = row.opening_balance ?? 0;
+            const closing = row.closing_balance ?? 0;
+            const delta = closing - opening;
+            const deltaPercent = opening !== 0 ? (delta / Math.abs(opening)) * 100 : 0;
+            const isNegativeDelta = delta < 0;
+            const isPositiveDelta = delta > 0;
 
-        {/* Bank list */}
-        <div className="space-y-2">
-          {visibleRows.map((row) => (
-            <div key={row.id || row.bank_name} className="flex items-center justify-between text-sm py-1.5 border-b border-border/30 last:border-0">
-              <span className="text-foreground/80 font-medium truncate max-w-[40%]">{row.bank_name}</span>
-              <div className="flex gap-4 text-xs text-muted-foreground">
-                <span>{row.opening_balance !== null ? formatCurrencyBR(row.opening_balance) : "—"}</span>
-                <span className={(row.closing_balance ?? 0) < 0 ? "text-destructive" : ""}>
-                  {row.closing_balance !== null ? formatCurrencyBR(row.closing_balance) : "—"}
-                </span>
+            return (
+              <div
+                key={row.id || row.bank_name}
+                className="relative rounded-2xl border border-border/40 bg-gradient-to-br from-card/80 to-muted/20 p-4 backdrop-blur-sm transition-all duration-300 hover:shadow-md hover:border-border/60 group"
+                style={{ animationDelay: `${(idx + 1) * 120}ms` }}
+              >
+                {/* Bank Name + Delta Badge */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary/60" />
+                    <span className="text-sm font-semibold text-foreground tracking-tight">
+                      {row.bank_name}
+                    </span>
+                  </div>
+                  <div
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide ${
+                      isPositiveDelta
+                        ? "bg-emerald-500/10 text-emerald-600"
+                        : isNegativeDelta
+                        ? "bg-destructive/10 text-destructive"
+                        : "bg-muted/50 text-muted-foreground"
+                    }`}
+                  >
+                    {isPositiveDelta ? (
+                      <TrendingUp className="w-3 h-3" />
+                    ) : isNegativeDelta ? (
+                      <TrendingDown className="w-3 h-3" />
+                    ) : (
+                      <Minus className="w-3 h-3" />
+                    )}
+                    {Math.abs(deltaPercent).toFixed(1)}%
+                  </div>
+                </div>
+
+                {/* Values Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-medium">
+                      Saldo Inicial
+                    </p>
+                    <p className="text-base font-bold text-foreground tabular-nums">
+                      <AnimatedValue
+                        value={opening}
+                        prefix="R$ "
+                        format="currency"
+                        decimals={2}
+                        duration={1200 + idx * 200}
+                        color="default"
+                      />
+                    </p>
+                  </div>
+                  <div className="space-y-1 text-right">
+                    <p className="text-[10px] uppercase tracking-widest text-muted-foreground/60 font-medium">
+                      Saldo Final
+                    </p>
+                    <p className={`text-base font-bold tabular-nums ${
+                      (row.closing_balance ?? 0) < 0 ? "text-destructive" : "text-foreground"
+                    }`}>
+                      <AnimatedValue
+                        value={closing}
+                        prefix="R$ "
+                        format="currency"
+                        decimals={2}
+                        duration={1400 + idx * 200}
+                        color={(row.closing_balance ?? 0) < 0 ? "danger" : "default"}
+                      />
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
-
-        {hasMore && (
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 mt-2 mx-auto transition-colors"
-          >
-            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {expanded ? "Ver menos" : `Ver mais (${rows.length - 3})`}
-          </button>
-        )}
       </GlassCard>
 
       {/* Detail Drawer */}
@@ -149,42 +188,36 @@ export function BankBalanceCard({ periodKey, delay = 0 }: BankBalanceCardProps) 
             <DrawerTitle>Saldo Bancário — {monthLabel}</DrawerTitle>
             <DrawerDescription>Detalhamento por banco</DrawerDescription>
           </DrawerHeader>
-          <div className="px-4 pb-6 max-h-[60vh] overflow-y-auto">
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div className="rounded-xl bg-muted/30 p-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">Total Inicial</p>
-                <p className="text-base font-bold">{openingTotal !== null ? formatCurrencyBR(openingTotal) : "—"}</p>
-              </div>
-              <div className={`rounded-xl p-3 text-center ${isClosingNegative ? "bg-destructive/10" : "bg-muted/30"}`}>
-                <p className="text-xs text-muted-foreground mb-1">Total Final</p>
-                <p className={`text-base font-bold ${isClosingNegative ? "text-destructive" : ""}`}>
-                  {closingTotal !== null ? formatCurrencyBR(closingTotal) : "—"}
-                </p>
-              </div>
-            </div>
+          <div className="px-4 pb-6 max-h-[60vh] overflow-y-auto space-y-3">
+            {rows.map((row) => {
+              const opening = row.opening_balance ?? 0;
+              const closing = row.closing_balance ?? 0;
+              const delta = closing - opening;
 
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left py-2 text-muted-foreground font-medium">Banco</th>
-                  <th className="text-right py-2 text-muted-foreground font-medium">Saldo Inicial</th>
-                  <th className="text-right py-2 text-muted-foreground font-medium">Saldo Final</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id || row.bank_name} className="border-b border-border/30">
-                    <td className="py-2 text-foreground font-medium">{row.bank_name}</td>
-                    <td className="py-2 text-right text-muted-foreground">
-                      {row.opening_balance !== null ? formatCurrencyBR(row.opening_balance) : "—"}
-                    </td>
-                    <td className={`py-2 text-right ${(row.closing_balance ?? 0) < 0 ? "text-destructive" : "text-muted-foreground"}`}>
-                      {row.closing_balance !== null ? formatCurrencyBR(row.closing_balance) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              return (
+                <div key={row.id || row.bank_name} className="rounded-xl border border-border/40 p-4">
+                  <p className="text-sm font-semibold text-foreground mb-2">{row.bank_name}</p>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground mb-0.5">Inicial</p>
+                      <p className="text-sm font-bold">{formatCurrencyBR(opening)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground mb-0.5">Final</p>
+                      <p className={`text-sm font-bold ${closing < 0 ? "text-destructive" : ""}`}>
+                        {formatCurrencyBR(closing)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase text-muted-foreground mb-0.5">Variação</p>
+                      <p className={`text-sm font-bold ${delta < 0 ? "text-destructive" : delta > 0 ? "text-emerald-600" : ""}`}>
+                        {delta >= 0 ? "+" : ""}{formatCurrencyBR(delta)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </DrawerContent>
       </Drawer>
