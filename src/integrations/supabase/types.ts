@@ -156,6 +156,53 @@ export type Database = {
         }
         Relationships: []
       }
+      bank_balances: {
+        Row: {
+          bank_name: string
+          closing_balance: number | null
+          connection_id: string | null
+          created_at: string | null
+          id: string
+          opening_balance: number | null
+          period_key: string
+          tab_name: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          bank_name: string
+          closing_balance?: number | null
+          connection_id?: string | null
+          created_at?: string | null
+          id?: string
+          opening_balance?: number | null
+          period_key: string
+          tab_name?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          bank_name?: string
+          closing_balance?: number | null
+          connection_id?: string | null
+          created_at?: string | null
+          id?: string
+          opening_balance?: number | null
+          period_key?: string
+          tab_name?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bank_balances_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dre_lines: {
         Row: {
           created_at: string | null

@@ -8,6 +8,7 @@ import { TopCategories } from "@/components/home/TopCategories";
 import { ProfitQuality } from "@/components/home/ProfitQuality";
 import { HomeEmptyState } from "@/components/home/HomeEmptyState";
 import { HomeSkeletonLoading } from "@/components/home/HomeSkeletonLoading";
+import { BankBalanceCard } from "@/components/home/BankBalanceCard";
 import {
   Wallet,
   TrendingUp,
@@ -18,6 +19,8 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatCompactBR } from "@/lib/currency";
+
+const currentPeriodKey = format(new Date(), "yyyy-MM");
 
 export default function HomePage() {
   const data = useHomeDashboard();
@@ -142,6 +145,9 @@ export default function HomePage() {
                 delay={360}
               />
             </div>
+
+            {/* Bank Balance Card */}
+            <BankBalanceCard periodKey={currentPeriodKey} delay={240} />
 
             {/* Middle row: Summary + Health */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
