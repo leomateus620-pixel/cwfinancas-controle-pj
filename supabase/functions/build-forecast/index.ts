@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.93.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 interface MonthlyData {
@@ -16,29 +16,29 @@ interface MonthlyData {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Auth client to get user
+    // Auth: use getUser instead of getClaims
     const authClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await authClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    const { data: { user }, error: authError } = await authClient.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const userId = claimsData.claims.sub as string;
+    const userId = user.id;
 
     // Service role client for data access
     const db = createClient(supabaseUrl, supabaseServiceKey);
@@ -47,17 +47,13 @@ Deno.serve(async (req) => {
     const horizonMonths = horizon === "3m" ? 3 : horizon === "12m" ? 12 : 6;
 
     // ========== STEP 1: Consolidate monthly dataset ==========
-    let txQuery = db
+    // Always fetch ALL user transactions (don't filter by source_sheet_id)
+    const { data: transactions, error: txError } = await db
       .from("transactions")
       .select("date, amount, type, category")
       .eq("user_id", userId)
       .order("date", { ascending: true });
 
-    if (sheet_id) {
-      txQuery = txQuery.eq("source_sheet_id", sheet_id);
-    }
-
-    const { data: transactions, error: txError } = await txQuery;
     if (txError) throw txError;
 
     if (!transactions || transactions.length === 0) {
@@ -126,8 +122,6 @@ Deno.serve(async (req) => {
 
       if (dreLines) {
         const periodKeyMap = new Map(drePeriods.map((p: any) => [p.id, p.period_key]));
-
-        // Group DRE lines by period
         const dreByPeriod = new Map<string, any[]>();
         for (const line of dreLines) {
           const pk = periodKeyMap.get(line.period_id) as string;
@@ -141,7 +135,6 @@ Deno.serve(async (req) => {
           const lines = dreByPeriod.get(rd.month_key);
           if (!lines || lines.length === 0) continue;
 
-          // Extract DRE KPIs using same logic as useDRE
           const findSubtotal = (kw: string) => lines.find((l: any) => l.is_subtotal && normalize(l.line_label).includes(kw));
           const findGroup = (kw: string) => lines.find((l: any) => l.is_group && normalize(l.line_label).includes(kw));
           const groupSum = (kw: string) => lines
@@ -157,10 +150,6 @@ Deno.serve(async (req) => {
           const despTotalLine = findSubtotal("despesas totais") || findSubtotal("total despesas");
           const despesasTotaisDre = despTotalLine ? Math.abs(Number(despTotalLine.value)) : Math.abs(groupSum("despesa"));
 
-          const resultadoLine = findSubtotal("resultado");
-          const resultadoDre = resultadoLine ? Number(resultadoLine.value) : receitaLiquidaDre - despesasTotaisDre;
-
-          // Check differences
           const diffReceita = rd.receita_real > 0 && receitaLiquidaDre > 0
             ? Math.abs(rd.receita_real - receitaLiquidaDre) / receitaLiquidaDre
             : 0;
@@ -176,10 +165,8 @@ Deno.serve(async (req) => {
               diff_despesa_pct: Math.round(diffDespesa * 100),
               dre_receita: receitaLiquidaDre,
               dre_despesa: despesasTotaisDre,
-              dre_resultado: resultadoDre,
             });
 
-            // Apply calibration: use DRE as reference
             if (receitaLiquidaDre > 0 && diffReceita > 0.15) {
               rd.receita_real = receitaLiquidaDre;
             }
@@ -195,14 +182,13 @@ Deno.serve(async (req) => {
     // ========== STEP 3: Baseline deterministic forecast ==========
     const receitaSeries = realData.map((d) => d.receita_real);
     const despesaSeries = realData.map((d) => d.despesa_real);
-    const saldoSeries = realData.map((d) => d.saldo_real);
 
     function weightedMovingAvg(series: number[]): number {
       const n = series.length;
       let weightSum = 0;
       let valSum = 0;
       for (let i = 0; i < n; i++) {
-        const w = i + 1; // more recent = higher weight
+        const w = i + 1;
         valSum += series[i] * w;
         weightSum += w;
       }
@@ -232,15 +218,10 @@ Deno.serve(async (req) => {
 
     const recAvg = weightedMovingAvg(receitaSeries);
     const despAvg = weightedMovingAvg(despesaSeries);
-    const saldoAvg = weightedMovingAvg(saldoSeries);
-
     const recSlope = linearSlope(receitaSeries);
     const despSlope = linearSlope(despesaSeries);
-    const saldoSlope = linearSlope(saldoSeries);
-
     const recStd = stdDev(receitaSeries);
     const despStd = stdDev(despesaSeries);
-    const saldoStd = stdDev(saldoSeries);
 
     const n = realData.length;
 
@@ -256,7 +237,6 @@ Deno.serve(async (req) => {
       const monthKey = `${fYear}-${String(fMonth).padStart(2, "0")}`;
       const idx = n + i - 1;
 
-      // Seasonality: check same month from previous data
       const sameMonthData = realData.filter((d) => d.month_key.endsWith(`-${String(fMonth).padStart(2, "0")}`));
       let seasonalFactorRec = 1;
       let seasonalFactorDesp = 1;
@@ -265,12 +245,10 @@ Deno.serve(async (req) => {
         const avgDesp = despesaSeries.reduce((a, b) => a + b, 0) / n;
         if (avgRec > 0) seasonalFactorRec = sameMonthData[sameMonthData.length - 1].receita_real / avgRec;
         if (avgDesp > 0) seasonalFactorDesp = sameMonthData[sameMonthData.length - 1].despesa_real / avgDesp;
-        // Dampen seasonality (don't overfit)
         seasonalFactorRec = 1 + (seasonalFactorRec - 1) * 0.5;
         seasonalFactorDesp = 1 + (seasonalFactorDesp - 1) * 0.5;
       }
 
-      // Dampen slope in low data mode to avoid overfitting with 2-3 points
       const slopeDampen = lowDataMode ? 0.3 : 1.0;
       const recBase = Math.max(0, (recAvg + recSlope * idx * slopeDampen) * seasonalFactorRec);
       const despBase = Math.max(0, (despAvg + despSlope * idx * slopeDampen) * seasonalFactorDesp);
@@ -287,7 +265,7 @@ Deno.serve(async (req) => {
         saldo_prev_base: Math.round(saldoBase),
         receita_prev_opt: Math.round(recBase + recStd),
         receita_prev_pess: Math.round(Math.max(0, recBase - recStd)),
-        despesa_prev_opt: Math.round(Math.max(0, despBase - despStd)), // less expense = optimistic
+        despesa_prev_opt: Math.round(Math.max(0, despBase - despStd)),
         despesa_prev_pess: Math.round(despBase + despStd),
         saldo_prev_opt: Math.round(recBase + recStd - Math.max(0, despBase - despStd)),
         saldo_prev_pess: Math.round(Math.max(0, recBase - recStd) - (despBase + despStd)),
@@ -305,16 +283,16 @@ Deno.serve(async (req) => {
     else if (cv > 0.2) confidence -= 8;
     const warningCount = realData.filter((d) => d.validation_status === "warning").length;
     if (warningCount > 0) confidence -= warningCount * 5;
-    // DRE validation bonus: if DRE matched all months, boost confidence
     const dreValidatedCount = drePeriods ? drePeriods.length : 0;
     if (dreValidatedCount > 0 && warningCount === 0) confidence += Math.min(10, dreValidatedCount * 5);
     confidence = Math.max(10, Math.min(100, confidence));
 
     // ========== STEP 4: Upsert to database ==========
+    // Store with sheet_id=null since we aggregate all transactions
     const allRows = [
       ...realData.map((d) => ({
         user_id: userId,
-        sheet_id: sheet_id || null,
+        sheet_id: null,
         month_key: d.month_key,
         receita_real: d.receita_real,
         despesa_real: d.despesa_real,
@@ -335,23 +313,18 @@ Deno.serve(async (req) => {
       })),
       ...forecastData.map((d) => ({
         user_id: userId,
-        sheet_id: sheet_id || null,
+        sheet_id: null,
         ...d,
         confidence_score: confidence,
       })),
     ];
 
-    // Delete existing data for this user/sheet, then insert fresh
-    let deleteQuery = db
+    // Delete existing data for this user (sheet_id=null)
+    await db
       .from("forecast_monthly")
       .delete()
-      .eq("user_id", userId);
-    if (sheet_id) {
-      deleteQuery = deleteQuery.eq("sheet_id", sheet_id);
-    } else {
-      deleteQuery = deleteQuery.is("sheet_id", null);
-    }
-    await deleteQuery;
+      .eq("user_id", userId)
+      .is("sheet_id", null);
 
     const { error: insertError } = await db
       .from("forecast_monthly")
