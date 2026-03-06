@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   LineChart as LineChartIcon,
   Calendar,
@@ -18,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useForecast } from "@/hooks/useForecast";
-import { useGoogleSheets } from "@/hooks/useGoogleSheets";
+
 import { ForecastChart } from "@/components/forecast/ForecastChart";
 import { ForecastKPIs } from "@/components/forecast/ForecastKPIs";
 import { ForecastCashFlow } from "@/components/forecast/ForecastCashFlow";
@@ -26,10 +25,6 @@ import { ForecastInsightsPanel } from "@/components/forecast/ForecastInsightsPan
 
 export function ForecastsPage() {
   const [horizon, setHorizon] = useState("6m");
-  const navigate = useNavigate();
-  const { connections } = useGoogleSheets();
-  const activeSheet = connections?.[0];
-
   const {
     forecastData,
     insights,
@@ -40,7 +35,7 @@ export function ForecastsPage() {
     hasData,
     validationWarnings,
     confidence,
-  } = useForecast(activeSheet?.id);
+  } = useForecast();
 
   const realMonths = forecastData.filter((d) => !d.is_forecast);
   const forecastMonths = forecastData.filter((d) => d.is_forecast);

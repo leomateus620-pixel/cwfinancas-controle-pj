@@ -41,3 +41,9 @@ verify_jwt = false
 
 [functions.rebuild-categories]
 verify_jwt = false
+
+[functions.build-forecast]
+verify_jwt = false
+
+[functions.forecast-insights]
+verify_jwt = false

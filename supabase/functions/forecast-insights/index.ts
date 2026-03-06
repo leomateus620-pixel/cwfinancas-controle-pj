@@ -2,18 +2,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.93.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders });
   }
 
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -25,29 +25,23 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await authClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    const { data: { user }, error: authError } = await authClient.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const userId = claimsData.claims.sub as string;
+    const userId = user.id;
 
     const db = createClient(supabaseUrl, supabaseServiceKey);
-    const { sheet_id, horizon = "6m" } = await req.json();
+    const { horizon = "6m" } = await req.json();
 
-    // Fetch forecast data
-    let query = db
+    // Fetch forecast data (always sheet_id=null since we aggregate all)
+    const { data: forecastData, error: fError } = await db
       .from("forecast_monthly")
       .select("*")
       .eq("user_id", userId)
+      .is("sheet_id", null)
       .order("month_key", { ascending: true });
 
-    if (sheet_id) {
-      query = query.eq("sheet_id", sheet_id);
-    } else {
-      query = query.is("sheet_id", null);
-    }
-
-    const { data: forecastData, error: fError } = await query;
     if (fError) throw fError;
     if (!forecastData || forecastData.length === 0) {
       return new Response(
@@ -59,13 +53,11 @@ Deno.serve(async (req) => {
     const realMonths = forecastData.filter((d: any) => !d.is_forecast);
     const predictedMonths = forecastData.filter((d: any) => d.is_forecast);
 
-    // Compute derived metrics
     const receitaReal = realMonths.map((d: any) => Number(d.receita_real));
     const despesaReal = realMonths.map((d: any) => Number(d.despesa_real));
     const avgReceita = receitaReal.reduce((a: number, b: number) => a + b, 0) / receitaReal.length;
     const avgDespesa = despesaReal.reduce((a: number, b: number) => a + b, 0) / despesaReal.length;
 
-    // Trend
     const recentReceita = receitaReal.slice(-3);
     const olderReceita = receitaReal.slice(0, 3);
     const receitaTrend = recentReceita.length > 0 && olderReceita.length > 0
@@ -85,7 +77,6 @@ Deno.serve(async (req) => {
 
     const formatBRL = (v: number) => `R$ ${(v / 1000).toFixed(0)}k`;
 
-    // Build prompt
     const prompt = `Você é um CFO virtual analisando projeções financeiras de uma empresa brasileira.
 Dados históricos (${realMonths.length} meses): receita média ${formatBRL(avgReceita)}/mês, despesa média ${formatBRL(avgDespesa)}/mês.
 Tendência de receita nos últimos 3 meses vs primeiros 3 meses: ${receitaTrend > 0 ? "+" : ""}${receitaTrend.toFixed(1)}%.
@@ -110,7 +101,6 @@ Regras:
 - Tom direto, profissional, estilo "resumo do CFO".
 - Responda APENAS o JSON, sem markdown.`;
 
-    // Call Lovable AI
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -133,8 +123,6 @@ Regras:
 
     const aiData = await aiResponse.json();
     let content = aiData.choices?.[0]?.message?.content || "";
-
-    // Clean markdown fences if present
     content = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
     let parsed;
@@ -151,19 +139,12 @@ Regras:
       };
     }
 
-    // Save to forecast_insights
-    // Delete previous insights for this user/sheet/horizon
-    let delQuery = db.from("forecast_insights").delete().eq("user_id", userId).eq("horizon", horizon);
-    if (sheet_id) {
-      delQuery = delQuery.eq("sheet_id", sheet_id);
-    } else {
-      delQuery = delQuery.is("sheet_id", null);
-    }
-    await delQuery;
+    // Delete previous insights for this user (sheet_id=null)
+    await db.from("forecast_insights").delete().eq("user_id", userId).is("sheet_id", null).eq("horizon", horizon);
 
     const { error: insError } = await db.from("forecast_insights").insert({
       user_id: userId,
-      sheet_id: sheet_id || null,
+      sheet_id: null,
       horizon,
       summary: parsed.summary || null,
       insights: parsed.insights || [],
