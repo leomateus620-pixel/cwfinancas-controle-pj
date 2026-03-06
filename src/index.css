@@ -804,3 +804,134 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transform: translateY(-1px);
 }
+
+/* ============================================
+   LIQUID GLASS - CAIXA ATUAL PREMIUM
+   ============================================ */
+
+.liquid-glass-caixa {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(32px) saturate(140%);
+  -webkit-backdrop-filter: blur(32px) saturate(140%);
+  border: 1px solid rgba(45, 126, 243, 0.12);
+  border-top: 1px solid rgba(255, 255, 255, 0.85);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
+  box-shadow:
+    0 12px 40px rgba(15, 23, 42, 0.06),
+    0 4px 16px rgba(45, 126, 243, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition: all 300ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.liquid-glass-caixa::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    transparent 40%,
+    rgba(45, 126, 243, 0.02) 70%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.liquid-glass-caixa::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.liquid-glass-caixa > * {
+  position: relative;
+  z-index: 1;
+}
+
+.liquid-glass-caixa:hover {
+  border-color: rgba(45, 126, 243, 0.2);
+  box-shadow:
+    0 16px 48px rgba(15, 23, 42, 0.08),
+    0 6px 20px rgba(45, 126, 243, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 1px 0 0 rgba(255, 255, 255, 0.4);
+}
+
+.liquid-glass-bank-card {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(16px) saturate(115%);
+  -webkit-backdrop-filter: blur(16px) saturate(115%);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 18px;
+  box-shadow:
+    0 4px 16px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition: all 300ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.liquid-glass-bank-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.liquid-glass-bank-card:hover {
+  border-color: rgba(45, 126, 243, 0.12);
+  box-shadow:
+    0 8px 28px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transform: translateY(-1px) scale(1.005);
+}
+
+.liquid-glass-chip {
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 200ms ease;
+}
+
+.liquid-glass-chip:hover {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(15, 23, 42, 0.1);
+}
+
+.liquid-glass-chip-active {
+  background: rgba(45, 126, 243, 0.08);
+  border: 1px solid rgba(45, 126, 243, 0.2);
+  box-shadow: 0 0 12px rgba(45, 126, 243, 0.06);
+}
+
+.liquid-glass-detail-card {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px) saturate(110%);
+  -webkit-backdrop-filter: blur(12px) saturate(110%);
+  border: 1px solid rgba(15, 23, 42, 0.05);
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 16px;
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: all 200ms ease;
+}
