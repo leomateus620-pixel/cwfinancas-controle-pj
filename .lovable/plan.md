@@ -1,12 +1,22 @@
 
 
-## Plan: Improve Header Text Contrast in Caixa Atual Card
+## Plan: Change Empty State Button to Generate Forecast
 
-The "CAIXA ATUAL" label and "Março 2026" subtitle use low-opacity classes making them nearly invisible.
+### Change
+In `src/pages/ForecastsPage.tsx`, line 153: replace the "Ir para Google Sheets" button (which navigates to `/google-sheets`) with a "Gerar Previsão" button that calls `generate(horizon)` to trigger forecast generation directly.
 
-### Changes in `src/components/home/CaixaAtualCard.tsx`
+```tsx
+// Before
+<Button onClick={() => navigate("/google-sheets")} className="mt-2">
+  Ir para Google Sheets
+</Button>
 
-- **"CAIXA ATUAL"** (~line 64): `text-muted-foreground` → `text-foreground/80` — stronger contrast
-- **"Março 2026"** (~line 67): `text-muted-foreground/40` → `text-muted-foreground/70` — visible but still secondary
-- **Wallet icon** (~line 61): `text-muted-foreground` → `text-foreground/60` — slightly bolder to match
+// After
+<Button onClick={() => generate(horizon)} disabled={isGenerating} className="mt-2 gap-2">
+  <RefreshCw className="w-4 h-4" />
+  Gerar Previsão
+</Button>
+```
+
+Single file, single line change.
 
