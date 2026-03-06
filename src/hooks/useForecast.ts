@@ -139,7 +139,7 @@ export function useForecast(sheetId?: string) {
     isLoading: forecastQuery.isLoading || insightsQuery.isLoading,
     isGenerating: generateMutation.isPending,
     generate: (horizon: string) => generateMutation.mutate(horizon),
-    hasEnoughData: realMonths.length >= 4,
+    hasEnoughData: realMonths.length >= 2,
     hasData: forecastData.length > 0,
     validationWarnings: warningMonths.map(
       (d) => `${d.month_key}: divergência entre transações e DRE`

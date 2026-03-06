@@ -9,7 +9,6 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { Button } from "@/components/ui/button";
 import type { ForecastMonthly } from "@/hooks/useForecast";
 import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 
@@ -64,7 +63,6 @@ export function ForecastChart({ forecastData }: Props) {
     return { month: label, monthKey: d.month_key, ...getValues() };
   });
 
-  // Find transition label
   const transitionLabel = lastRealMonth
     ? (() => {
         const [y, m] = lastRealMonth.split("-");
@@ -79,27 +77,29 @@ export function ForecastChart({ forecastData }: Props) {
   };
 
   return (
-    <div className="liquid-glass-navy p-6">
+    <div className="liquid-glass-caixa relative overflow-hidden p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-semibold text-[#0a1940]">
+          <h3 className="text-lg font-semibold text-foreground">
             Projeção de {seriesLabels[activeSeries]}
           </h3>
           <p className="text-sm text-muted-foreground">
             Histórico + previsão com intervalos de confiança
           </p>
         </div>
-        <div className="flex gap-1 p-1 rounded-xl bg-muted/50">
+        <div className="flex gap-1 p-1 rounded-xl liquid-glass-bank-card">
           {(["receita", "despesa", "saldo"] as Series[]).map((s) => (
-            <Button
+            <button
               key={s}
-              variant={activeSeries === s ? "default" : "ghost"}
-              size="sm"
               onClick={() => setActiveSeries(s)}
-              className="text-xs"
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                activeSeries === s
+                  ? "liquid-glass-chip-active text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               {seriesLabels[s]}
-            </Button>
+            </button>
           ))}
         </div>
       </div>
@@ -142,8 +142,8 @@ export function ForecastChart({ forecastData }: Props) {
                 const real = data?.real;
                 const prev = data?.previsto;
                 return (
-                  <div className="liquid-glass-navy p-3 text-sm !rounded-xl">
-                    <p className="font-semibold text-[#0a1940] mb-1">{label}</p>
+                  <div className="liquid-glass-caixa p-3 text-sm !rounded-xl shadow-lg">
+                    <p className="font-semibold text-foreground mb-1">{label}</p>
                     {real != null && (
                       <p className="text-foreground">
                         Real: <span className="font-semibold">{formatCurrencyBR(real)}</span>
@@ -151,7 +151,7 @@ export function ForecastChart({ forecastData }: Props) {
                     )}
                     {prev != null && (
                       <>
-                        <p className="text-success">
+                        <p className="text-emerald-600">
                           Previsto: <span className="font-semibold">{formatCurrencyBR(prev)}</span>
                         </p>
                         {data?.otimista != null && (
@@ -206,7 +206,6 @@ export function ForecastChart({ forecastData }: Props) {
         </ResponsiveContainer>
       </div>
 
-      {/* Legend */}
       <div className="flex justify-center gap-6 mt-4">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-[hsl(var(--chart-1))]" />

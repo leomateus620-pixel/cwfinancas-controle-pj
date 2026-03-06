@@ -15,8 +15,8 @@ export function ForecastCashFlow({ forecastMonths }: Props) {
   const items = forecastMonths.slice(0, 6);
 
   return (
-    <div className="liquid-glass-navy p-6">
-      <h3 className="text-lg font-semibold text-[#0a1940] mb-1">
+    <div className="liquid-glass-caixa relative overflow-hidden p-6">
+      <h3 className="text-lg font-semibold text-foreground mb-1">
         Fluxo de Caixa Projetado
       </h3>
       <p className="text-sm text-muted-foreground mb-4">
@@ -33,22 +33,29 @@ export function ForecastCashFlow({ forecastMonths }: Props) {
           return (
             <div
               key={item.month_key}
-              className="p-4 rounded-xl bg-white/40 border border-white/60"
+              className="liquid-glass-bank-card p-5 transition-all duration-300 ease-out hover:scale-[1.01]"
             >
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-medium text-[#0a1940]">{label}</span>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${saldo >= 0 ? "bg-emerald-500" : "bg-red-400"}`} />
+                  <span className="font-medium text-foreground">{label}</span>
+                </div>
                 <span
-                  className={`text-lg font-semibold tabular-nums ${
-                    saldo >= 0 ? "text-success" : "text-destructive"
+                  className={`text-xl font-extrabold tabular-nums tracking-tight ${
+                    saldo >= 0 ? "text-emerald-600" : "text-red-500"
                   }`}
                 >
                   {saldo >= 0 ? "+" : ""}
                   {formatCurrencyBR(saldo)}
                 </span>
               </div>
-              <div className="flex items-center gap-4 text-sm">
-                <span className="text-success">↓ {formatCurrencyBR(rec)}</span>
-                <span className="text-destructive">↑ {formatCurrencyBR(desp)}</span>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/8 text-emerald-600 font-medium text-xs">
+                  ↓ {formatCurrencyBR(rec)}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-red-500/8 text-red-500 font-medium text-xs">
+                  ↑ {formatCurrencyBR(desp)}
+                </span>
               </div>
             </div>
           );
