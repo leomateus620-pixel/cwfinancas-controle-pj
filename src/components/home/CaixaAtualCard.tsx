@@ -196,19 +196,19 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                       </p>
                     </div>
 
-                    <div className="flex items-end justify-between gap-2">
-                      <AnimatedValue
-                        value={closing}
-                        prefix="R$ "
-                        format="currency"
-                        decimals={2}
-                        color="default"
-                        className="text-[1.6rem] md:text-[1.75rem] font-bold tracking-tight text-foreground"
-                      />
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Saldo Inicial</p>
+                        <p className="text-sm font-medium tabular-nums text-foreground/80">{formatCompactBR(opening)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Saldo Final</p>
+                        <p className="text-xl md:text-2xl font-bold tabular-nums text-foreground">{formatCompactBR(closing)}</p>
+                      </div>
                       {opening !== 0 && (
                         <span
                           className={cn(
-                            "flex items-center gap-0.5 text-[10px] font-medium tabular-nums px-1.5 py-0.5 rounded-full",
+                            "inline-flex items-center gap-0.5 text-[10px] font-medium tabular-nums px-1.5 py-0.5 rounded-full",
                             deltaPositive
                               ? "text-muted-foreground/60 bg-muted/30"
                               : "text-destructive/60 bg-destructive/5"
