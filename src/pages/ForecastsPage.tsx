@@ -150,8 +150,9 @@ export function ForecastsPage() {
             <p className="text-muted-foreground max-w-md">
               Sincronize pelo menos 2 meses de transações + DRE para gerar previsões financeiras inteligentes.
             </p>
-            <Button onClick={() => navigate("/google-sheets")} className="mt-2">
-              Ir para Google Sheets
+            <Button onClick={() => generate(horizon)} disabled={isGenerating} className="mt-2 gap-2">
+              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {isGenerating ? "Gerando..." : "Gerar Previsão"}
             </Button>
           </div>
         )}
