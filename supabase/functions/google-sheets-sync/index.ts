@@ -552,14 +552,31 @@ function derivePeriodKey(tabName: string): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Read bank balance block from dedicated H-J range */
+/** Validate that bank balance rows contain at least one non-numeric bank name and one numeric value */
+function isValidBankBalanceData(rows: string[][]): boolean {
+  for (const row of rows) {
+    const col0 = String(row[0] ?? "").trim();
+    if (!col0) continue;
+    if (col0 && isNaN(Number(col0.replace(/[R$.\s]/g, "").replace(",", ".")))) {
+      const col1 = parseBRL(row[1]);
+      const col2 = parseBRL(row[2]);
+      if (col1 !== null || col2 !== null) return true;
+    }
+  }
+  return false;
+}
+
+/** Read bank balance block from dedicated ranges — tries G-I first (StarSync), then H-J (GR) */
 async function readBankBalanceRange(
   accessToken: string,
   spreadsheetId: string,
   tabTitle: string,
   requestId: string,
 ): Promise<string[][]> {
-  const ranges = [`'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`];
+  const ranges = [
+    `'${tabTitle}'!G2:I4`, `'${tabTitle}'!G1:I20`,
+    `'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`,
+  ];
   for (const range of ranges) {
     try {
       const resp = await fetch(
@@ -574,7 +591,11 @@ async function readBankBalanceRange(
       const vals: string[][] = data.values || [];
       if (vals.length > 0) {
         console.log(`[${requestId}] [bank-balance] range=${range} rows=${vals.length}`);
-        return vals;
+        if (isValidBankBalanceData(vals)) {
+          return vals;
+        }
+        console.log(`[${requestId}] [bank-balance] range=${range} failed validation, trying next`);
+        continue;
       }
     } catch (e) {
       console.warn(`[${requestId}] [bank-balance] error fetching ${range}:`, e);
@@ -1020,14 +1041,17 @@ Deno.serve(async (req) => {
         let bankBalanceRows: string[][] = [];
 
         if (isXlsx) {
-          // For xlsx: extract columns H-J (indices 7-9) from the top 20 rows
-          const topRows = values.slice(0, 21); // include header row
-          bankBalanceRows = topRows.map(r => [
-            String(r[7] ?? ""),
-            String(r[8] ?? ""),
-            String(r[9] ?? ""),
-          ]);
-          console.log(`[${requestId}] [bank-balance] xlsx extracted ${bankBalanceRows.length} rows from cols H-J`);
+          // For xlsx: try G-I columns (indices 6-8) first, then H-J (indices 7-9)
+          const topRows = values.slice(0, 21);
+          const giRows = topRows.map(r => [String(r[6] ?? ""), String(r[7] ?? ""), String(r[8] ?? "")]);
+          const hjRows = topRows.map(r => [String(r[7] ?? ""), String(r[8] ?? ""), String(r[9] ?? "")]);
+          if (isValidBankBalanceData(giRows)) {
+            bankBalanceRows = giRows;
+            console.log(`[${requestId}] [bank-balance] xlsx using G-I columns (StarSync layout)`);
+          } else {
+            bankBalanceRows = hjRows;
+            console.log(`[${requestId}] [bank-balance] xlsx using H-J columns (GR layout)`);
+          }
         } else if (accessToken) {
           bankBalanceRows = await readBankBalanceRange(accessToken, connection.spreadsheet_id, tabName, requestId);
         }
