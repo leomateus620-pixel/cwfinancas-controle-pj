@@ -27,9 +27,6 @@ import { ForecastInsightsPanel } from "@/components/forecast/ForecastInsightsPan
 export function ForecastsPage() {
   const [horizon, setHorizon] = useState("6m");
   const navigate = useNavigate();
-  const { connections } = useGoogleSheets();
-  const activeSheet = connections?.[0];
-
   const {
     forecastData,
     insights,
@@ -40,7 +37,7 @@ export function ForecastsPage() {
     hasData,
     validationWarnings,
     confidence,
-  } = useForecast(activeSheet?.id);
+  } = useForecast();
 
   const realMonths = forecastData.filter((d) => !d.is_forecast);
   const forecastMonths = forecastData.filter((d) => d.is_forecast);

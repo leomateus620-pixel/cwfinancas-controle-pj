@@ -35,7 +35,7 @@ export interface ForecastInsights {
   generated_at: string;
 }
 
-export function useForecast(sheetId?: string) {
+export function useForecast() {
   const { session } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
