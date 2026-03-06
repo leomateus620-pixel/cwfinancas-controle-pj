@@ -41,20 +41,14 @@ export function useForecast() {
   const queryClient = useQueryClient();
 
   const forecastQuery = useQuery({
-    queryKey: ["forecast-monthly", sheetId],
+    queryKey: ["forecast-monthly"],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("forecast_monthly")
         .select("*")
+        .is("sheet_id", null)
         .order("month_key", { ascending: true });
 
-      if (sheetId) {
-        query = query.eq("sheet_id", sheetId);
-      } else {
-        query = query.is("sheet_id", null);
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
       return (data || []) as ForecastMonthly[];
     },
@@ -62,21 +56,15 @@ export function useForecast() {
   });
 
   const insightsQuery = useQuery({
-    queryKey: ["forecast-insights", sheetId],
+    queryKey: ["forecast-insights"],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from("forecast_insights")
         .select("*")
+        .is("sheet_id", null)
         .order("generated_at", { ascending: false })
         .limit(1);
 
-      if (sheetId) {
-        query = query.eq("sheet_id", sheetId);
-      } else {
-        query = query.is("sheet_id", null);
-      }
-
-      const { data, error } = await query;
       if (error) throw error;
       if (!data?.[0]) return null;
       const raw = data[0] as any;
@@ -96,16 +84,14 @@ export function useForecast() {
 
   const generateMutation = useMutation({
     mutationFn: async (horizon: string) => {
-      // Step 1: Build forecast
       const { data: buildData, error: buildError } = await supabase.functions.invoke("build-forecast", {
-        body: { sheet_id: sheetId || null, horizon },
+        body: { sheet_id: null, horizon },
       });
       if (buildError) throw buildError;
       if (buildData?.error) throw new Error(buildData.message || buildData.error);
 
-      // Step 2: Generate insights
       const { data: insData, error: insError } = await supabase.functions.invoke("forecast-insights", {
-        body: { sheet_id: sheetId || null, horizon },
+        body: { horizon },
       });
       if (insError) throw insError;
       if (insData?.error) throw new Error(insData.message || insData.error);
