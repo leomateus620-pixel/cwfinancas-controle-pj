@@ -2,18 +2,11 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LineChart as LineChartIcon,
-  TrendingUp,
-  TrendingDown,
-  Target,
   Calendar,
-  AlertCircle,
   Loader2,
   RefreshCw,
   Monitor,
-  Shield,
-  Lightbulb,
   AlertTriangle,
-  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,7 +73,7 @@ export function ForecastsPage() {
           </div>
           <div className="flex items-center gap-3">
             <Select value={horizon} onValueChange={setHorizon}>
-              <SelectTrigger className="w-[180px] liquid-glass-navy">
+              <SelectTrigger className="w-[180px] liquid-glass-bank-card border-0">
                 <Calendar className="w-4 h-4 mr-2" />
                 <SelectValue />
               </SelectTrigger>
@@ -107,10 +100,10 @@ export function ForecastsPage() {
 
         {/* Validation warnings */}
         {validationWarnings.length > 0 && (
-          <div className="liquid-glass-navy p-4 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+          <div className="liquid-glass-caixa p-4 flex items-start gap-3 border-l-[3px] border-l-amber-500">
+            <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium text-[#0a1940]">
+              <p className="font-medium text-foreground">
                 Divergência detectada entre transações e DRE
               </p>
               <p className="text-sm text-muted-foreground mt-1">
@@ -134,10 +127,10 @@ export function ForecastsPage() {
 
         {/* Generating state */}
         {isGenerating && (
-          <div className="liquid-glass-navy p-12 flex flex-col items-center gap-4">
+          <div className="liquid-glass-caixa relative overflow-hidden p-12 flex flex-col items-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
             <div className="text-center">
-              <p className="font-semibold text-[#0a1940]">
+              <p className="font-semibold text-foreground">
                 Calculando previsões...
               </p>
               <p className="text-sm text-muted-foreground mt-1">
@@ -149,13 +142,13 @@ export function ForecastsPage() {
 
         {/* Empty state */}
         {!isLoading && !isGenerating && !hasData && (
-          <div className="liquid-glass-navy p-12 flex flex-col items-center gap-4 text-center">
+          <div className="liquid-glass-caixa relative overflow-hidden p-12 flex flex-col items-center gap-4 text-center">
             <LineChartIcon className="w-14 h-14 text-muted-foreground/40" />
-            <h3 className="text-xl font-semibold text-[#0a1940]">
+            <h3 className="text-xl font-semibold text-foreground">
               Nenhuma previsão gerada ainda
             </h3>
             <p className="text-muted-foreground max-w-md">
-              Sincronize pelo menos 4 meses de transações (Jan–Dez) para gerar previsões financeiras inteligentes.
+              Sincronize pelo menos 2 meses de transações + DRE para gerar previsões financeiras inteligentes.
             </p>
             <Button onClick={() => navigate("/google-sheets")} className="mt-2">
               Ir para Google Sheets
@@ -166,17 +159,12 @@ export function ForecastsPage() {
         {/* Dashboard with data */}
         {!isLoading && !isGenerating && hasData && (
           <div className="space-y-6">
-            {/* KPIs */}
             <ForecastKPIs
               realMonths={realMonths}
               forecastMonths={forecastMonths}
               confidence={confidence}
             />
-
-            {/* Main chart */}
             <ForecastChart forecastData={forecastData} />
-
-            {/* Bottom section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <ForecastCashFlow forecastMonths={forecastMonths} />
               <ForecastInsightsPanel insights={insights} />

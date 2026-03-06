@@ -87,12 +87,14 @@ Deno.serve(async (req) => {
 
     const sortedMonths = Array.from(monthMap.keys()).sort();
     
-    if (sortedMonths.length < 4) {
+    if (sortedMonths.length < 2) {
       return new Response(
-        JSON.stringify({ error: "insufficient_data", message: `Apenas ${sortedMonths.length} meses encontrados. Mínimo: 4.` }),
+        JSON.stringify({ error: "insufficient_data", message: `Apenas ${sortedMonths.length} mês encontrado. Mínimo: 2 meses de transações + DRE.` }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const lowDataMode = sortedMonths.length < 4;
 
     // Build real data array
     const realData: MonthlyData[] = sortedMonths.map((mk) => {
@@ -268,8 +270,10 @@ Deno.serve(async (req) => {
         seasonalFactorDesp = 1 + (seasonalFactorDesp - 1) * 0.5;
       }
 
-      const recBase = Math.max(0, (recAvg + recSlope * idx) * seasonalFactorRec);
-      const despBase = Math.max(0, (despAvg + despSlope * idx) * seasonalFactorDesp);
+      // Dampen slope in low data mode to avoid overfitting with 2-3 points
+      const slopeDampen = lowDataMode ? 0.3 : 1.0;
+      const recBase = Math.max(0, (recAvg + recSlope * idx * slopeDampen) * seasonalFactorRec);
+      const despBase = Math.max(0, (despAvg + despSlope * idx * slopeDampen) * seasonalFactorDesp);
       const saldoBase = recBase - despBase;
 
       forecastData.push({
@@ -295,11 +299,15 @@ Deno.serve(async (req) => {
     // Confidence score
     let confidence = 85;
     if (n < 6) confidence -= (6 - n) * 8;
-    const cv = recStd / (receitaSeries.reduce((a, b) => a + b, 0) / n);
+    const avgRec = receitaSeries.reduce((a, b) => a + b, 0) / n;
+    const cv = avgRec > 0 ? recStd / avgRec : 0;
     if (cv > 0.3) confidence -= 15;
     else if (cv > 0.2) confidence -= 8;
     const warningCount = realData.filter((d) => d.validation_status === "warning").length;
     if (warningCount > 0) confidence -= warningCount * 5;
+    // DRE validation bonus: if DRE matched all months, boost confidence
+    const dreValidatedCount = drePeriods ? drePeriods.length : 0;
+    if (dreValidatedCount > 0 && warningCount === 0) confidence += Math.min(10, dreValidatedCount * 5);
     confidence = Math.max(10, Math.min(100, confidence));
 
     // ========== STEP 4: Upsert to database ==========
