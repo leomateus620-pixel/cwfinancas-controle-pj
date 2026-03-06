@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import bankCaixinhaImg from "@/assets/bank-caixinha.png";
 import bankSicrediImg from "@/assets/bank-sicredi.jpg";
+import bankAsaasImg from "@/assets/bank-asaas.png";
 
 interface CaixaAtualCardProps {
   currentBalance: number;
@@ -32,7 +33,7 @@ function getBankLogo(name: string): string | null {
   const n = name.toLowerCase();
   if (n.includes("caixinha")) return bankCaixinhaImg;
   if (n.includes("sicredi")) return bankSicrediImg;
-  // ASAAS — no logo asset yet, falls through to default Wallet icon
+  if (n.includes("asaas")) return bankAsaasImg;
   return null;
 }
 
@@ -184,7 +185,7 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                         <img
                           src={logo}
                           alt={row.bank_name}
-                          className="w-12 h-12 rounded-xl object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
+                          className="h-10 w-auto max-w-[120px] rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
                         />
                       ) : (
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted/40 border border-white/50 dark:border-border/20">
@@ -286,7 +287,7 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                             <img
                               src={logo}
                               alt={row.bank_name}
-                              className="w-10 h-10 rounded-xl object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
+                              className="h-10 w-auto max-w-[120px] rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
                             />
                           ) : (
                             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/40">
