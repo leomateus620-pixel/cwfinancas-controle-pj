@@ -554,13 +554,23 @@ function derivePeriodKey(tabName: string): string {
 
 /** Validate that bank balance rows contain at least one non-numeric bank name and one numeric value */
 function isValidBankBalanceData(rows: string[][]): boolean {
+  const knownBanks = [
+    "sicredi", "banrisul", "unicred", "cresol", "caixa", "banco do brasil", "bb",
+    "itau", "itaú", "bradesco", "santander", "nubank", "inter", "c6", "safra",
+    "original", "pan", "bmg", "daycoval", "pine", "abc brasil", "votorantim",
+    "pagbank", "pagseguro", "mercado pago", "stone", "cielo", "rede",
+    "fatura cc", "cartao", "cartão", "asaas",
+  ];
   for (const row of rows) {
     const col0 = String(row[0] ?? "").trim();
     if (!col0) continue;
-    if (col0 && isNaN(Number(col0.replace(/[R$.\s]/g, "").replace(",", ".")))) {
+    const cleaned = col0.replace(/[R$.\s]/g, "").replace(",", ".");
+    if (isNaN(Number(cleaned))) {
+      const norm = col0.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const matchesKnown = knownBanks.some(b => norm.includes(b) || norm === b);
       const col1 = parseBRL(row[1]);
       const col2 = parseBRL(row[2]);
-      if (col1 !== null || col2 !== null) return true;
+      if ((col1 !== null || col2 !== null) && (matchesKnown || norm.length >= 3)) return true;
     }
   }
   return false;

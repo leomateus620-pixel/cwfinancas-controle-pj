@@ -15,7 +15,7 @@ const BANK_NAMES = [
   "itau", "itaú", "bradesco", "santander", "nubank", "inter", "c6", "safra",
   "original", "pan", "bmg", "daycoval", "pine", "abc brasil", "votorantim",
   "pagbank", "pagseguro", "mercado pago", "stone", "cielo", "rede",
-  "fatura cc", "cartao", "cartão",
+  "fatura cc", "cartao", "cartão", "asaas",
 ];
 
 function looksLikeBankName(value: string): boolean {

@@ -218,15 +218,26 @@ interface BankBalanceExtracted {
  */
 /** Validate that bank balance rows contain at least one non-numeric bank name and one numeric value */
 function isValidBankBalanceData(rows: string[][]): boolean {
+  const knownBanks = [
+    "sicredi", "banrisul", "unicred", "cresol", "caixa", "banco do brasil", "bb",
+    "itau", "itaú", "bradesco", "santander", "nubank", "inter", "c6", "safra",
+    "original", "pan", "bmg", "daycoval", "pine", "abc brasil", "votorantim",
+    "pagbank", "pagseguro", "mercado pago", "stone", "cielo", "rede",
+    "fatura cc", "cartao", "cartão", "asaas",
+  ];
   for (const row of rows) {
     const col0 = String(row[0] ?? "").trim();
     if (!col0) continue;
+    const cleaned = col0.replace(/[R$.\s]/g, "").replace(",", ".");
     // col0 must NOT parse as a number (it should be a bank name)
-    if (col0 && isNaN(Number(col0.replace(/[R$.\s]/g, "").replace(",", ".")))) {
+    if (isNaN(Number(cleaned))) {
+      // Stronger signal: check if it matches a known bank name
+      const norm = col0.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const matchesKnown = knownBanks.some(b => norm.includes(b) || norm === b);
       // And at least one of col1/col2 should be numeric
       const col1 = parseBRL(row[1]);
       const col2 = parseBRL(row[2]);
-      if (col1 !== null || col2 !== null) return true;
+      if ((col1 !== null || col2 !== null) && (matchesKnown || norm.length >= 3)) return true;
     }
   }
   return false;
@@ -402,7 +413,7 @@ const BANK_NAMES = [
   "itau", "itaú", "bradesco", "santander", "nubank", "inter", "c6", "safra",
   "original", "pan", "bmg", "daycoval", "pine", "abc brasil", "votorantim",
   "pagbank", "pagseguro", "mercado pago", "stone", "cielo", "rede",
-  "fatura cc", "cartao", "cartão",
+  "fatura cc", "cartao", "cartão", "asaas",
 ];
 
 function looksLikeBankName(value: string): boolean {

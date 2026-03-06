@@ -32,6 +32,7 @@ function getBankLogo(name: string): string | null {
   const n = name.toLowerCase();
   if (n.includes("caixinha")) return bankCaixinhaImg;
   if (n.includes("sicredi")) return bankSicrediImg;
+  // ASAAS — no logo asset yet, falls through to default Wallet icon
   return null;
 }
 
