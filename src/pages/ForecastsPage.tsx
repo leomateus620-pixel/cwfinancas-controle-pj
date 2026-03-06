@@ -25,7 +25,6 @@ import { ForecastInsightsPanel } from "@/components/forecast/ForecastInsightsPan
 
 export function ForecastsPage() {
   const [horizon, setHorizon] = useState("6m");
-  const navigate = useNavigate();
   const {
     forecastData,
     insights,
