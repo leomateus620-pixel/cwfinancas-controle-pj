@@ -216,13 +216,34 @@ interface BankBalanceExtracted {
  * Dedicated Google Sheets read for the bank balance block (columns H-J).
  * Tries tight range H3:J5 first, then fallback H1:J20.
  */
+/** Validate that bank balance rows contain at least one non-numeric bank name and one numeric value */
+function isValidBankBalanceData(rows: string[][]): boolean {
+  for (const row of rows) {
+    const col0 = String(row[0] ?? "").trim();
+    if (!col0) continue;
+    // col0 must NOT parse as a number (it should be a bank name)
+    if (col0 && isNaN(Number(col0.replace(/[R$.\s]/g, "").replace(",", ".")))) {
+      // And at least one of col1/col2 should be numeric
+      const col1 = parseBRL(row[1]);
+      const col2 = parseBRL(row[2]);
+      if (col1 !== null || col2 !== null) return true;
+    }
+  }
+  return false;
+}
+
 async function readBankBalanceRange(
   accessToken: string,
   spreadsheetId: string,
   tabTitle: string,
   requestId: string
 ): Promise<string[][]> {
-  for (const range of [`'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`]) {
+  // Try G-I first (StarSync layout), then H-J (GR layout)
+  const candidateRanges = [
+    `'${tabTitle}'!G2:I4`, `'${tabTitle}'!G1:I20`,
+    `'${tabTitle}'!H3:J5`, `'${tabTitle}'!H1:J20`,
+  ];
+  for (const range of candidateRanges) {
     try {
       const resp = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
@@ -236,13 +257,17 @@ async function readBankBalanceRange(
       const values: string[][] = data.values || [];
       if (values.length > 0) {
         console.log(`[${requestId}] [bank-balance] tab=${tabTitle} range=${range} rows=${values.length} cols=${values[0]?.length}`);
-        return values;
+        if (isValidBankBalanceData(values)) {
+          return values;
+        }
+        console.log(`[${requestId}] [bank-balance] range=${range} failed validation (no valid bank names), trying next`);
+        continue;
       }
     } catch (e) {
       console.warn(`[${requestId}] [bank-balance] fetch error for range=${range}:`, e);
     }
   }
-  console.log(`[${requestId}] [bank-balance] tab=${tabTitle} no data in H-J ranges`);
+  console.log(`[${requestId}] [bank-balance] tab=${tabTitle} no valid data in G-I or H-J ranges`);
   return [];
 }
 
@@ -1512,8 +1537,16 @@ Deno.serve(async (req) => {
         if (!xlsxWorkbook && accessToken) {
           bankBalanceRows = await readBankBalanceRange(accessToken!, connection.spreadsheet_id, tab.title, requestId);
         } else if (xlsxWorkbook) {
-          // For xlsx: extract H-J columns from allRows (indices 7-9)
-          bankBalanceRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]).filter(r => r[0] || r[1] || r[2]);
+          // For xlsx: try G-I columns (indices 6-8) first, then H-J (indices 7-9)
+          const giRows = allRows.map(r => [safeStr(r[6]), safeStr(r[7]), safeStr(r[8])]).filter(r => r[0] || r[1] || r[2]);
+          const hjRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]).filter(r => r[0] || r[1] || r[2]);
+          if (giRows.length > 0 && isValidBankBalanceData(giRows)) {
+            bankBalanceRows = giRows;
+            console.log(`[${requestId}] [bank-balance] xlsx using G-I columns (StarSync layout)`);
+          } else if (hjRows.length > 0) {
+            bankBalanceRows = hjRows;
+            console.log(`[${requestId}] [bank-balance] xlsx using H-J columns (GR layout)`);
+          }
         }
 
         if (bankBalanceRows.length > 0) {
