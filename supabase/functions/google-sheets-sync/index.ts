@@ -643,8 +643,12 @@ function extractBankBalances(
     const bankName = String(row[0] || "").trim();
     if (!bankName) break; // stop at first empty bank name
 
-    const opening = parseBRL(row[1]);
-    const closing = parseBRL(row[2]);
+    const rawOpening = parseBRL(row[1]);
+    const rawClosing = parseBRL(row[2]);
+    const opening = rawOpening !== null ? Math.round(rawOpening * 100) / 100 : null;
+    const closing = rawClosing !== null ? Math.round(rawClosing * 100) / 100 : null;
+
+    console.log(`[${requestId}] [bank-balance] "${bankName}" raw=[${row[1]}, ${row[2]}] parsed=[${rawOpening}, ${rawClosing}] rounded=[${opening}, ${closing}]`);
 
     if (opening === null && closing === null) {
       console.warn(`[${requestId}] [bank-balance] skipping "${bankName}": no valid values`);
