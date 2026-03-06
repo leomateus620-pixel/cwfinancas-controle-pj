@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { GlassCard } from "./GlassCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useBankBalances, useAllBankBalancePeriods } from "@/hooks/useBankBalances";
@@ -37,6 +36,14 @@ function getBankLogo(name: string): string | null {
   return null;
 }
 
+function getBankColor(name: string): { text: string; accent: string } {
+  const n = name.toLowerCase();
+  if (n.includes("asaas")) return { text: "text-[hsl(221,72%,48%)]", accent: "bg-[hsl(221,72%,48%)]/8" };
+  if (n.includes("sicredi")) return { text: "text-[hsl(135,55%,35%)]", accent: "bg-[hsl(135,55%,35%)]/8" };
+  if (n.includes("caixinha")) return { text: "text-[hsl(42,70%,32%)]", accent: "bg-[hsl(42,70%,32%)]/8" };
+  return { text: "text-foreground/70", accent: "bg-muted/30" };
+}
+
 function formatPeriodLabel(periodKey: string): string {
   try {
     const d = parse(periodKey, "yyyy-MM", new Date());
@@ -66,16 +73,16 @@ function MonthSelector({
 }) {
   if (periods.length <= 1) return null;
   return (
-    <div className="flex gap-1.5 flex-wrap mb-4">
+    <div className="flex gap-1.5 flex-wrap mb-5">
       {periods.map((pk) => (
         <button
           key={pk}
           onClick={() => onSelect(pk)}
           className={cn(
-            "px-3 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-all duration-200",
+            "px-3.5 py-1.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition-all duration-200",
             pk === selected
-              ? "bg-primary/10 text-primary border border-primary/20"
-              : "bg-muted/30 text-muted-foreground/60 hover:bg-muted/50 border border-transparent"
+              ? "liquid-glass-chip-active text-primary"
+              : "liquid-glass-chip text-muted-foreground/60 hover:text-muted-foreground/80"
           )}
         >
           {formatPeriodShort(pk)}
@@ -97,21 +104,21 @@ function ComparisonBar({
   const positive = delta >= 0;
 
   return (
-    <div className="mt-3 flex items-center gap-2 px-1">
-      <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">vs mês anterior</span>
+    <div className="mt-5 flex items-center gap-2.5 px-2 py-2 rounded-xl liquid-glass-chip">
+      <span className="text-[10px] text-foreground/40 uppercase tracking-wider font-medium">vs mês anterior</span>
       <span
         className={cn(
-          "flex items-center gap-0.5 text-[10px] font-semibold tabular-nums px-2 py-0.5 rounded-full",
+          "flex items-center gap-1 text-[10px] font-bold tabular-nums px-2.5 py-1 rounded-full",
           positive
-            ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
-            : "text-destructive bg-destructive/10"
+            ? "text-[hsl(160,84%,30%)] bg-[hsl(160,84%,39%)]/10"
+            : "text-[hsl(0,72%,45%)] bg-[hsl(0,72%,51%)]/8"
         )}
       >
         {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
         {positive ? "+" : ""}
         {delta.toFixed(1)}%
       </span>
-      <span className="text-[10px] text-muted-foreground/40 tabular-nums">
+      <span className="text-[10px] text-foreground/35 tabular-nums font-medium">
         {formatCompactBR(previousTotal)} → {formatCompactBR(currentTotal)}
       </span>
     </div>
@@ -128,7 +135,6 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
   const monthResult = monthIncome - monthExpense;
   const selectedLabel = formatPeriodLabel(selectedPeriod);
 
-  // Ensure current period is always in the list
   const allPeriods = periods.includes(currentPeriodKey) ? periods : [...periods, currentPeriodKey].sort();
 
   return (
@@ -136,23 +142,23 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
       className="opacity-0 animate-fade-in-up md:col-span-2"
       style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards" }}
     >
-      <GlassCard variant="highlight" className="p-5 md:p-6">
+      <div className="liquid-glass-caixa p-6 md:p-8">
         {/* Header */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/60">
-              <Wallet className="w-[18px] h-[18px] text-foreground/60" />
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-primary/6 border border-primary/8">
+              <Wallet className="w-[18px] h-[18px] text-primary/60" />
             </div>
             <div>
-              <p className="text-foreground/80 text-[11px] font-semibold uppercase tracking-widest">
+              <p className="text-foreground/85 text-[12px] font-bold uppercase tracking-[0.15em]">
                 Caixa Atual
               </p>
-              <p className="text-muted-foreground/70 text-[10px] capitalize mt-0.5">{selectedLabel}</p>
+              <p className="text-foreground/45 text-[10px] capitalize mt-0.5 font-medium">{selectedLabel}</p>
             </div>
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors text-xs">ⓘ</button>
+              <button className="text-foreground/25 hover:text-foreground/50 transition-colors text-xs mt-1">ⓘ</button>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-[260px] text-xs">
               Saldo final de cada banco no mês selecionado, extraído da planilha. Selecione um mês para comparar.
@@ -166,53 +172,70 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
         {/* Body — per-bank closing balances */}
         {hasBanks ? (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {rows.map((row, idx) => {
                 const closing = row.closing_balance ?? 0;
                 const opening = row.opening_balance ?? 0;
                 const delta = opening !== 0 ? ((closing - opening) / Math.abs(opening)) * 100 : 0;
                 const deltaPositive = delta >= 0;
                 const logo = getBankLogo(row.bank_name);
+                const bankColor = getBankColor(row.bank_name);
 
                 return (
                   <div
                     key={row.id}
-                    className="opacity-0 animate-fade-in-up relative rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/50 backdrop-blur-xl p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.3)] transition-all duration-300 hover:bg-white/70 dark:hover:bg-card/60"
+                    className="opacity-0 animate-fade-in-up liquid-glass-bank-card p-5 md:p-6"
                     style={{ animationDelay: `${delay + 120 * (idx + 1)}ms`, animationFillMode: "forwards" }}
                   >
-                    <div className="flex flex-col items-center mb-3">
+                    {/* Bank logo & name */}
+                    <div className="flex flex-col items-center mb-4">
                       {logo ? (
-                        <img
-                          src={logo}
-                          alt={row.bank_name}
-                          className="h-10 w-auto max-w-[120px] rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
-                        />
+                        <div className="rounded-xl bg-white/70 p-1.5 border border-white/50 shadow-sm">
+                          <img
+                            src={logo}
+                            alt={row.bank_name}
+                            className="h-10 w-auto max-w-[120px] rounded-lg object-contain"
+                          />
+                        </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted/40 border border-white/50 dark:border-border/20">
-                          <Wallet className="w-5 h-5 text-muted-foreground/60" />
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted/30 border border-white/50">
+                          <Wallet className="w-5 h-5 text-muted-foreground/50" />
                         </div>
                       )}
-                      <p className="text-xs font-semibold tracking-wide text-muted-foreground/80 uppercase mt-2">
+                      <p className={cn(
+                        "text-[11px] font-bold tracking-[0.15em] uppercase mt-2.5",
+                        bankColor.text
+                      )}>
                         {row.bank_name}
                       </p>
                     </div>
 
-                    <div className="space-y-2">
+                    {/* Saldo Final (primary) */}
+                    <div className="space-y-3">
                       <div>
-                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Saldo Inicial</p>
-                        <p className="text-sm font-medium tabular-nums text-foreground/80">{formatCompactBR(opening)}</p>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-foreground/40 mb-1">Saldo Final</p>
+                        <p className="text-2xl md:text-3xl font-extrabold tabular-nums tracking-tight text-foreground">
+                          {formatCompactBR(closing)}
+                        </p>
                       </div>
+
+                      {/* Separator */}
+                      <div className="border-t border-foreground/[0.04]" />
+
+                      {/* Saldo Inicial (secondary) */}
                       <div>
-                        <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-0.5">Saldo Final</p>
-                        <p className="text-xl md:text-2xl font-bold tabular-nums text-foreground">{formatCompactBR(closing)}</p>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-foreground/35 mb-0.5">Saldo Inicial</p>
+                        <p className="text-sm font-medium tabular-nums text-foreground/55">{formatCompactBR(opening)}</p>
                       </div>
+
+                      {/* Delta badge */}
                       {opening !== 0 && (
                         <span
                           className={cn(
-                            "inline-flex items-center gap-0.5 text-[10px] font-medium tabular-nums px-1.5 py-0.5 rounded-full",
+                            "inline-flex items-center gap-1 text-[10px] font-semibold tabular-nums px-2 py-1 rounded-full",
                             deltaPositive
-                              ? "text-muted-foreground/60 bg-muted/30"
-                              : "text-destructive/60 bg-destructive/5"
+                              ? "text-[hsl(160,84%,30%)] bg-[hsl(160,84%,39%)]/8"
+                              : "text-[hsl(0,60%,48%)] bg-[hsl(0,72%,51%)]/6"
                           )}
                         >
                           <ArrowDownRight className={cn("w-3 h-3", deltaPositive && "rotate-180")} />
@@ -226,7 +249,6 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
               })}
             </div>
 
-            {/* Comparison with previous month */}
             <ComparisonBar currentTotal={closingTotal} previousTotal={previousClosingTotal} />
           </>
         ) : (
@@ -237,10 +259,10 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
               format="currency"
               decimals={2}
               color="default"
-              className="text-3xl md:text-4xl font-bold text-foreground"
+              className="text-3xl md:text-4xl font-extrabold text-foreground tracking-tight"
             />
             {!isLoading && isEmpty && (
-              <p className="text-muted-foreground/40 text-[10px] mt-2">
+              <p className="text-foreground/35 text-[10px] mt-3 font-medium">
                 Saldo baseado em transações — importe saldos bancários para detalhamento por banco.
               </p>
             )}
@@ -250,24 +272,28 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
         {/* Footer — drawer trigger */}
         <Drawer open={open} onOpenChange={setOpen}>
           <DrawerTrigger asChild>
-            <button className="mt-4 flex items-center gap-1 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors group">
+            <button className="mt-5 flex items-center gap-1.5 text-[11px] font-medium text-foreground/40 hover:text-primary/70 transition-all duration-200 group">
               Ver detalhes
-              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+              <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform duration-200" />
             </button>
           </DrawerTrigger>
           <DrawerContent className="max-h-[85vh]">
             <DrawerHeader>
-              <DrawerTitle className="flex items-center gap-2 text-foreground">
-                <Wallet className="w-5 h-5 text-muted-foreground" />
+              <DrawerTitle className="flex items-center gap-2.5 text-foreground">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-primary/6 border border-primary/8">
+                  <Wallet className="w-4 h-4 text-primary/60" />
+                </div>
                 Caixa Atual — {selectedLabel}
               </DrawerTitle>
-              <DrawerDescription>Detalhamento por banco e resumo do mês</DrawerDescription>
+              <DrawerDescription className="text-foreground/45">
+                Detalhamento por banco e resumo do mês
+              </DrawerDescription>
             </DrawerHeader>
 
-            <div className="px-4 pb-6 space-y-5 overflow-y-auto">
+            <div className="px-5 pb-8 space-y-6 overflow-y-auto">
               {hasBanks && (
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/50 pb-1 border-b border-foreground/[0.04]">
                     Saldos por Banco
                   </h4>
                   {rows.map((row) => {
@@ -276,42 +302,45 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                     const delta = closing - opening;
                     const deltaPositive = delta >= 0;
                     const logo = getBankLogo(row.bank_name);
+                    const bankColor = getBankColor(row.bank_name);
 
                     return (
                       <div
                         key={row.id}
-                        className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
+                        className="liquid-glass-detail-card p-5"
                       >
-                        <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-center gap-3 mb-4">
                           {logo ? (
-                            <img
-                              src={logo}
-                              alt={row.bank_name}
-                              className="h-10 w-auto max-w-[120px] rounded-lg object-contain bg-white/80 dark:bg-muted/30 p-1 border border-white/50 dark:border-border/20 shadow-sm"
-                            />
+                            <div className="rounded-xl bg-white/70 p-1.5 border border-white/50 shadow-sm">
+                              <img
+                                src={logo}
+                                alt={row.bank_name}
+                                className="h-10 w-auto max-w-[120px] rounded-lg object-contain"
+                              />
+                            </div>
                           ) : (
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/40">
-                              <Wallet className="w-4.5 h-4.5 text-muted-foreground/60" />
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/30">
+                              <Wallet className="w-4.5 h-4.5 text-muted-foreground/50" />
                             </div>
                           )}
-                          <p className="text-sm font-semibold text-foreground">{row.bank_name}</p>
+                          <p className={cn("text-sm font-bold", bankColor.text)}>{row.bank_name}</p>
                         </div>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-3 gap-4">
                           <div>
-                            <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Inicial</p>
-                            <p className="text-sm font-medium tabular-nums text-foreground">{formatCompactBR(opening)}</p>
+                            <p className="text-[9px] font-semibold text-foreground/40 uppercase tracking-[0.15em] mb-1.5">Inicial</p>
+                            <p className="text-sm font-semibold tabular-nums text-foreground/75">{formatCompactBR(opening)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Final</p>
-                            <p className="text-sm font-medium tabular-nums text-foreground">{formatCompactBR(closing)}</p>
+                            <p className="text-[9px] font-semibold text-foreground/40 uppercase tracking-[0.15em] mb-1.5">Final</p>
+                            <p className="text-sm font-bold tabular-nums text-foreground">{formatCompactBR(closing)}</p>
                           </div>
                           <div>
-                            <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Variação</p>
+                            <p className="text-[9px] font-semibold text-foreground/40 uppercase tracking-[0.15em] mb-1.5">Variação</p>
                             <p className={cn(
-                              "text-sm font-medium tabular-nums flex items-center gap-1",
-                              deltaPositive ? "text-foreground" : "text-destructive"
+                              "text-sm font-semibold tabular-nums flex items-center gap-1",
+                              deltaPositive ? "text-[hsl(160,84%,30%)]" : "text-[hsl(0,60%,48%)]"
                             )}>
-                              {deltaPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {deltaPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                               {formatCompactBR(Math.abs(delta))}
                             </p>
                           </div>
@@ -323,23 +352,23 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
               )}
 
               <div className="space-y-3">
-                <h4 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.15em] text-foreground/50 pb-1 border-b border-foreground/[0.04]">
                   Movimentações do Mês
                 </h4>
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
-                    <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Entradas</p>
-                    <p className="text-base font-semibold tabular-nums text-foreground">{formatCompactBR(monthIncome)}</p>
+                  <div className="liquid-glass-detail-card p-4 text-center">
+                    <p className="text-[9px] font-semibold text-foreground/40 uppercase tracking-[0.15em] mb-2">Entradas</p>
+                    <p className="text-base font-bold tabular-nums text-foreground">{formatCompactBR(monthIncome)}</p>
                   </div>
-                  <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
-                    <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Saídas</p>
-                    <p className="text-base font-semibold tabular-nums text-foreground">{formatCompactBR(monthExpense)}</p>
+                  <div className="liquid-glass-detail-card p-4 text-center">
+                    <p className="text-[9px] font-semibold text-foreground/40 uppercase tracking-[0.15em] mb-2">Saídas</p>
+                    <p className="text-base font-bold tabular-nums text-foreground">{formatCompactBR(monthExpense)}</p>
                   </div>
-                  <div className="rounded-2xl border border-white/40 dark:border-border/30 bg-white/60 dark:bg-card/40 backdrop-blur-xl p-4 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
-                    <p className="text-[10px] text-muted-foreground/80 uppercase tracking-wider mb-1">Resultado</p>
+                  <div className="liquid-glass-detail-card p-4 text-center">
+                    <p className="text-[9px] font-semibold text-foreground/40 uppercase tracking-[0.15em] mb-2">Resultado</p>
                     <p className={cn(
-                      "text-base font-semibold tabular-nums",
-                      monthResult >= 0 ? "text-foreground" : "text-destructive"
+                      "text-base font-bold tabular-nums",
+                      monthResult >= 0 ? "text-[hsl(160,84%,30%)]" : "text-[hsl(0,60%,48%)]"
                     )}>
                       {formatCompactBR(monthResult)}
                     </p>
@@ -349,7 +378,7 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
             </div>
           </DrawerContent>
         </Drawer>
-      </GlassCard>
+      </div>
     </div>
   );
 }
