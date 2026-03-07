@@ -1828,13 +1828,17 @@ Deno.serve(async (req) => {
 
     console.log(`[${requestId}] Monthly tabs: ${monthlyTabs.map(t => `${t.title}(${t.periodKey},rows=${t.rowCount})`).join(", ")}`);
 
+    // Detect APR tabs early so we can allow APR-only syncs
+    const aprTabs = classified.filter(t => t.route === "PAYABLE" || t.route === "RECEIVABLE");
+    console.log(`[${requestId}] APR tabs found (early): ${aprTabs.map(t => `${t.title}(${t.route})`).join(", ") || "none"}`);
+
     await updateJobHeartbeat(supabase, jobId, "classifyTabs", {
-      tabs_total: monthlyTabs.length, tabs_done: 0, rows_read: 0, rows_imported: 0,
-      current_tab: `${monthlyTabs.length} abas mensais detectadas`,
+      tabs_total: monthlyTabs.length + aprTabs.length, tabs_done: 0, rows_read: 0, rows_imported: 0,
+      current_tab: `${monthlyTabs.length} abas mensais + ${aprTabs.length} abas APR detectadas`,
     });
 
-    if (monthlyTabs.length === 0) {
-      throw new Error("Nenhuma aba mensal encontrada no intervalo selecionado");
+    if (monthlyTabs.length === 0 && aprTabs.length === 0) {
+      throw new Error("Nenhuma aba mensal ou de contas a pagar/receber encontrada");
     }
 
     // ===== STEP: process each tab =====
@@ -2190,9 +2194,7 @@ Deno.serve(async (req) => {
     }
 
     // ============ PAYABLE / RECEIVABLE PIPELINE ============
-    const aprTabs = classified.filter(t => t.route === "PAYABLE" || t.route === "RECEIVABLE");
-    console.log(`[${requestId}] APR tabs found: ${aprTabs.map(t => `${t.title}(${t.route})`).join(", ") || "none"}`);
-
+    // aprTabs already computed above (early detection)
     if (aprTabs.length > 0) {
       const syncRunId = crypto.randomUUID();
 
