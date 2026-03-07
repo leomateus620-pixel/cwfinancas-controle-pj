@@ -2194,9 +2194,7 @@ Deno.serve(async (req) => {
     }
 
     // ============ PAYABLE / RECEIVABLE PIPELINE ============
-    const aprTabs = classified.filter(t => t.route === "PAYABLE" || t.route === "RECEIVABLE");
-    console.log(`[${requestId}] APR tabs found: ${aprTabs.map(t => `${t.title}(${t.route})`).join(", ") || "none"}`);
-
+    // aprTabs already computed above (early detection)
     if (aprTabs.length > 0) {
       const syncRunId = crypto.randomUUID();
 
