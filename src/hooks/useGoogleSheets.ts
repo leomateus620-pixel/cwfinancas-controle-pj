@@ -8,6 +8,7 @@ const ALL_QUERY_KEYS_TO_INVALIDATE = [
   "transactions", "home-dashboard", "sync-jobs", "google-sheet-connections",
   "google-oauth-status", "dre-periods", "dre-lines", "balance-sheet",
   "invoices", "ai-insights", "finance-insights", "flagged-transactions", "cash-flow",
+  "apr-payable", "apr-receivable",
 ];
 
 interface GoogleSheetConnection {

@@ -339,7 +339,7 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
   const usedColumnIndices = new Set<number>();
   
   const normalizedHeaders = headers.map(h => 
-    (h || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
+    String(h ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()
   );
   
   // Order matters: map high-priority fields first to prevent conflicts
