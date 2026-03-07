@@ -50,6 +50,26 @@ function classifyTab(tabName: string, defaultYear: number): ClassifiedTab {
     return { title: tabName, route: "DRE_ONLY" };
   }
 
+  // ===== PAYABLE / RECEIVABLE detection (before month matching) =====
+  const payablePatterns = ["contas a pagar", "a pagar", "pagar", "payable", "despesas agendadas", "pagamentos"];
+  const receivablePatterns = ["contas a receber", "a receber", "receber", "receivable", "clientes a receber", "recebimentos"];
+  
+  // Exclusion: avoid matching DRE-like or summary tabs
+  const excludePatterns = ["demonstracao", "resultado", "tendencia", "plano de contas", "resumo", "notas fiscais", "notas emitidas", "extrato", "movimentacao"];
+  const isExcluded = excludePatterns.some(p => normalized.includes(p));
+  
+  if (!isExcluded) {
+    const isPayable = payablePatterns.some(p => normalized.includes(p));
+    const isReceivable = receivablePatterns.some(p => normalized.includes(p));
+    
+    if (isPayable && !isReceivable) {
+      return { title: tabName, route: "PAYABLE" };
+    }
+    if (isReceivable && !isPayable) {
+      return { title: tabName, route: "RECEIVABLE" };
+    }
+  }
+
   for (const [name, idx] of Object.entries(MONTH_NAMES_FULL)) {
     const regex = new RegExp(`^${name}[\\s\\/\\-]*(\\d{2,4})?$`, "i");
     const match = normalized.match(regex);
