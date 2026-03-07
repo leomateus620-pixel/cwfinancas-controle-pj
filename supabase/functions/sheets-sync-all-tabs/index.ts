@@ -1044,16 +1044,36 @@ function computeContentHash(
 
 // ============ Lock helpers ============
 
-async function acquireLock(supabase: SupabaseClient, connectionId: string): Promise<boolean> {
+async function acquireLock(supabase: SupabaseClient, connectionId: string, requestId?: string): Promise<boolean> {
   const now = new Date().toISOString();
   const lockUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  const { data } = await supabase
+
+  // Step 1: Try lock_until IS NULL
+  const { data: d1 } = await supabase
     .from("google_sheet_connections")
     .update({ lock_until: lockUntil, sync_status: "syncing" })
     .eq("id", connectionId)
-    .or(`lock_until.is.null,lock_until.lt.${now}`)
+    .is("lock_until", null)
     .select("id");
-  return !!(data && data.length > 0);
+  if (d1 && d1.length > 0) {
+    console.log(`[${requestId || "?"}] Lock acquired (null path) for ${connectionId}`);
+    return true;
+  }
+
+  // Step 2: Fallback — lock_until expired
+  const { data: d2 } = await supabase
+    .from("google_sheet_connections")
+    .update({ lock_until: lockUntil, sync_status: "syncing" })
+    .eq("id", connectionId)
+    .lt("lock_until", now)
+    .select("id");
+  if (d2 && d2.length > 0) {
+    console.log(`[${requestId || "?"}] Lock acquired (expired path) for ${connectionId}`);
+    return true;
+  }
+
+  console.log(`[${requestId || "?"}] Lock NOT acquired for ${connectionId}`);
+  return false;
 }
 
 async function releaseLock(supabase: SupabaseClient, connectionId: string): Promise<void> {
@@ -1162,6 +1182,30 @@ const MONTH_KEYWORDS: Record<string, number> = {
 
 function detectMonthFromText(text: string): { month: number; year: number | null } | null {
   const norm = safeStr(text).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  // Check for Excel serial date numbers (e.g., 46023 = 2026-01-01)
+  const numVal = typeof text === "number" ? text : parseFloat(norm);
+  if (!isNaN(numVal) && numVal > 25000 && numVal < 60000) {
+    const date = new Date((numVal - 25569) * 86400 * 1000);
+    if (!isNaN(date.getTime())) {
+      return { month: date.getMonth() + 1, year: date.getFullYear() };
+    }
+  }
+
+  // Check for date-like strings: "01/2026", "2026-03", "03/2026"
+  const mmYyyy = norm.match(/^(\d{1,2})[\/\-](\d{4})$/);
+  if (mmYyyy) {
+    const m = parseInt(mmYyyy[1]);
+    const y = parseInt(mmYyyy[2]);
+    if (m >= 1 && m <= 12) return { month: m, year: y };
+  }
+  const yyyyMm = norm.match(/^(\d{4})[\/\-](\d{1,2})$/);
+  if (yyyyMm) {
+    const y = parseInt(yyyyMm[1]);
+    const m = parseInt(yyyyMm[2]);
+    if (m >= 1 && m <= 12) return { month: m, year: y };
+  }
+
   for (const [name, idx] of Object.entries(MONTH_KEYWORDS)) {
     if (norm.includes(name)) {
       const yearMatch = norm.match(/\b(20\d{2})\b/) || norm.match(/\b(\d{2})\b/);
@@ -1215,13 +1259,15 @@ function parseAPRTab(
 
 function detectAPRLayout(rows: unknown[][], requestId: string): string {
   // Scan first 10 rows for month patterns in horizontal layout
+  // Must handle both text month names AND Excel serial date numbers
   const scanLimit = Math.min(rows.length, 10);
   for (let i = 0; i < scanLimit; i++) {
     const row = rows[i];
     if (!Array.isArray(row)) continue;
     let monthCount = 0;
     for (const cell of row) {
-      const monthInfo = detectMonthFromText(safeStr(cell));
+      // Pass raw cell value (could be number) to detectMonthFromText
+      const monthInfo = detectMonthFromText(cell as string);
       if (monthInfo) monthCount++;
     }
     if (monthCount >= 3) {
@@ -1417,17 +1463,16 @@ function parseAPRHorizontal(
   const monthColumns: Array<{ colStart: number; month: number; year: number }> = [];
 
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const row = (rows[i] || []) as string[];
+    const row = (rows[i] || []) as unknown[];
     const monthsFound: Array<{ col: number; month: number; year: number | null }> = [];
     for (let c = 0; c < row.length; c++) {
-      const mi = detectMonthFromText(safeStr(row[c]));
+      const cellVal = row[c];
+      const mi = detectMonthFromText(cellVal as string);
       if (mi) monthsFound.push({ col: c, month: mi.month, year: mi.year });
     }
     if (monthsFound.length >= 3) {
       monthHeaderRow = i;
-      // Determine column groups
       for (let m = 0; m < monthsFound.length; m++) {
-        const nextCol = m < monthsFound.length - 1 ? monthsFound[m + 1].col : row.length;
         monthColumns.push({
           colStart: monthsFound[m].col,
           month: monthsFound[m].month,
@@ -1439,19 +1484,59 @@ function parseAPRHorizontal(
   }
 
   if (monthHeaderRow < 0 || monthColumns.length === 0) {
+    console.log(`[${requestId}] APR horizontal: no month header row found, falling back to vertical`);
     return parseAPRVertical(rows, recordType, tabTitle, defaultYear, requestId);
   }
 
+  console.log(`[${requestId}] APR horizontal: monthHeaderRow=${monthHeaderRow}, months=${monthColumns.map(m => `col${m.colStart}=${m.year}-${String(m.month).padStart(2,"0")}`).join(", ")}`);
+
+  // Identify left-side fixed columns (columns before the first month column)
+  const leftCols = monthColumns[0].colStart;
+  
+  // Try to map left fixed columns by scanning rows near the header for keywords
+  const leftColMap: Record<string, number> = {};
+  // Check the row just above month headers, or the month header row itself, for left column labels
+  for (let scanRow = Math.max(0, monthHeaderRow - 1); scanRow <= monthHeaderRow + 1 && scanRow < rows.length; scanRow++) {
+    const scanCells = (rows[scanRow] || []) as unknown[];
+    for (let c = 0; c < leftCols; c++) {
+      const cellNorm = safeStr(scanCells[c]).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (!cellNorm) continue;
+      if (cellNorm.includes("vcto") || cellNorm.includes("vencimento") || cellNorm.includes("data")) {
+        leftColMap.vencimento = c;
+      } else if (cellNorm.includes("despesa") || cellNorm.includes("cliente") || cellNorm.includes("fornecedor") || cellNorm.includes("descricao")) {
+        leftColMap.descricao = c;
+      } else if (cellNorm.includes("forma") || cellNorm.includes("pgto") || cellNorm.includes("pagamento")) {
+        leftColMap.forma_pgto = c;
+      } else if (cellNorm.includes("obs") || cellNorm.includes("observa")) {
+        leftColMap.observacao = c;
+      }
+    }
+  }
+
+  // If no labels found, use positional heuristic for the Financeiro GR layout:
+  // col0 = Vcto, col1 = Despesa/Cliente, col2 = Forma de pgto (if leftCols >= 3)
+  if (Object.keys(leftColMap).length === 0 && leftCols >= 2) {
+    leftColMap.vencimento = 0;
+    leftColMap.descricao = 1;
+    if (leftCols >= 3) leftColMap.forma_pgto = 2;
+    console.log(`[${requestId}] APR horizontal: using positional heuristic for ${leftCols} left columns`);
+  }
+
+  console.log(`[${requestId}] APR horizontal: leftColMap=${JSON.stringify(leftColMap)}`);
+
   // Find sub-headers for each month group (valor, pgto, nf, etc.)
   const subHeaderRow = monthHeaderRow + 1;
-  const subHeaders = subHeaderRow < rows.length ? (rows[subHeaderRow] || []).map(c => safeStr(c).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()) : [];
+  const subHeaders = subHeaderRow < rows.length 
+    ? (rows[subHeaderRow] || []).map(c => safeStr(c).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()) 
+    : [];
 
-  // Find left-side identifier columns
-  const leftCols = monthColumns[0].colStart;
+  // Parse data rows (start after subheader or month header)
+  const dataStart = subHeaders.some(h => h.includes("valor") || h.includes("pgto") || h.includes("status")) 
+    ? subHeaderRow + 1 
+    : monthHeaderRow + 1;
 
-  // Parse data rows
-  for (let i = subHeaderRow + 1; i < rows.length; i++) {
-    const row = (rows[i] || []) as string[];
+  for (let i = dataStart; i < rows.length; i++) {
+    const row = (rows[i] || []) as unknown[];
     const cells = row.map(c => safeStr(c));
     scanned++;
 
@@ -1462,14 +1547,19 @@ function parseAPRHorizontal(
       continue;
     }
 
-    // Extract left-side identifier (description/counterpart)
-    const leftValues = cells.slice(0, leftCols).map(c => c.trim()).filter(c => c);
-    const description = leftValues[0] || "";
+    // Extract left-side fixed values
+    const descIdx = leftColMap.descricao;
+    const description = descIdx !== undefined ? cells[descIdx].trim() : "";
     if (!description) {
       skipped++;
       skipReasons["no_identifier"] = (skipReasons["no_identifier"] || 0) + 1;
       continue;
     }
+
+    const vctoIdx = leftColMap.vencimento;
+    const baseDueDate = vctoIdx !== undefined ? parseDate(row[vctoIdx]) : null;
+    const paymentMethodLeft = leftColMap.forma_pgto !== undefined ? cells[leftColMap.forma_pgto].trim() || null : null;
+    const notesLeft = leftColMap.observacao !== undefined ? cells[leftColMap.observacao].trim() || null : null;
 
     // For each month column group, extract a record
     for (let m = 0; m < monthColumns.length; m++) {
@@ -1480,7 +1570,7 @@ function parseAPRHorizontal(
       // Find value in this group
       let amount: number | null = null;
       let statusRaw: string | null = null;
-      let paymentMethod: string | null = null;
+      let paymentMethod: string | null = paymentMethodLeft;
       let nfNumber: string | null = null;
 
       for (let gc = 0; gc < groupCells.length; gc++) {
@@ -1492,7 +1582,7 @@ function parseAPRHorizontal(
         } else if (subH.includes("pgto") || subH.includes("status") || subH.includes("situacao")) {
           statusRaw = val || null;
         } else if (subH.includes("forma") || subH.includes("pagamento")) {
-          paymentMethod = val || null;
+          paymentMethod = val || paymentMethod;
         } else if (subH.includes("nf") || subH.includes("nota")) {
           nfNumber = val || null;
         } else if (amount === null) {
@@ -1509,19 +1599,20 @@ function parseAPRHorizontal(
       records.push({
         period_key: periodKey,
         source_row: i + 1,
-        due_date: null,
+        due_date: baseDueDate,
         description,
-        counterpart: leftValues.length > 1 ? leftValues[1] : null,
+        counterpart: recordType === "receivable" ? description : null,
         nf_number: nfNumber,
         payment_method: paymentMethod,
         amount: Math.abs(amount),
         status_raw: statusRaw,
-        notes: null,
+        notes: notesLeft,
         raw_data: Object.fromEntries(cells.map((c, idx) => [`col_${idx}`, c])),
       });
     }
   }
 
+  console.log(`[${requestId}] APR horizontal: parsed ${records.length} records from ${scanned} rows`);
   return { records, layout: "horizontal_monthly", scanned, skipped, skipReasons };
 }
 
@@ -1689,7 +1780,7 @@ Deno.serve(async (req) => {
     console.log(`[${requestId}] User: ${userId}, Connection: ${connectionId}, SelectedTabs: ${JSON.stringify(selected_tabs)}, Range: ${JSON.stringify(month_range)}`);
 
     // ===== LOCK =====
-    const lockAcquired = await acquireLock(supabase, connectionId);
+    const lockAcquired = await acquireLock(supabase, connectionId, requestId);
     if (!lockAcquired) {
       return new Response(JSON.stringify({ error: "sync_locked", message: "Another sync is already running" }), {
         status: 423, headers: { ...corsHeaders, "Content-Type": "application/json" },
