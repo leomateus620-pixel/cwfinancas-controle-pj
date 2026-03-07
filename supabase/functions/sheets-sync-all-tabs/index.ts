@@ -1635,6 +1635,105 @@ Deno.serve(async (req) => {
       console.log(`[${requestId}] Tab ${tab.title}: scanned=${tabScanned}, withValue=${tabWithValue}, inserted=${upsertResult.inserted}, updated=${upsertResult.updated}, noOps=${upsertResult.noOps}, skipped=${tabSkipped}, errors=${upsertResult.errors.length}`);
     }
 
+    // ============ PAYABLE / RECEIVABLE PIPELINE ============
+    const aprTabs = classified.filter(t => t.route === "PAYABLE" || t.route === "RECEIVABLE");
+    console.log(`[${requestId}] APR tabs found: ${aprTabs.map(t => `${t.title}(${t.route})`).join(", ") || "none"}`);
+
+    if (aprTabs.length > 0) {
+      const syncRunId = crypto.randomUUID();
+
+      for (const aprTab of aprTabs) {
+        if (Date.now() - startTime > INTERNAL_TIMEOUT_MS) {
+          console.log(`[${requestId}] TIMEOUT during APR processing`);
+          break;
+        }
+
+        const recordType = aprTab.route === "PAYABLE" ? "payable" : "receivable";
+        console.log(`[${requestId}] Processing APR tab "${aprTab.title}" as ${recordType}`);
+
+        await updateJobHeartbeat(supabase, jobId, `apr(${aprTab.title})`, {
+          tabs_total: monthlyTabs.length + aprTabs.length, tabs_done: monthlyTabs.length,
+          rows_read: totalScanned, rows_imported: totalImported, current_tab: `${aprTab.title} (${recordType})`,
+        });
+
+        // Read tab data
+        const aprRows = xlsxWorkbook
+          ? xlsxSheetToRows(xlsxWorkbook, aprTab.title)
+          : await readTabPaginated(accessToken!, connection.spreadsheet_id, aprTab.title, aprTab.rowCount || 1000, requestId);
+
+        if (aprRows.length < 2) {
+          console.log(`[${requestId}] APR tab "${aprTab.title}" has <2 rows, skipping`);
+          continue;
+        }
+
+        // Detect layout and parse
+        const aprRecords = parseAPRTab(aprRows, recordType, aprTab.title, defaultYear, requestId);
+
+        console.log(`[${requestId}] APR tab "${aprTab.title}": parsed ${aprRecords.records.length} records, layout=${aprRecords.layout}, skipped=${aprRecords.skipped}`);
+
+        // Upsert records
+        if (aprRecords.records.length > 0) {
+          const upsertBatch = aprRecords.records.map(r => ({
+            user_id: userId,
+            connection_id: connectionId,
+            record_type: recordType,
+            period_key: r.period_key,
+            source_tab: aprTab.title,
+            source_row: r.source_row,
+            source_layout: aprRecords.layout,
+            due_date: r.due_date || null,
+            description: r.description || "",
+            counterpart: r.counterpart || null,
+            nf_number: r.nf_number || null,
+            payment_method: r.payment_method || null,
+            amount: Math.round(r.amount * 100) / 100,
+            status_raw: r.status_raw || null,
+            status_normalized: normalizeAPRStatus(r.status_raw, recordType),
+            notes: r.notes || null,
+            content_hash: generateAPRContentHash(recordType, r.period_key, r.description, r.counterpart, r.amount),
+            sync_run_id: syncRunId,
+            last_seen_at: new Date().toISOString(),
+            raw_data: r.raw_data || null,
+          }));
+
+          for (const chunk of chunks(upsertBatch, BATCH_UPSERT_SIZE)) {
+            const { error: upsErr } = await supabase
+              .from("accounts_payable_receivable")
+              .upsert(chunk, { onConflict: "user_id,connection_id,content_hash" });
+            if (upsErr) {
+              console.warn(`[${requestId}] APR upsert error for ${aprTab.title}:`, upsErr.message);
+            }
+          }
+        }
+
+        // Clean orphans: delete records from this connection not seen in this run
+        const { error: delErr } = await supabase
+          .from("accounts_payable_receivable")
+          .delete()
+          .eq("user_id", userId)
+          .eq("connection_id", connectionId)
+          .eq("record_type", recordType)
+          .neq("sync_run_id", syncRunId);
+        if (delErr) {
+          console.warn(`[${requestId}] APR orphan cleanup error:`, delErr.message);
+        }
+
+        // Audit log
+        await supabase.from("sync_tab_audit").insert({
+          job_id: jobId, user_id: userId, connection_id: connectionId,
+          tab_name: aprTab.title, period_key: null,
+          rows_scanned: aprRecords.scanned, rows_with_value: aprRecords.records.length,
+          rows_imported: aprRecords.records.length, rows_skipped: aprRecords.skipped,
+          skip_reasons: {
+            layout_detected: aprRecords.layout,
+            record_type: recordType,
+            ...aprRecords.skipReasons,
+          },
+          errors: [],
+        });
+      }
+    }
+
     // ===== Finalize =====
     const finalStatus = totalErrors > 0 ? (totalImported > 0 ? "partial" : "error") : "success";
 
