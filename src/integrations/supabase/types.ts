@@ -14,6 +14,92 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounts_payable_receivable: {
+        Row: {
+          amount: number
+          connection_id: string | null
+          content_hash: string
+          counterpart: string | null
+          created_at: string
+          description: string
+          due_date: string | null
+          id: string
+          last_seen_at: string
+          nf_number: string | null
+          notes: string | null
+          payment_method: string | null
+          period_key: string
+          raw_data: Json | null
+          record_type: string
+          source_layout: string | null
+          source_row: number | null
+          source_tab: string
+          status_normalized: string
+          status_raw: string | null
+          sync_run_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          connection_id?: string | null
+          content_hash: string
+          counterpart?: string | null
+          created_at?: string
+          description?: string
+          due_date?: string | null
+          id?: string
+          last_seen_at?: string
+          nf_number?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          period_key: string
+          raw_data?: Json | null
+          record_type: string
+          source_layout?: string | null
+          source_row?: number | null
+          source_tab: string
+          status_normalized?: string
+          status_raw?: string | null
+          sync_run_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          connection_id?: string | null
+          content_hash?: string
+          counterpart?: string | null
+          created_at?: string
+          description?: string
+          due_date?: string | null
+          id?: string
+          last_seen_at?: string
+          nf_number?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          period_key?: string
+          raw_data?: Json | null
+          record_type?: string
+          source_layout?: string | null
+          source_row?: number | null
+          source_tab?: string
+          status_normalized?: string
+          status_raw?: string | null
+          sync_run_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounts_payable_receivable_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_insights: {
         Row: {
           connected_sheet_id: string | null
