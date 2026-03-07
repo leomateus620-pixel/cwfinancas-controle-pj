@@ -403,6 +403,8 @@ export function useGoogleSheets() {
       queryClient.invalidateQueries({ queryKey: ["transactions"] });
       queryClient.invalidateQueries({ queryKey: ["home-dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["apr-payable"] });
+      queryClient.invalidateQueries({ queryKey: ["apr-receivable"] });
       toast({
         title: "Sincronização concluída",
         description: `${data.tabs_imported} aba(s) mensal(is), ${data.total_imported} linhas importadas.`,
