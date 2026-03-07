@@ -210,12 +210,22 @@ function GoogleSheetsPageContent() {
     refetchAuthStatus();
   };
 
+  const isAPRConnection = (sheetName: string | null): boolean => {
+    if (!sheetName) return false;
+    const normalized = sheetName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    return normalized.includes("contas a pagar") || normalized.includes("contas a receber")
+      || normalized.includes("a pagar") || normalized.includes("a receber");
+  };
+
   const handleSync = (connection: { id: string; sheet_name: string | null; data_type: string; column_mapping: Record<string, string> }) => {
     if (connection.sheet_name === null && connection.data_type === "all_tabs") {
       const mapping = connection.column_mapping as Record<string, unknown>;
       const selectedTabs = mapping?.selected_tabs as string[] | undefined;
       const monthRange = mapping?.month_range as { from: string; to: string } | undefined;
       syncAllTabs.mutate({ connectionId: connection.id, selectedTabs, monthRange });
+    } else if (isAPRConnection(connection.sheet_name)) {
+      // Route APR connections to the syncAllTabs pipeline which has the APR parsers
+      syncAllTabs.mutate({ connectionId: connection.id });
     } else {
       syncData.mutate(connection.id);
     }
