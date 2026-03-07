@@ -10,7 +10,8 @@ import {
   Settings,
   Sparkles,
   LineChart,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ClipboardList
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
@@ -38,6 +39,7 @@ const mainNavItems = [
   { title: "Despesas", url: "/expenses", icon: TrendingDown },
   { title: "Fluxo de Caixa", url: "/cash-flow", icon: ArrowLeftRight },
   { title: "DRE", url: "/dre", icon: BarChart3 },
+  { title: "Contas a Pagar/Receber", url: "/accounts", icon: ClipboardList },
   { title: "Previsões", url: "/forecasts", icon: LineChart },
 ];
 
