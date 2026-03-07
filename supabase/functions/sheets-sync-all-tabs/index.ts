@@ -30,7 +30,7 @@ const MONTH_NAMES_ABBR: Record<string, number> = {
   jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
 };
 
-type TabRoute = "DRE_ONLY" | "MONTHLY_TRANSACTIONS" | "IGNORE";
+type TabRoute = "DRE_ONLY" | "MONTHLY_TRANSACTIONS" | "PAYABLE" | "RECEIVABLE" | "IGNORE";
 
 interface ClassifiedTab {
   title: string;
