@@ -399,15 +399,16 @@ export function useGoogleSheets() {
       return data as SyncAllTabsResult;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["google-sheet-connections"] });
-      queryClient.invalidateQueries({ queryKey: ["transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["home-dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["sync-jobs"] });
-      queryClient.invalidateQueries({ queryKey: ["apr-payable"] });
-      queryClient.invalidateQueries({ queryKey: ["apr-receivable"] });
+      ALL_QUERY_KEYS_TO_INVALIDATE.forEach((key) =>
+        queryClient.invalidateQueries({ queryKey: [key] })
+      );
+      const parts: string[] = [];
+      if (data.tabs_imported > 0) parts.push(`${data.tabs_imported} aba(s) mensal(is)`);
+      if (data.total_imported > 0) parts.push(`${data.total_imported} linhas importadas`);
+      if (parts.length === 0) parts.push("Sincronização concluída sem novos dados");
       toast({
         title: "Sincronização concluída",
-        description: `${data.tabs_imported} aba(s) mensal(is), ${data.total_imported} linhas importadas.`,
+        description: parts.join(", ") + ".",
       });
     },
     onError: (error) => {
