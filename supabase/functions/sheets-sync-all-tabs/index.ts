@@ -30,7 +30,7 @@ const MONTH_NAMES_ABBR: Record<string, number> = {
   jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
 };
 
-type TabRoute = "DRE_ONLY" | "MONTHLY_TRANSACTIONS" | "IGNORE";
+type TabRoute = "DRE_ONLY" | "MONTHLY_TRANSACTIONS" | "PAYABLE" | "RECEIVABLE" | "IGNORE";
 
 interface ClassifiedTab {
   title: string;
@@ -48,6 +48,26 @@ function classifyTab(tabName: string, defaultYear: number): ClassifiedTab {
   // Match any tab containing "DRE" (DRE, DRE 2026, DRE-Caixa, DRE Jan26, etc.)
   if (/\bdre\b/i.test(tabName.trim()) || normalized.includes("demonstracao") || normalized.includes("resultado")) {
     return { title: tabName, route: "DRE_ONLY" };
+  }
+
+  // ===== PAYABLE / RECEIVABLE detection (before month matching) =====
+  const payablePatterns = ["contas a pagar", "a pagar", "pagar", "payable", "despesas agendadas", "pagamentos"];
+  const receivablePatterns = ["contas a receber", "a receber", "receber", "receivable", "clientes a receber", "recebimentos"];
+  
+  // Exclusion: avoid matching DRE-like or summary tabs
+  const excludePatterns = ["demonstracao", "resultado", "tendencia", "plano de contas", "resumo", "notas fiscais", "notas emitidas", "extrato", "movimentacao"];
+  const isExcluded = excludePatterns.some(p => normalized.includes(p));
+  
+  if (!isExcluded) {
+    const isPayable = payablePatterns.some(p => normalized.includes(p));
+    const isReceivable = receivablePatterns.some(p => normalized.includes(p));
+    
+    if (isPayable && !isReceivable) {
+      return { title: tabName, route: "PAYABLE" };
+    }
+    if (isReceivable && !isPayable) {
+      return { title: tabName, route: "RECEIVABLE" };
+    }
   }
 
   for (const [name, idx] of Object.entries(MONTH_NAMES_FULL)) {
@@ -1058,6 +1078,560 @@ async function getDriveFingerprint(accessToken: string, spreadsheetId: string): 
   }
 }
 
+// ============ APR (Accounts Payable/Receivable) Helpers ============
+
+interface APRParsedRecord {
+  period_key: string;
+  source_row: number;
+  due_date: string | null;
+  description: string;
+  counterpart: string | null;
+  nf_number: string | null;
+  payment_method: string | null;
+  amount: number;
+  status_raw: string | null;
+  notes: string | null;
+  raw_data: Record<string, unknown> | null;
+}
+
+interface APRParseResult {
+  records: APRParsedRecord[];
+  layout: string;
+  scanned: number;
+  skipped: number;
+  skipReasons: Record<string, number>;
+}
+
+// Status normalization maps
+const STATUS_MAP_PAYABLE: Record<string, string> = {};
+const STATUS_MAP_RECEIVABLE: Record<string, string> = {};
+
+// Build maps
+for (const [normalized, keywords] of [
+  ["pago", ["pago", "pg", "ok", "liquidado", "quitado"]],
+  ["pendente", ["pendente", "em aberto", "aberto", "a pagar"]],
+  ["agendado", ["agendado", "programado", "scheduled"]],
+  ["confirmar", ["confirmar", "a confirmar", "verificar"]],
+  ["emitir", ["emitir", "a emitir"]],
+  ["cancelado", ["cancelado", "estornado"]],
+] as const) {
+  for (const kw of keywords) STATUS_MAP_PAYABLE[kw] = normalized;
+}
+
+for (const [normalized, keywords] of [
+  ["recebido", ["recebido", "rec", "ok", "liquidado", "quitado"]],
+  ["pendente", ["pendente", "em aberto", "aberto", "a receber"]],
+  ["previsto", ["previsto", "estimado", "expected"]],
+  ["confirmar", ["confirmar", "a confirmar", "verificar"]],
+  ["emitir", ["emitir", "a emitir"]],
+  ["cancelado", ["cancelado", "estornado"]],
+] as const) {
+  for (const kw of keywords) STATUS_MAP_RECEIVABLE[kw] = normalized;
+}
+
+function normalizeAPRStatus(raw: string | null | undefined, recordType: string): string {
+  if (!raw) return "desconhecido";
+  const norm = safeStr(raw).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  if (!norm) return "desconhecido";
+  const map = recordType === "payable" ? STATUS_MAP_PAYABLE : STATUS_MAP_RECEIVABLE;
+  for (const [key, val] of Object.entries(map)) {
+    if (norm === key || norm.includes(key)) return val;
+  }
+  return "desconhecido";
+}
+
+function generateAPRContentHash(recordType: string, periodKey: string, description: string | null, counterpart: string | null, amount: number): string {
+  return generateRowHash({
+    t: recordType,
+    p: periodKey,
+    d: (description || "").toLowerCase().trim().replace(/\s+/g, " "),
+    c: (counterpart || "").toLowerCase().trim(),
+    a: Math.round(amount * 100),
+  });
+}
+
+// APR-specific header keywords
+const APR_PAYABLE_HEADERS = ["vencimento", "vcto", "despesa", "fornecedor", "forma de pgto", "forma de pagamento", "forma pgto", "valor", "pgto", "status", "observacao", "obs"];
+const APR_RECEIVABLE_HEADERS = ["cliente", "nf", "nota fiscal", "forma de pgto", "forma de pagamento", "forma pgto", "valor", "pgto", "status", "contrato", "observacao", "obs"];
+
+const MONTH_KEYWORDS: Record<string, number> = {
+  ...MONTH_NAMES_FULL, ...MONTH_NAMES_ABBR,
+  "jan.": 1, "fev.": 2, "mar.": 3, "abr.": 4, "mai.": 5, "jun.": 6,
+  "jul.": 7, "ago.": 8, "set.": 9, "out.": 10, "nov.": 11, "dez.": 12,
+};
+
+function detectMonthFromText(text: string): { month: number; year: number | null } | null {
+  const norm = safeStr(text).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  for (const [name, idx] of Object.entries(MONTH_KEYWORDS)) {
+    if (norm.includes(name)) {
+      const yearMatch = norm.match(/\b(20\d{2})\b/) || norm.match(/\b(\d{2})\b/);
+      const year = yearMatch ? normalizeYear(yearMatch[1]) : null;
+      return { month: idx, year };
+    }
+  }
+  return null;
+}
+
+function isAPRSkippableRow(cells: string[]): { skip: boolean; reason?: string } {
+  const joined = cells.map(c => safeStr(c).toLowerCase().trim()).join(" ");
+  // Total/subtotal rows
+  if (/\b(total|subtotal|soma|somatorio|geral|resumo)\b/.test(joined)) return { skip: true, reason: "total_row" };
+  // Decorative rows
+  if (cells.every(c => !safeStr(c).trim() || /^[-=_*]+$/.test(safeStr(c).trim()))) return { skip: true, reason: "decorative_row" };
+  // Instruction rows (>50 chars, no numeric)
+  const longText = cells.find(c => safeStr(c).trim().length > 50);
+  if (longText && !cells.some(c => parseBRL(c) !== null)) return { skip: true, reason: "instruction_row" };
+  // All empty
+  if (cells.every(c => !safeStr(c).trim())) return { skip: true, reason: "empty_row" };
+  return { skip: false };
+}
+
+function parseAPRTab(
+  rows: unknown[][],
+  recordType: string,
+  tabTitle: string,
+  defaultYear: number,
+  requestId: string
+): APRParseResult {
+  const records: APRParsedRecord[] = [];
+  const skipReasons: Record<string, number> = {};
+  let scanned = 0;
+  let skipped = 0;
+
+  if (rows.length < 2) return { records, layout: "unknown", scanned: 0, skipped: 0, skipReasons };
+
+  // Detect layout: check first 10 rows for month names in horizontal headers
+  const layout = detectAPRLayout(rows, requestId);
+  console.log(`[${requestId}] APR tab "${tabTitle}" layout detected: ${layout}`);
+
+  if (layout === "horizontal_monthly") {
+    return parseAPRHorizontal(rows, recordType, tabTitle, defaultYear, requestId);
+  } else if (layout === "block_contract") {
+    return parseAPRBlock(rows, recordType, tabTitle, defaultYear, requestId);
+  } else {
+    return parseAPRVertical(rows, recordType, tabTitle, defaultYear, requestId);
+  }
+}
+
+function detectAPRLayout(rows: unknown[][], requestId: string): string {
+  // Scan first 10 rows for month patterns in horizontal layout
+  const scanLimit = Math.min(rows.length, 10);
+  for (let i = 0; i < scanLimit; i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) continue;
+    let monthCount = 0;
+    for (const cell of row) {
+      const monthInfo = detectMonthFromText(safeStr(cell));
+      if (monthInfo) monthCount++;
+    }
+    if (monthCount >= 3) {
+      console.log(`[${requestId}] Horizontal layout detected: row ${i} has ${monthCount} month headers`);
+      return "horizontal_monthly";
+    }
+  }
+
+  // Check for block/contract layout: text-only rows followed by data rows
+  let textOnlyCount = 0;
+  let dataAfterText = 0;
+  for (let i = 0; i < Math.min(rows.length, 30); i++) {
+    const row = (rows[i] || []) as string[];
+    const cells = row.map(c => safeStr(c).trim());
+    const hasValue = cells.some(c => parseBRL(c) !== null);
+    const hasText = cells.some(c => c.length > 0);
+    
+    if (hasText && !hasValue && cells.filter(c => c.length > 0).length <= 2) {
+      textOnlyCount++;
+    } else if (hasValue && textOnlyCount > 0) {
+      dataAfterText++;
+    }
+  }
+  if (textOnlyCount >= 2 && dataAfterText >= 3) return "block_contract";
+
+  return "vertical_rows";
+}
+
+function parseAPRVertical(
+  rows: unknown[][],
+  recordType: string,
+  tabTitle: string,
+  defaultYear: number,
+  requestId: string
+): APRParseResult {
+  const records: APRParsedRecord[] = [];
+  const skipReasons: Record<string, number> = {};
+  let skipped = 0;
+
+  // Find header row using APR-specific keywords
+  const aprKeywords = recordType === "payable" ? APR_PAYABLE_HEADERS : APR_RECEIVABLE_HEADERS;
+  let headerRow = 0;
+  let bestScore = 0;
+
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const row = (rows[i] || []) as string[];
+    let score = 0;
+    for (const cell of row) {
+      const norm = safeStr(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (aprKeywords.some(k => norm.includes(k))) score++;
+    }
+    if (score > bestScore) { bestScore = score; headerRow = i; }
+  }
+
+  const headers = (rows[headerRow] || []).map(c => safeStr(c).trim());
+  const normalizedHeaders = headers.map(h => h.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
+
+  // Map columns
+  const colMap: Record<string, number> = {};
+  const mapField = (field: string, keywords: string[]) => {
+    for (let i = 0; i < normalizedHeaders.length; i++) {
+      if (colMap[field] !== undefined) break;
+      if (keywords.some(k => normalizedHeaders[i].includes(k))) colMap[field] = i;
+    }
+  };
+
+  mapField("valor", ["valor", "montante", "vlr", "amount", "value"]);
+  mapField("descricao", ["descricao", "despesa", "description", "historico", "lancamento"]);
+  mapField("vencimento", ["vencimento", "vcto", "data", "dt"]);
+  mapField("status", ["status", "pgto", "situacao"]);
+  mapField("forma_pgto", ["forma de pgto", "forma pgto", "forma de pagamento", "forma pagamento"]);
+  mapField("cliente", ["cliente", "sacado", "pagador"]);
+  mapField("fornecedor", ["fornecedor", "favorecido", "beneficiario"]);
+  mapField("nf", ["nf", "nota fiscal", "nº nf", "numero nf"]);
+  mapField("observacao", ["obs", "observacao", "observação", "nota"]);
+
+  // Infer month from tab name
+  const tabMonthInfo = detectMonthFromText(tabTitle);
+  const fallbackPeriod = tabMonthInfo
+    ? `${tabMonthInfo.year || defaultYear}-${String(tabMonthInfo.month).padStart(2, "0")}`
+    : `${defaultYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const row = (rows[i] || []) as string[];
+    const cells = row.map(c => safeStr(c));
+
+    const skipCheck = isAPRSkippableRow(cells);
+    if (skipCheck.skip) {
+      skipped++;
+      skipReasons[skipCheck.reason!] = (skipReasons[skipCheck.reason!] || 0) + 1;
+      continue;
+    }
+
+    // Extract amount
+    const amountIdx = colMap.valor;
+    const rawAmount = amountIdx !== undefined ? parseBRL(cells[amountIdx]) : null;
+    if (rawAmount === null || rawAmount === 0) {
+      // Try scanning all cells for a value
+      let found = false;
+      for (let c = 0; c < cells.length; c++) {
+        if (c === (colMap.vencimento ?? -1)) continue; // skip date cols
+        const v = parseBRL(cells[c]);
+        if (v !== null && v !== 0) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        skipped++;
+        skipReasons["no_value"] = (skipReasons["no_value"] || 0) + 1;
+        continue;
+      }
+    }
+
+    const amount = rawAmount || 0;
+    if (amount === 0) {
+      skipped++;
+      skipReasons["zero_value"] = (skipReasons["zero_value"] || 0) + 1;
+      continue;
+    }
+
+    // Priority: explicit date column > tab month > fallback
+    let periodKey = fallbackPeriod;
+    let dueDate: string | null = null;
+    if (colMap.vencimento !== undefined) {
+      const parsed = parseDate(cells[colMap.vencimento]);
+      if (parsed) {
+        dueDate = parsed;
+        const [y, m] = parsed.split("-");
+        periodKey = `${y}-${m}`;
+      }
+    }
+
+    const description = colMap.descricao !== undefined ? cells[colMap.descricao].trim() : "";
+    const counterpart = recordType === "receivable"
+      ? (colMap.cliente !== undefined ? cells[colMap.cliente].trim() : null)
+      : (colMap.fornecedor !== undefined ? cells[colMap.fornecedor].trim() : null);
+    const statusRaw = colMap.status !== undefined ? cells[colMap.status].trim() : null;
+    const paymentMethod = colMap.forma_pgto !== undefined ? cells[colMap.forma_pgto].trim() : null;
+    const nfNumber = colMap.nf !== undefined ? cells[colMap.nf].trim() : null;
+    const notes = colMap.observacao !== undefined ? cells[colMap.observacao].trim() : null;
+
+    // Skip if no meaningful data
+    if (!description && !counterpart && Math.abs(amount) < 0.01) {
+      skipped++;
+      skipReasons["no_content"] = (skipReasons["no_content"] || 0) + 1;
+      continue;
+    }
+
+    // Check if this is a repeated header row
+    const headerKeywordCount = cells.filter(c => {
+      const norm = c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      return aprKeywords.some(k => norm.includes(k));
+    }).length;
+    if (headerKeywordCount >= 3) {
+      skipped++;
+      skipReasons["header_repeat"] = (skipReasons["header_repeat"] || 0) + 1;
+      continue;
+    }
+
+    records.push({
+      period_key: periodKey,
+      source_row: i + 1,
+      due_date: dueDate,
+      description: description || (counterpart || "Sem descrição"),
+      counterpart: counterpart || null,
+      nf_number: nfNumber || null,
+      payment_method: paymentMethod || null,
+      amount: Math.abs(amount),
+      status_raw: statusRaw || null,
+      notes: notes || null,
+      raw_data: Object.fromEntries(headers.map((h, idx) => [h || `col_${idx}`, cells[idx] || ""])),
+    });
+  }
+
+  return { records, layout: "vertical_rows", scanned: rows.length - headerRow - 1, skipped, skipReasons };
+}
+
+function parseAPRHorizontal(
+  rows: unknown[][],
+  recordType: string,
+  tabTitle: string,
+  defaultYear: number,
+  requestId: string
+): APRParseResult {
+  const records: APRParsedRecord[] = [];
+  const skipReasons: Record<string, number> = {};
+  let skipped = 0;
+  let scanned = 0;
+
+  // Find the row with month headers
+  let monthHeaderRow = -1;
+  const monthColumns: Array<{ colStart: number; month: number; year: number }> = [];
+
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = (rows[i] || []) as string[];
+    const monthsFound: Array<{ col: number; month: number; year: number | null }> = [];
+    for (let c = 0; c < row.length; c++) {
+      const mi = detectMonthFromText(safeStr(row[c]));
+      if (mi) monthsFound.push({ col: c, month: mi.month, year: mi.year });
+    }
+    if (monthsFound.length >= 3) {
+      monthHeaderRow = i;
+      // Determine column groups
+      for (let m = 0; m < monthsFound.length; m++) {
+        const nextCol = m < monthsFound.length - 1 ? monthsFound[m + 1].col : row.length;
+        monthColumns.push({
+          colStart: monthsFound[m].col,
+          month: monthsFound[m].month,
+          year: monthsFound[m].year || defaultYear,
+        });
+      }
+      break;
+    }
+  }
+
+  if (monthHeaderRow < 0 || monthColumns.length === 0) {
+    return parseAPRVertical(rows, recordType, tabTitle, defaultYear, requestId);
+  }
+
+  // Find sub-headers for each month group (valor, pgto, nf, etc.)
+  const subHeaderRow = monthHeaderRow + 1;
+  const subHeaders = subHeaderRow < rows.length ? (rows[subHeaderRow] || []).map(c => safeStr(c).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim()) : [];
+
+  // Find left-side identifier columns
+  const leftCols = monthColumns[0].colStart;
+
+  // Parse data rows
+  for (let i = subHeaderRow + 1; i < rows.length; i++) {
+    const row = (rows[i] || []) as string[];
+    const cells = row.map(c => safeStr(c));
+    scanned++;
+
+    const skipCheck = isAPRSkippableRow(cells);
+    if (skipCheck.skip) {
+      skipped++;
+      skipReasons[skipCheck.reason!] = (skipReasons[skipCheck.reason!] || 0) + 1;
+      continue;
+    }
+
+    // Extract left-side identifier (description/counterpart)
+    const leftValues = cells.slice(0, leftCols).map(c => c.trim()).filter(c => c);
+    const description = leftValues[0] || "";
+    if (!description) {
+      skipped++;
+      skipReasons["no_identifier"] = (skipReasons["no_identifier"] || 0) + 1;
+      continue;
+    }
+
+    // For each month column group, extract a record
+    for (let m = 0; m < monthColumns.length; m++) {
+      const mc = monthColumns[m];
+      const nextStart = m < monthColumns.length - 1 ? monthColumns[m + 1].colStart : row.length;
+      const groupCells = cells.slice(mc.colStart, nextStart);
+
+      // Find value in this group
+      let amount: number | null = null;
+      let statusRaw: string | null = null;
+      let paymentMethod: string | null = null;
+      let nfNumber: string | null = null;
+
+      for (let gc = 0; gc < groupCells.length; gc++) {
+        const subH = subHeaders[mc.colStart + gc] || "";
+        const val = groupCells[gc].trim();
+
+        if (subH.includes("valor") || subH.includes("vlr") || subH.includes("amount")) {
+          amount = parseBRL(val);
+        } else if (subH.includes("pgto") || subH.includes("status") || subH.includes("situacao")) {
+          statusRaw = val || null;
+        } else if (subH.includes("forma") || subH.includes("pagamento")) {
+          paymentMethod = val || null;
+        } else if (subH.includes("nf") || subH.includes("nota")) {
+          nfNumber = val || null;
+        } else if (amount === null) {
+          // Try parsing as amount if no header matched
+          const tryVal = parseBRL(val);
+          if (tryVal !== null && tryVal !== 0) amount = tryVal;
+        }
+      }
+
+      if (amount === null || amount === 0) continue;
+
+      const periodKey = `${mc.year}-${String(mc.month).padStart(2, "0")}`;
+
+      records.push({
+        period_key: periodKey,
+        source_row: i + 1,
+        due_date: null,
+        description,
+        counterpart: leftValues.length > 1 ? leftValues[1] : null,
+        nf_number: nfNumber,
+        payment_method: paymentMethod,
+        amount: Math.abs(amount),
+        status_raw: statusRaw,
+        notes: null,
+        raw_data: Object.fromEntries(cells.map((c, idx) => [`col_${idx}`, c])),
+      });
+    }
+  }
+
+  return { records, layout: "horizontal_monthly", scanned, skipped, skipReasons };
+}
+
+function parseAPRBlock(
+  rows: unknown[][],
+  recordType: string,
+  tabTitle: string,
+  defaultYear: number,
+  requestId: string
+): APRParseResult {
+  const records: APRParsedRecord[] = [];
+  const skipReasons: Record<string, number> = {};
+  let skipped = 0;
+  let scanned = 0;
+
+  let currentGrouper: string | null = null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = (rows[i] || []) as string[];
+    const cells = row.map(c => safeStr(c).trim());
+    scanned++;
+
+    const skipCheck = isAPRSkippableRow(cells);
+    if (skipCheck.skip) {
+      skipped++;
+      skipReasons[skipCheck.reason!] = (skipReasons[skipCheck.reason!] || 0) + 1;
+      continue;
+    }
+
+    // Check if this is a grouper row (text only, no numeric values)
+    const hasValue = cells.some(c => parseBRL(c) !== null && parseBRL(c) !== 0);
+    const nonEmptyCells = cells.filter(c => c.length > 0);
+
+    if (!hasValue && nonEmptyCells.length <= 2 && nonEmptyCells.length > 0) {
+      currentGrouper = nonEmptyCells[0];
+      continue;
+    }
+
+    if (!hasValue) {
+      skipped++;
+      skipReasons["no_value_block"] = (skipReasons["no_value_block"] || 0) + 1;
+      continue;
+    }
+
+    // Find amount, month, status in cells
+    let amount: number | null = null;
+    let monthInfo: { month: number; year: number | null } | null = null;
+    let statusRaw: string | null = null;
+    let paymentMethod: string | null = null;
+    let description = "";
+
+    for (const cell of cells) {
+      if (!cell) continue;
+      const val = parseBRL(cell);
+      if (val !== null && val !== 0 && amount === null) {
+        amount = val;
+        continue;
+      }
+      const mi = detectMonthFromText(cell);
+      if (mi && !monthInfo) {
+        monthInfo = mi;
+        continue;
+      }
+      // Check if it's a status
+      const normCell = cell.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const allStatuses = ["pago", "pg", "ok", "liquidado", "pendente", "aberto", "agendado", "recebido", "rec", "previsto", "confirmar", "emitir", "cancelado"];
+      if (allStatuses.some(s => normCell === s || normCell.includes(s))) {
+        statusRaw = cell;
+        continue;
+      }
+      // Check for payment method keywords
+      const pgtoKeywords = ["pix", "boleto", "ted", "doc", "cartao", "cartão", "debito", "credito", "transferencia", "deposito", "cheque", "dinheiro"];
+      if (pgtoKeywords.some(k => normCell.includes(k))) {
+        paymentMethod = cell;
+        continue;
+      }
+      if (!description && cell.length > 1) description = cell;
+    }
+
+    if (amount === null || amount === 0) {
+      skipped++;
+      skipReasons["no_value_data"] = (skipReasons["no_value_data"] || 0) + 1;
+      continue;
+    }
+
+    const tabMonthInfo = detectMonthFromText(tabTitle);
+    const periodKey = monthInfo
+      ? `${monthInfo.year || defaultYear}-${String(monthInfo.month).padStart(2, "0")}`
+      : tabMonthInfo
+      ? `${tabMonthInfo.year || defaultYear}-${String(tabMonthInfo.month).padStart(2, "0")}`
+      : `${defaultYear}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+
+    records.push({
+      period_key: periodKey,
+      source_row: i + 1,
+      due_date: null,
+      description: description || currentGrouper || "Sem descrição",
+      counterpart: currentGrouper,
+      nf_number: null,
+      payment_method: paymentMethod,
+      amount: Math.abs(amount),
+      status_raw: statusRaw,
+      notes: null,
+      raw_data: Object.fromEntries(cells.map((c, idx) => [`col_${idx}`, c])),
+    });
+  }
+
+  return { records, layout: "block_contract", scanned, skipped, skipReasons };
+}
+
 // ============ Main handler ============
 
 interface SyncAllTabsRequest {
@@ -1613,6 +2187,105 @@ Deno.serve(async (req) => {
       totalNoOps += upsertResult.noOps;
 
       console.log(`[${requestId}] Tab ${tab.title}: scanned=${tabScanned}, withValue=${tabWithValue}, inserted=${upsertResult.inserted}, updated=${upsertResult.updated}, noOps=${upsertResult.noOps}, skipped=${tabSkipped}, errors=${upsertResult.errors.length}`);
+    }
+
+    // ============ PAYABLE / RECEIVABLE PIPELINE ============
+    const aprTabs = classified.filter(t => t.route === "PAYABLE" || t.route === "RECEIVABLE");
+    console.log(`[${requestId}] APR tabs found: ${aprTabs.map(t => `${t.title}(${t.route})`).join(", ") || "none"}`);
+
+    if (aprTabs.length > 0) {
+      const syncRunId = crypto.randomUUID();
+
+      for (const aprTab of aprTabs) {
+        if (Date.now() - startTime > INTERNAL_TIMEOUT_MS) {
+          console.log(`[${requestId}] TIMEOUT during APR processing`);
+          break;
+        }
+
+        const recordType = aprTab.route === "PAYABLE" ? "payable" : "receivable";
+        console.log(`[${requestId}] Processing APR tab "${aprTab.title}" as ${recordType}`);
+
+        await updateJobHeartbeat(supabase, jobId, `apr(${aprTab.title})`, {
+          tabs_total: monthlyTabs.length + aprTabs.length, tabs_done: monthlyTabs.length,
+          rows_read: totalScanned, rows_imported: totalImported, current_tab: `${aprTab.title} (${recordType})`,
+        });
+
+        // Read tab data
+        const aprRows = xlsxWorkbook
+          ? xlsxSheetToRows(xlsxWorkbook, aprTab.title)
+          : await readTabPaginated(accessToken!, connection.spreadsheet_id, aprTab.title, aprTab.rowCount || 1000, requestId);
+
+        if (aprRows.length < 2) {
+          console.log(`[${requestId}] APR tab "${aprTab.title}" has <2 rows, skipping`);
+          continue;
+        }
+
+        // Detect layout and parse
+        const aprRecords = parseAPRTab(aprRows, recordType, aprTab.title, defaultYear, requestId);
+
+        console.log(`[${requestId}] APR tab "${aprTab.title}": parsed ${aprRecords.records.length} records, layout=${aprRecords.layout}, skipped=${aprRecords.skipped}`);
+
+        // Upsert records
+        if (aprRecords.records.length > 0) {
+          const upsertBatch = aprRecords.records.map(r => ({
+            user_id: userId,
+            connection_id: connectionId,
+            record_type: recordType,
+            period_key: r.period_key,
+            source_tab: aprTab.title,
+            source_row: r.source_row,
+            source_layout: aprRecords.layout,
+            due_date: r.due_date || null,
+            description: r.description || "",
+            counterpart: r.counterpart || null,
+            nf_number: r.nf_number || null,
+            payment_method: r.payment_method || null,
+            amount: Math.round(r.amount * 100) / 100,
+            status_raw: r.status_raw || null,
+            status_normalized: normalizeAPRStatus(r.status_raw, recordType),
+            notes: r.notes || null,
+            content_hash: generateAPRContentHash(recordType, r.period_key, r.description, r.counterpart, r.amount),
+            sync_run_id: syncRunId,
+            last_seen_at: new Date().toISOString(),
+            raw_data: r.raw_data || null,
+          }));
+
+          for (const chunk of chunks(upsertBatch, BATCH_UPSERT_SIZE)) {
+            const { error: upsErr } = await supabase
+              .from("accounts_payable_receivable")
+              .upsert(chunk, { onConflict: "user_id,connection_id,content_hash" });
+            if (upsErr) {
+              console.warn(`[${requestId}] APR upsert error for ${aprTab.title}:`, upsErr.message);
+            }
+          }
+        }
+
+        // Clean orphans: delete records from this connection not seen in this run
+        const { error: delErr } = await supabase
+          .from("accounts_payable_receivable")
+          .delete()
+          .eq("user_id", userId)
+          .eq("connection_id", connectionId)
+          .eq("record_type", recordType)
+          .neq("sync_run_id", syncRunId);
+        if (delErr) {
+          console.warn(`[${requestId}] APR orphan cleanup error:`, delErr.message);
+        }
+
+        // Audit log
+        await supabase.from("sync_tab_audit").insert({
+          job_id: jobId, user_id: userId, connection_id: connectionId,
+          tab_name: aprTab.title, period_key: null,
+          rows_scanned: aprRecords.scanned, rows_with_value: aprRecords.records.length,
+          rows_imported: aprRecords.records.length, rows_skipped: aprRecords.skipped,
+          skip_reasons: {
+            layout_detected: aprRecords.layout,
+            record_type: recordType,
+            ...aprRecords.skipReasons,
+          },
+          errors: [],
+        });
+      }
     }
 
     // ===== Finalize =====
