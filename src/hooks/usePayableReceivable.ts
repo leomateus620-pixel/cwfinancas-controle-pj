@@ -45,20 +45,23 @@ function computeAggregates(records: APRRecord[], settledStatuses: string[]): APR
   return { total, totalSettled, totalPending, count: records.length };
 }
 
-export function usePayableReceivable(periodKey: string) {
+export function usePayableReceivable(periodKey: string, connectionId?: string) {
   const { user } = useAuth();
 
   const payableQuery = useQuery({
-    queryKey: ["apr-payable", periodKey, user?.id],
+    queryKey: ["apr-payable", periodKey, user?.id, connectionId],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from("accounts_payable_receivable")
         .select("*")
         .eq("user_id", user.id)
         .eq("record_type", "payable")
-        .eq("period_key", periodKey)
-        .order("due_date", { ascending: true, nullsFirst: false });
+        .eq("period_key", periodKey);
+      if (connectionId) {
+        query = query.eq("connection_id", connectionId);
+      }
+      const { data, error } = await query.order("due_date", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return (data || []) as APRRecord[];
     },
@@ -66,16 +69,19 @@ export function usePayableReceivable(periodKey: string) {
   });
 
   const receivableQuery = useQuery({
-    queryKey: ["apr-receivable", periodKey, user?.id],
+    queryKey: ["apr-receivable", periodKey, user?.id, connectionId],
     queryFn: async () => {
       if (!user?.id) return [];
-      const { data, error } = await supabase
+      let query = supabase
         .from("accounts_payable_receivable")
         .select("*")
         .eq("user_id", user.id)
         .eq("record_type", "receivable")
-        .eq("period_key", periodKey)
-        .order("due_date", { ascending: true, nullsFirst: false });
+        .eq("period_key", periodKey);
+      if (connectionId) {
+        query = query.eq("connection_id", connectionId);
+      }
+      const { data, error } = await query.order("due_date", { ascending: true, nullsFirst: false });
       if (error) throw error;
       return (data || []) as APRRecord[];
     },
