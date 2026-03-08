@@ -113,7 +113,7 @@ export default function AccountsPage() {
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <div className="space-y-6">
         <PayableCard records={payable} aggregates={payableAggregates} isLoading={isLoading} />
         <ReceivableCard records={receivable} aggregates={receivableAggregates} isLoading={isLoading} />
       </div>
