@@ -191,6 +191,9 @@ export function useDRE(sheetId?: string) {
       : lines;
 
     if (activeTemplate === "LCF_NUCLEO") {
+      if (viewMode === "by_nucleo") {
+        return calculateLcfKPIs(filtered);
+      }
       const consolidatedLines = lines.filter(l => l.nucleo === null);
       return calculateLcfKPIs(consolidatedLines);
     }

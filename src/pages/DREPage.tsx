@@ -32,6 +32,7 @@ export default function DREPage() {
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedScenario, setSelectedScenario] = useState<string>("realizado");
   const [viewMode, setViewMode] = useState<"consolidated" | "by_nucleo">("consolidated");
+  const [selectedNucleo, setSelectedNucleo] = useState<string>("");
 
   const activeConnectionId = selectedConnectionId || connections?.[0]?.id || "";
 
@@ -99,9 +100,26 @@ export default function DREPage() {
 
   const { data: lines, isLoading: isLoadingLines } = useLines(selectedPeriod?.id);
 
-  const kpis = lines ? calculateKPIs(lines, viewMode) : null;
   const nucleos = lines ? getNucleos(lines) : [];
   const isLcf = activeTemplate === "LCF_NUCLEO" || (periodOptions || []).some(p => p.templateType === "LCF_NUCLEO");
+
+  // Auto-select first nucleo when switching to by_nucleo mode
+  useEffect(() => {
+    if (viewMode === "by_nucleo" && nucleos.length > 0 && !nucleos.includes(selectedNucleo)) {
+      setSelectedNucleo(nucleos[0]);
+    }
+  }, [viewMode, nucleos, selectedNucleo]);
+
+  // Filter lines for KPI calculation based on view mode and selected nucleo
+  const kpiLines = useMemo(() => {
+    if (!lines) return null;
+    if (viewMode === "by_nucleo" && selectedNucleo) {
+      return lines.filter(l => l.nucleo === selectedNucleo);
+    }
+    return lines;
+  }, [lines, viewMode, selectedNucleo]);
+
+  const kpis = kpiLines ? calculateKPIs(kpiLines, viewMode) : null;
   const isSyncing = syncDRE.isPending;
 
   const handleSync = () => {
@@ -243,6 +261,18 @@ export default function DREPage() {
                 Por Núcleo
               </ToggleGroupItem>
             </ToggleGroup>
+          )}
+          {viewMode === "by_nucleo" && nucleos.length > 0 && (
+            <Select value={selectedNucleo} onValueChange={setSelectedNucleo}>
+              <SelectTrigger className="w-[150px] h-9 text-sm">
+                <SelectValue placeholder="Núcleo" />
+              </SelectTrigger>
+              <SelectContent>
+                {nucleos.map(n => (
+                  <SelectItem key={n} value={n}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           <Button onClick={handleSync} disabled={isSyncing || !activeConnectionId} size="sm" className="h-9">
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
