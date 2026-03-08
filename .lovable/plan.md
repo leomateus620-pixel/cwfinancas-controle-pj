@@ -1,12 +1,16 @@
 
 
-## Plan: Improve Header Text Contrast in Caixa Atual Card
+## Plan: Tornar seção "Personalizar" colapsável
 
-The "CAIXA ATUAL" label and "Março 2026" subtitle use low-opacity classes making them nearly invisible.
+### Mudança
 
-### Changes in `src/components/home/CaixaAtualCard.tsx`
+**`src/components/layout/GlobalDateRangeFilter.tsx`** — Único arquivo:
 
-- **"CAIXA ATUAL"** (~line 64): `text-muted-foreground` → `text-foreground/80` — stronger contrast
-- **"Março 2026"** (~line 67): `text-muted-foreground/40` → `text-muted-foreground/70` — visible but still secondary
-- **Wallet icon** (~line 61): `text-muted-foreground` → `text-foreground/60` — slightly bolder to match
+1. Adicionar estado `showCustom` (default `false`)
+2. Transformar o título "Personalizar" em um botão clicável com ícone chevron que alterna `showCustom`
+3. Envolver inputs de data, calendário e footer em condicional `{showCustom && (...)}`
+4. Quando o preset ativo for `"custom"`, abrir automaticamente a seção ao abrir o popover
+5. Animar com `transition-all` para suavizar abertura/fechamento
+
+O popover abre compacto mostrando apenas os presets. Ao clicar em "Personalizar", expande para mostrar calendário e inputs.
 
