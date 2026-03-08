@@ -331,7 +331,7 @@ export function useGoogleSheets() {
   const syncData = useMutation({
     mutationFn: async (connectionId: string) => {
       const { data, error } = await supabase.functions.invoke("google-sheets-sync", {
-        body: { connection_id: connectionId },
+        body: { connection_id: connectionId, force_refresh: true },
       });
 
       if (error) {
@@ -376,9 +376,9 @@ export function useGoogleSheets() {
 
   // Sync all tabs (monthly transactions only) - fire-and-forget with job tracking
   const syncAllTabs = useMutation({
-    mutationFn: async ({ connectionId, selectedTabs, monthRange }: { connectionId: string; selectedTabs?: string[]; monthRange?: MonthRange }) => {
+    mutationFn: async ({ connectionId, selectedTabs, monthRange, forceRefresh }: { connectionId: string; selectedTabs?: string[]; monthRange?: MonthRange; forceRefresh?: boolean }) => {
       const { data, error } = await supabase.functions.invoke("sheets-sync-all-tabs", {
-        body: { connection_id: connectionId, selected_tabs: selectedTabs, month_range: monthRange },
+        body: { connection_id: connectionId, selected_tabs: selectedTabs, month_range: monthRange, force_refresh: forceRefresh ?? true },
       });
 
       // If we get a 409 (already_running), show specific message
