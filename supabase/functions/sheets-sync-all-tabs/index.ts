@@ -482,7 +482,7 @@ function autoDetectMapping(headers: string[]): Record<string, string> {
       });
 
       if (matched) {
-        mapping[field] = headers[i];
+        mapping[field] = safeStr(headers[i]).trim() || headers[i];
         usedColumnIndices.add(i);
         break;
       }
