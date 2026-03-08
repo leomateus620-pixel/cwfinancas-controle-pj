@@ -1557,9 +1557,17 @@ function parseAPRHorizontal(
     }
 
     const vctoIdx = leftColMap.vencimento;
-    const baseDueDate = vctoIdx !== undefined ? parseDate(row[vctoIdx]) : null;
+    const baseDueDateParsed = vctoIdx !== undefined ? parseDate(row[vctoIdx]) : null;
+    // Extract "Dia XX" pattern for contextual date building
+    const vctoRaw = vctoIdx !== undefined ? safeStr(row[vctoIdx]).trim() : "";
+    const diaMatch = vctoRaw.match(/Dia\s+(\d{1,2})/i);
+    const diaNumber = diaMatch ? parseInt(diaMatch[1], 10) : null;
+    
     const paymentMethodLeft = leftColMap.forma_pgto !== undefined ? cells[leftColMap.forma_pgto].trim() || null : null;
     const notesLeft = leftColMap.observacao !== undefined ? cells[leftColMap.observacao].trim() || null : null;
+
+    // Check if sub-headers actually exist (with meaningful labels)
+    const hasSubHeaders = subHeaders.some(h => h.includes("valor") || h.includes("vlr") || h.includes("pgto") || h.includes("status") || h.includes("situacao"));
 
     // For each month column group, extract a record
     for (let m = 0; m < monthColumns.length; m++) {
@@ -1572,6 +1580,7 @@ function parseAPRHorizontal(
       let statusRaw: string | null = null;
       let paymentMethod: string | null = paymentMethodLeft;
       let nfNumber: string | null = null;
+      let amountFoundAtGc = -1;
 
       for (let gc = 0; gc < groupCells.length; gc++) {
         const subH = subHeaders[mc.colStart + gc] || "";
@@ -1579,6 +1588,7 @@ function parseAPRHorizontal(
 
         if (subH.includes("valor") || subH.includes("vlr") || subH.includes("amount")) {
           amount = parseBRL(val);
+          amountFoundAtGc = gc;
         } else if (subH.includes("pgto") || subH.includes("status") || subH.includes("situacao")) {
           statusRaw = val || null;
         } else if (subH.includes("forma") || subH.includes("pagamento")) {
@@ -1588,7 +1598,27 @@ function parseAPRHorizontal(
         } else if (amount === null) {
           // Try parsing as amount if no header matched
           const tryVal = parseBRL(val);
-          if (tryVal !== null && tryVal !== 0) amount = tryVal;
+          if (tryVal !== null && tryVal !== 0) {
+            amount = tryVal;
+            amountFoundAtGc = gc;
+          }
+        }
+      }
+
+      // When no sub-headers exist, treat the cell right after the amount as status
+      if (!hasSubHeaders && statusRaw === null && amountFoundAtGc >= 0) {
+        const statusGc = amountFoundAtGc + 1;
+        if (statusGc < groupCells.length) {
+          const candidateStatus = groupCells[statusGc].trim();
+          // Only treat as status if it's non-empty text and NOT a number
+          if (candidateStatus && parseBRL(candidateStatus) === null) {
+            statusRaw = candidateStatus;
+            // Extract payment method/bank from status like "Pago Cresol"
+            const bankMatch = statusRaw.match(/(?:pago|recebido|ok)\s+(.+)/i);
+            if (bankMatch && !paymentMethod) {
+              paymentMethod = bankMatch[1].trim();
+            }
+          }
         }
       }
 
@@ -1596,12 +1626,20 @@ function parseAPRHorizontal(
 
       const periodKey = `${mc.year}-${String(mc.month).padStart(2, "0")}`;
 
+      // Build due_date: prefer parsed date, fallback to "Dia XX" + period context
+      let dueDate = baseDueDateParsed;
+      if (!dueDate && diaNumber) {
+        const dayStr = String(diaNumber).padStart(2, "0");
+        const monthStr = String(mc.month).padStart(2, "0");
+        dueDate = `${mc.year}-${monthStr}-${dayStr}`;
+      }
+
       records.push({
         period_key: periodKey,
         source_row: i + 1,
-        due_date: baseDueDate,
+        due_date: dueDate,
         description,
-        counterpart: recordType === "receivable" ? description : null,
+        counterpart: description || null,
         nf_number: nfNumber,
         payment_method: paymentMethod,
         amount: Math.abs(amount),
