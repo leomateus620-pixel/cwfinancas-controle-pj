@@ -31,6 +31,7 @@ export function GlobalDateRangeFilter() {
   const location = useLocation();
   const { range, preset, setPreset, setCustomRange, rangeLabel, formattedRange } = useDateRange();
   const [open, setOpen] = useState(false);
+  const [showCustom, setShowCustom] = useState(false);
   const [selectedRange, setSelectedRange] = useState<RDPDateRange | undefined>({
     from: range.from,
     to: range.to,
