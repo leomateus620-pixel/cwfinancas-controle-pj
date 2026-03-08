@@ -1630,7 +1630,9 @@ function parseAPRHorizontal(
       // Build due_date: prefer parsed date, fallback to "Dia XX" + period context
       let dueDate = baseDueDateParsed;
       if (!dueDate && diaNumber) {
-        const dayStr = String(diaNumber).padStart(2, "0");
+        const maxDay = new Date(mc.year, mc.month, 0).getDate(); // last valid day of month
+        const safeDay = Math.min(diaNumber, maxDay);
+        const dayStr = String(safeDay).padStart(2, "0");
         const monthStr = String(mc.month).padStart(2, "0");
         dueDate = `${mc.year}-${monthStr}-${dayStr}`;
       }
