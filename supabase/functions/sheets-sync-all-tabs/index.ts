@@ -1796,6 +1796,7 @@ Deno.serve(async (req) => {
     
     const body: SyncAllTabsRequest = await req.json();
     connectionId = body.connection_id;
+    const forceRefresh = !!(body as Record<string, unknown>).force_refresh;
     const { month_range, selected_tabs } = body;
 
     // Determine userId: internal call (from scheduled-sync) or user auth
