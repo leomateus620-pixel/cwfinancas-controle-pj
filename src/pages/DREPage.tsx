@@ -283,7 +283,7 @@ export default function DREPage() {
             />
           )}
 
-          <DreDetailsAccordion lines={displayLines} />
+          <DreDetailsAccordion lines={displayLines} viewMode={viewMode} nucleos={nucleos} />
         </>
       )}
     </div>
