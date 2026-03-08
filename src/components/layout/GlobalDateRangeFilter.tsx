@@ -82,6 +82,7 @@ export function GlobalDateRangeFilter() {
       setSelectedRange({ from: range.from, to: range.to });
       setFromInput(format(range.from, "dd/MM/yyyy"));
       setToInput(format(range.to, "dd/MM/yyyy"));
+      setShowCustom(preset === "custom");
     }
   };
 
