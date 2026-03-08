@@ -40,9 +40,11 @@ export function PayableCard({ records, aggregates, isLoading }: PayableCardProps
   return (
     <div className="liquid-glass-card rounded-2xl p-6 border-l-4 border-l-amber-400 relative">
       {/* Decorative gradient orbs */}
-      <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, hsla(38, 92%, 50%, 0.12), transparent 70%)" }} />
-      <div className="absolute -bottom-12 -left-12 w-36 h-36 rounded-full blur-3xl pointer-events-none" style={{ background: "radial-gradient(circle, hsla(38, 92%, 50%, 0.08), transparent 70%)" }} />
-      <div className="absolute top-1/2 right-1/4 w-24 h-24 rounded-full blur-2xl pointer-events-none" style={{ background: "radial-gradient(circle, hsla(38, 80%, 60%, 0.06), transparent 70%)" }} />
+      <div style={{ position: 'absolute', inset: 0 }} className="pointer-events-none overflow-visible">
+        <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsla(38, 92%, 50%, 0.12), transparent 70%)" }} />
+        <div className="absolute -bottom-12 -left-12 w-36 h-36 rounded-full blur-3xl" style={{ background: "radial-gradient(circle, hsla(38, 92%, 50%, 0.08), transparent 70%)" }} />
+        <div className="absolute top-1/2 right-1/4 w-24 h-24 rounded-full blur-2xl" style={{ background: "radial-gradient(circle, hsla(38, 80%, 60%, 0.06), transparent 70%)" }} />
+      </div>
 
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
