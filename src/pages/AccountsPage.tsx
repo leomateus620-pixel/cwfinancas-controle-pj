@@ -25,9 +25,9 @@ export default function AccountsPage() {
   const [currentDate, setCurrentDate] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
   const periodKey = getPeriodKey(currentDate);
 
+  const { connections, syncAllTabs } = useGoogleSheets();
   const latestConnectionId = connections && connections.length > 0 ? connections[0]?.id : undefined;
   const { payable, receivable, payableAggregates, receivableAggregates, isLoading } = usePayableReceivable(periodKey, latestConnectionId);
-  const { connections, syncAllTabs } = useGoogleSheets();
 
   const isSyncing = syncAllTabs.isPending;
   const hasData = payable.length > 0 || receivable.length > 0;
