@@ -1160,13 +1160,14 @@ function normalizeAPRStatus(raw: string | null | undefined, recordType: string):
   return "desconhecido";
 }
 
-function generateAPRContentHash(recordType: string, periodKey: string, description: string | null, counterpart: string | null, amount: number): string {
+function generateAPRContentHash(recordType: string, periodKey: string, description: string | null, counterpart: string | null, amount: number, sourceRow?: number): string {
   return generateRowHash({
     t: recordType,
     p: periodKey,
     d: (description || "").toLowerCase().trim().replace(/\s+/g, " "),
     c: (counterpart || "").toLowerCase().trim(),
     a: Math.round(amount * 100),
+    r: sourceRow || 0,
   });
 }
 
@@ -1629,7 +1630,9 @@ function parseAPRHorizontal(
       // Build due_date: prefer parsed date, fallback to "Dia XX" + period context
       let dueDate = baseDueDateParsed;
       if (!dueDate && diaNumber) {
-        const dayStr = String(diaNumber).padStart(2, "0");
+        const maxDay = new Date(mc.year, mc.month, 0).getDate(); // last valid day of month
+        const safeDay = Math.min(diaNumber, maxDay);
+        const dayStr = String(safeDay).padStart(2, "0");
         const monthStr = String(mc.month).padStart(2, "0");
         dueDate = `${mc.year}-${monthStr}-${dayStr}`;
       }
@@ -2376,13 +2379,20 @@ Deno.serve(async (req) => {
             status_raw: r.status_raw || null,
             status_normalized: normalizeAPRStatus(r.status_raw, recordType),
             notes: r.notes || null,
-            content_hash: generateAPRContentHash(recordType, r.period_key, r.description, r.counterpart, r.amount),
+            content_hash: generateAPRContentHash(recordType, r.period_key, r.description, r.counterpart, r.amount, r.source_row),
             sync_run_id: syncRunId,
             last_seen_at: new Date().toISOString(),
             raw_data: r.raw_data || null,
           }));
 
-          for (const chunk of chunks(upsertBatch, BATCH_UPSERT_SIZE)) {
+          // Deduplicate by content_hash before upsert (keep last occurrence)
+          const dedupMap = new Map<string, typeof upsertBatch[0]>();
+          for (const rec of upsertBatch) {
+            dedupMap.set(rec.content_hash, rec);
+          }
+          const dedupedBatch = Array.from(dedupMap.values());
+
+          for (const chunk of chunks(dedupedBatch, BATCH_UPSERT_SIZE)) {
             const { error: upsErr } = await supabase
               .from("accounts_payable_receivable")
               .upsert(chunk, { onConflict: "user_id,connection_id,content_hash" });
