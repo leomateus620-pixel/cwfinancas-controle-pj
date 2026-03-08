@@ -140,6 +140,11 @@ Deno.serve(async (req) => {
           "accounts_payable_receivable",
           admin.from("accounts_payable_receivable").delete().eq("connection_id", connectionId).eq("user_id", userId)
         );
+        // Also clean orphaned records with NULL connection_id
+        await deleteFrom(
+          "accounts_payable_receivable (orphans)",
+          admin.from("accounts_payable_receivable").delete().is("connection_id", null).eq("user_id", userId)
+        );
       } else {
         await deleteFrom(
           "accounts_payable_receivable",
