@@ -113,7 +113,7 @@ export default function DREPage() {
   const displayLines = lines
     ? viewMode === "consolidated"
       ? lines.filter(l => l.nucleo === null)
-      : lines
+      : lines.filter(l => l.nucleo !== null)
     : [];
 
   if (!isDesktop) {
@@ -283,7 +283,7 @@ export default function DREPage() {
             />
           )}
 
-          <DreDetailsAccordion lines={displayLines} />
+          <DreDetailsAccordion lines={displayLines} viewMode={viewMode} nucleos={nucleos} />
         </>
       )}
     </div>
