@@ -2385,7 +2385,14 @@ Deno.serve(async (req) => {
             raw_data: r.raw_data || null,
           }));
 
-          for (const chunk of chunks(upsertBatch, BATCH_UPSERT_SIZE)) {
+          // Deduplicate by content_hash before upsert (keep last occurrence)
+          const dedupMap = new Map<string, typeof upsertBatch[0]>();
+          for (const rec of upsertBatch) {
+            dedupMap.set(rec.content_hash, rec);
+          }
+          const dedupedBatch = Array.from(dedupMap.values());
+
+          for (const chunk of chunks(dedupedBatch, BATCH_UPSERT_SIZE)) {
             const { error: upsErr } = await supabase
               .from("accounts_payable_receivable")
               .upsert(chunk, { onConflict: "user_id,connection_id,content_hash" });
