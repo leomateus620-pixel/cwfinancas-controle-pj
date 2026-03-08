@@ -4,10 +4,9 @@ import { ExpenseChart } from "@/components/dashboard/ExpenseChart";
 import { ProfitDistributionChart } from "@/components/dashboard/ProfitDistributionChart";
 import { RecentTransactions } from "@/components/dashboard/RecentTransactions";
 import { DataQualityCard } from "@/components/dashboard/DataQualityCard";
-import { Wallet, ArrowLeftRight } from "lucide-react";
+import { Wallet, ArrowLeftRight, Sparkles } from "lucide-react";
 import { formatCurrencyBR } from "@/lib/currency";
 
-import { CorporateCard } from "@/components/corporate/CorporateCard";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { TrendBadge } from "@/components/ui/trend-badge";
 import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
@@ -21,7 +20,7 @@ export function OverviewPage() {
   const transferTotal = transferIn + transferOut;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -32,46 +31,51 @@ export function OverviewPage() {
         </div>
       </div>
 
-      {/* Hero Balance Card */}
-      <CorporateCard className="bg-gradient-to-br from-primary/5 via-card to-card relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-primary/8 to-transparent rounded-full blur-2xl -translate-y-1/2 translate-x-1/4 group-hover:scale-110 transition-transform duration-500" />
+      {/* LEVEL 1 — Hero Card */}
+      <div className="liquid-glass-card-hero p-7 md:p-8">
+        {/* Decorative orb */}
+        <div className="absolute top-0 right-0 w-56 h-56 bg-gradient-to-br from-primary/8 to-info/4 rounded-full blur-3xl -translate-y-1/3 translate-x-1/4 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-success/5 to-transparent rounded-full blur-2xl translate-y-1/4 -translate-x-1/4 pointer-events-none" />
         
-        <div className="flex items-center gap-4 relative z-10">
-          <div className="p-3.5 rounded-xl bg-primary/10 group-hover:bg-primary/15 transition-colors">
-            <Wallet className="w-7 h-7 text-primary" />
+        <div className="flex items-start gap-5 relative z-10">
+          <div className="p-4 rounded-2xl bg-primary/8 ring-1 ring-primary/10">
+            <Wallet className="w-8 h-8 text-primary" />
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground font-medium mb-1">
-              Resultado do Período
-            </p>
-            <div className="flex items-baseline gap-3">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <p className="text-sm text-muted-foreground font-medium">
+                Resultado do Período
+              </p>
+              <Sparkles className="w-3.5 h-3.5 text-primary/50" />
+            </div>
+            <div className="flex items-baseline gap-4 flex-wrap">
               {isLoading ? (
-                <span className="text-3xl md:text-4xl tracking-tight text-muted-foreground animate-pulse">...</span>
+                <span className="text-4xl md:text-5xl tracking-tight text-muted-foreground animate-pulse">...</span>
               ) : (
                 <AnimatedValue
                   value={currentBalance}
                   prefix="R$ "
-                  className="text-3xl md:text-4xl tracking-tight"
+                  className="text-4xl md:text-5xl tracking-tight font-bold"
                   color={currentBalance >= 0 ? "primary" : "danger"}
                   format="currency"
                   duration={1800}
                 />
               )}
             </div>
-            <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex items-center gap-3 mt-3">
               <TrendBadge value={balanceChange} size="sm" />
               <span className="text-xs text-muted-foreground">vs. período anterior</span>
             </div>
           </div>
         </div>
-      </CorporateCard>
+      </div>
 
       {/* Transfer Info Card */}
       {transferTotal > 0 && (
-        <CorporateCard className="bg-gradient-to-br from-info/5 via-card to-card">
+        <div className="liquid-glass-card p-5">
           <div className="flex items-center gap-4">
-            <div className="p-3 rounded-xl bg-info/10">
-              <ArrowLeftRight className="w-6 h-6 text-info" />
+            <div className="p-3 rounded-xl bg-info/8 ring-1 ring-info/10">
+              <ArrowLeftRight className="w-5 h-5 text-info" />
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium text-foreground">Transferências internas no período</p>
@@ -85,20 +89,20 @@ export function OverviewPage() {
               </div>
             </div>
           </div>
-        </CorporateCard>
+        </div>
       )}
 
-      {/* KPI Grid */}
+      {/* LEVEL 2 — KPI Grid */}
       <KPIGrid />
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* LEVEL 3 — Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <RevenueChart />
         <ExpenseChart />
       </div>
 
       {/* Bottom Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <ProfitDistributionChart />
         <RecentTransactions />
         <DataQualityCard />

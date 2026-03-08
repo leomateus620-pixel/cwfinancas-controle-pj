@@ -935,3 +935,309 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transition: all 200ms ease;
 }
+
+/* ============================================
+   DASHBOARD GLASS - Premium Background
+   ============================================ */
+
+.dashboard-glass-bg {
+  background: linear-gradient(135deg, hsl(210 40% 97%) 0%, hsl(213 60% 97%) 40%, hsl(210 40% 98%) 100%);
+  background-image:
+    radial-gradient(ellipse at 20% 10%, hsl(221 85% 53% / 0.05) 0px, transparent 55%),
+    radial-gradient(ellipse at 80% 5%, hsl(199 89% 48% / 0.04) 0px, transparent 50%),
+    radial-gradient(ellipse at 60% 90%, hsl(160 84% 39% / 0.025) 0px, transparent 55%),
+    radial-gradient(ellipse at 10% 70%, hsl(221 85% 53% / 0.02) 0px, transparent 45%);
+  position: relative;
+}
+
+.dashboard-glass-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dashboard-glass-bg > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================
+   LIQUID GLASS CARD - Dashboard Standard
+   ============================================ */
+
+.liquid-glass-card {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  box-shadow:
+    0 8px 32px rgba(15, 23, 42, 0.05),
+    0 2px 8px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  transition: all 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.liquid-glass-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.liquid-glass-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.012;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.liquid-glass-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.liquid-glass-card:hover {
+  border-color: rgba(15, 23, 42, 0.1);
+  box-shadow:
+    0 12px 40px rgba(15, 23, 42, 0.07),
+    0 4px 12px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
+}
+
+/* ============================================
+   LIQUID GLASS HERO - Dashboard focal point
+   ============================================ */
+
+.liquid-glass-card-hero {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(28px) saturate(130%);
+  -webkit-backdrop-filter: blur(28px) saturate(130%);
+  border: 1px solid rgba(45, 126, 243, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.85);
+  border-left: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 24px;
+  box-shadow:
+    0 12px 48px rgba(15, 23, 42, 0.06),
+    0 4px 16px rgba(45, 126, 243, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    inset 1px 0 0 rgba(255, 255, 255, 0.3);
+  transition: all 300ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.liquid-glass-card-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(45, 126, 243, 0.06) 0%, transparent 60%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, transparent 40%, rgba(45, 126, 243, 0.02) 70%, rgba(255, 255, 255, 0.1) 100%);
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.liquid-glass-card-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.liquid-glass-card-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.liquid-glass-card-hero:hover {
+  border-color: rgba(45, 126, 243, 0.18);
+  box-shadow:
+    0 16px 56px rgba(15, 23, 42, 0.08),
+    0 6px 20px rgba(45, 126, 243, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 1px 0 0 rgba(255, 255, 255, 0.4);
+}
+
+/* ============================================
+   LIQUID GLASS KPI - Dashboard KPI cards
+   ============================================ */
+
+.liquid-glass-kpi {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(20px) saturate(118%);
+  -webkit-backdrop-filter: blur(20px) saturate(118%);
+  border: 1px solid rgba(15, 23, 42, 0.05);
+  border-top: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 20px;
+  box-shadow:
+    0 6px 24px rgba(15, 23, 42, 0.04),
+    0 2px 8px rgba(15, 23, 42, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition: all 250ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.liquid-glass-kpi::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.liquid-glass-kpi::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.01;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 0;
+}
+
+.liquid-glass-kpi > * {
+  position: relative;
+  z-index: 1;
+}
+
+.liquid-glass-kpi:hover {
+  border-color: rgba(15, 23, 42, 0.09);
+  box-shadow:
+    0 10px 32px rgba(15, 23, 42, 0.06),
+    0 4px 12px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transform: translateY(-2px);
+}
+
+/* ============================================
+   LIQUID GLASS TOOLTIP - Chart tooltips
+   ============================================ */
+
+.liquid-glass-tooltip {
+  background: rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow:
+    0 8px 32px rgba(15, 23, 42, 0.1),
+    0 2px 8px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5) !important;
+  padding: 12px 16px !important;
+}
+
+/* ============================================
+   GLASS PILL BADGE - Premium trend badges
+   ============================================ */
+
+.glass-pill-badge {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 100px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ============================================
+   DASHBOARD HEADER GLASS
+   ============================================ */
+
+.dashboard-header-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(130%);
+  -webkit-backdrop-filter: blur(24px) saturate(130%);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.03),
+    0 4px 16px rgba(15, 23, 42, 0.02);
+}
+
+/* ============================================
+   SIDEBAR GLASS REFINED
+   ============================================ */
+
+.sidebar-glass-refined [data-sidebar="sidebar"] {
+  background: linear-gradient(
+    180deg,
+    rgba(235, 245, 255, 0.92) 0%,
+    rgba(230, 242, 254, 0.88) 50%,
+    rgba(235, 245, 255, 0.92) 100%
+  ) !important;
+  backdrop-filter: blur(24px) saturate(130%);
+  -webkit-backdrop-filter: blur(24px) saturate(130%);
+  border-right: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow:
+    1px 0 20px rgba(45, 126, 243, 0.04),
+    inset -1px 0 0 rgba(255, 255, 255, 0.6);
+}
+
+.sidebar-glass-refined [data-sidebar="sidebar"]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+.sidebar-glass-refined [data-sidebar="sidebar"] > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Sidebar nav item active - premium glass */
+.sidebar-nav-active {
+  background: rgba(45, 126, 243, 0.08) !important;
+  border: 1px solid rgba(45, 126, 243, 0.15) !important;
+  box-shadow:
+    0 2px 8px rgba(45, 126, 243, 0.08),
+    0 0 16px rgba(45, 126, 243, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Sidebar nav item hover - floating plate */
+.sidebar-nav-hover {
+  transition: all 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.sidebar-nav-hover:hover {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(15, 23, 42, 0.04);
+  box-shadow:
+    0 2px 8px rgba(15, 23, 42, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: translateX(2px);
+}

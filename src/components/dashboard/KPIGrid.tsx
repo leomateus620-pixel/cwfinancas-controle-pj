@@ -79,11 +79,11 @@ export function KPIGrid({ viewMode = "operational" }: KPIGridProps) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {[1, 2, 3, 4].map((i) => (
           <div 
             key={i} 
-            className="bg-card rounded-xl p-5 border border-border shadow-corporate-sm animate-pulse flex items-center justify-center h-[160px]"
+            className="liquid-glass-kpi p-5 animate-pulse flex items-center justify-center h-[160px]"
           >
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
@@ -93,7 +93,7 @@ export function KPIGrid({ viewMode = "operational" }: KPIGridProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 stagger-children">
       {kpiData.map((kpi) => (
         <KPICard
           key={kpi.title}

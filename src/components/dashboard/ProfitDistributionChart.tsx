@@ -7,7 +7,6 @@ import {
   Tooltip,
   Sector
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { useTransactions } from "@/hooks/useTransactions";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
@@ -32,10 +31,10 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0];
     return (
-      <div className="bg-card border border-border rounded-lg p-3 shadow-corporate-lg">
+      <div className="liquid-glass-tooltip">
         <div className="flex items-center gap-2">
           <div 
-            className="w-3 h-3 rounded-full" 
+            className="w-2.5 h-2.5 rounded-full" 
             style={{ backgroundColor: data.payload.color }}
           />
           <span className="text-sm font-medium text-foreground">
@@ -59,7 +58,7 @@ const renderActiveShape = (props: any) => {
       cx={cx}
       cy={cy}
       innerRadius={innerRadius - 2}
-      outerRadius={outerRadius + 4}
+      outerRadius={outerRadius + 5}
       startAngle={startAngle}
       endAngle={endAngle}
       fill={fill}
@@ -109,103 +108,97 @@ export function ProfitDistributionChart() {
 
   if (isLoading) {
     return (
-      <Card className="border-border shadow-corporate-sm rounded-xl overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-base font-semibold text-foreground">Distribuição de Receita</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ChartSkeleton type="pie" height="h-[280px]" />
-        </CardContent>
-      </Card>
+      <div className="liquid-glass-card p-6">
+        <h3 className="text-base font-semibold text-foreground mb-4">Distribuição de Receita</h3>
+        <ChartSkeleton type="pie" height="h-[280px]" />
+      </div>
     );
   }
 
   return (
-    <Card className="border-border shadow-corporate-sm hover:shadow-corporate-md transition-corporate rounded-xl overflow-hidden">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base font-semibold text-foreground">Distribuição de Receita</CardTitle>
-        <CardDescription className="text-xs text-muted-foreground">Divisão por fonte de receita</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {profitData.length === 0 ? (
-          <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
-            <p>Sem receitas registradas</p>
-          </div>
-        ) : (
-          <>
-            <div className="h-[200px] relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={profitData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="value"
-                    strokeWidth={0}
-                    activeIndex={activeIndex}
-                    activeShape={renderActiveShape}
-                    onMouseEnter={onPieEnter}
-                    onMouseLeave={onPieLeave}
-                    animationDuration={1000}
-                    animationEasing="ease-out"
-                  >
-                    {profitData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.color}
-                        stroke="hsl(var(--background))"
-                        strokeWidth={2}
-                        className="cursor-pointer"
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              
-              {/* Center value */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                <AnimatedValue 
-                  value={Math.round(totalPercentage)} 
-                  suffix="%" 
-                  className="text-2xl font-bold"
-                  color="default"
-                  duration={1200}
-                />
-                <p className="text-[10px] text-muted-foreground mt-0.5">Total</p>
-              </div>
-            </div>
-            
-            {/* Legend */}
-            <div className="grid grid-cols-2 gap-2 mt-3">
-              {profitData.map((entry, index) => (
-                <div 
-                  key={`legend-${index}`} 
-                  className={`flex items-center gap-2 p-2 rounded-lg transition-colors cursor-pointer ${
-                    activeIndex === index 
-                      ? 'bg-muted' 
-                      : 'hover:bg-muted/50'
-                  }`}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  onMouseLeave={() => setActiveIndex(-1)}
+    <div className="liquid-glass-card p-6">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-foreground">Distribuição de Receita</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Divisão por fonte de receita</p>
+      </div>
+      {profitData.length === 0 ? (
+        <div className="h-[280px] flex items-center justify-center text-muted-foreground text-sm">
+          <p>Sem receitas registradas</p>
+        </div>
+      ) : (
+        <>
+          <div className="h-[200px] relative">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={profitData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={85}
+                  paddingAngle={3}
+                  dataKey="value"
+                  strokeWidth={0}
+                  activeIndex={activeIndex}
+                  activeShape={renderActiveShape}
+                  onMouseEnter={onPieEnter}
+                  onMouseLeave={onPieLeave}
+                  animationDuration={1000}
+                  animationEasing="ease-out"
                 >
-                  <div 
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: entry.color }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{entry.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{entry.percentage.toFixed(1)}%</p>
-                  </div>
-                </div>
-              ))}
+                  {profitData.map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={entry.color}
+                      stroke="rgba(255,255,255,0.8)"
+                      strokeWidth={2}
+                      className="cursor-pointer"
+                    />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+            
+            {/* Center value */}
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+              <AnimatedValue 
+                value={Math.round(totalPercentage)} 
+                suffix="%" 
+                className="text-2xl font-bold"
+                color="default"
+                duration={1200}
+              />
+              <p className="text-[10px] text-muted-foreground font-medium mt-0.5">Total</p>
             </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
+          </div>
+          
+          {/* Legend */}
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            {profitData.map((entry, index) => (
+              <div 
+                key={`legend-${index}`} 
+                className={`flex items-center gap-2 p-2 rounded-xl transition-all duration-200 cursor-pointer ${
+                  activeIndex === index 
+                    ? 'bg-primary/5 ring-1 ring-primary/10' 
+                    : 'hover:bg-muted/30'
+                }`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(-1)}
+              >
+                <div 
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: entry.color }}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-foreground truncate">{entry.name}</p>
+                  <p className="text-[10px] text-muted-foreground font-medium">{entry.percentage.toFixed(1)}%</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

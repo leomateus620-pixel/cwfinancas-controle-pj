@@ -61,14 +61,43 @@ export function AppSidebar() {
     return currentPath.startsWith(path);
   };
 
+  const renderNavItem = (item: typeof mainNavItems[0]) => (
+    <SidebarMenuItem key={item.title}>
+      <SidebarMenuButton 
+        asChild
+        isActive={isActive(item.url)}
+        tooltip={item.title}
+      >
+        <NavLink 
+          to={item.url} 
+          end={item.url === "/"}
+          className={`
+            flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 relative
+            text-foreground/70 hover:text-foreground
+            ${isActive(item.url) 
+              ? 'sidebar-nav-active text-primary font-medium' 
+              : 'sidebar-nav-hover border border-transparent'}
+          `}
+          activeClassName="sidebar-nav-active text-primary font-medium"
+        >
+          {isActive(item.url) && (
+            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full shadow-[0_0_8px_rgba(45,126,243,0.4)]" />
+          )}
+          <item.icon className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive(item.url) ? 'text-primary' : ''}`} />
+          {!collapsed && <span className="text-[13px]">{item.title}</span>}
+        </NavLink>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
+
   return (
     <Sidebar 
-      className="sidebar-glass"
+      className="sidebar-glass-refined"
       collapsible="icon"
     >
       {/* Header with Logo */}
-      <SidebarHeader className={`border-b border-black/[0.06] ${collapsed ? 'p-2' : 'px-3 py-3 md:py-4'}`}>
-        <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-center'}`}>
+      <SidebarHeader className={`border-b border-black/[0.04] ${collapsed ? 'p-2' : 'px-3 py-3 md:py-4'}`}>
+        <div className="flex items-center justify-center">
           <img 
             src={collapsed ? logoIcon : logoFull} 
             alt="CW Finanças" 
@@ -81,104 +110,33 @@ export function AppSidebar() {
       <SidebarContent className="px-3 py-5">
         {/* Main Navigation */}
         <SidebarGroup>
-          <SidebarGroupLabel className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-foreground/40 uppercase tracking-wider px-3 mb-3">
             Principal
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
-              {mainNavItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild
-                    isActive={isActive(item.url)}
-                    tooltip={item.title}
-                  >
-                    <NavLink 
-                      to={item.url} 
-                      end={item.url === "/"}
-                      className={`
-                        flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                        text-slate-700 hover:text-slate-900 hover:bg-white/50
-                        ${isActive(item.url) ? 'bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium' : ''}
-                      `}
-                      activeClassName="bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium"
-                    >
-                      {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
-                      )}
-                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-600' : ''}`} />
-                      {!collapsed && <span className="text-sm sidebar-glass-text">{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {mainNavItems.map(renderNavItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
         {/* Tools Navigation */}
         <SidebarGroup className="mt-6">
-          <SidebarGroupLabel className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-3">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-foreground/40 uppercase tracking-wider px-3 mb-3">
             Ferramentas
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
-              {toolsNavItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton 
-                    asChild
-                    isActive={isActive(item.url)}
-                    tooltip={item.title}
-                  >
-                    <NavLink 
-                      to={item.url} 
-                      className={`
-                        flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                        text-slate-700 hover:text-slate-900 hover:bg-white/50
-                        ${isActive(item.url) ? 'bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium' : ''}
-                      `}
-                      activeClassName="bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium"
-                    >
-                      {isActive(item.url) && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
-                      )}
-                      <item.icon className={`w-5 h-5 shrink-0 transition-colors ${isActive(item.url) ? 'text-blue-600' : ''}`} />
-                      {!collapsed && <span className="text-sm sidebar-glass-text">{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {toolsNavItems.map(renderNavItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
       {/* Footer */}
-      <SidebarFooter className="p-3 border-t border-black/[0.06]">
+      <SidebarFooter className="p-3 border-t border-black/[0.04]">
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton 
-              asChild
-              isActive={isActive("/settings")}
-              tooltip="Configurações"
-            >
-              <NavLink 
-                to="/settings" 
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg transition-corporate relative
-                  text-slate-700 hover:text-slate-900 hover:bg-white/50
-                  ${isActive("/settings") ? 'bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium' : ''}
-                `}
-                activeClassName="bg-white/60 backdrop-blur-sm shadow-sm border border-black/[0.05] text-blue-600 font-medium"
-              >
-                {isActive("/settings") && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.5)]" />
-                )}
-                <Settings className={`w-5 h-5 shrink-0 transition-colors ${isActive("/settings") ? 'text-blue-600' : ''}`} />
-                {!collapsed && <span className="text-sm sidebar-glass-text">Configurações</span>}
-              </NavLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          {renderNavItem({ title: "Configurações", url: "/settings", icon: Settings })}
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>

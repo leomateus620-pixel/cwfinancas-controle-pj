@@ -41,32 +41,28 @@ export function KPICard({
     }
   };
 
+  const getIconContainerClass = () => {
+    switch (valueColor) {
+      case "primary": return "bg-primary/8 ring-1 ring-primary/10 text-primary";
+      case "success": return "bg-success/8 ring-1 ring-success/10 text-success";
+      case "danger": return "bg-destructive/8 ring-1 ring-destructive/10 text-destructive";
+      default: return "bg-muted/60 ring-1 ring-border/40 text-muted-foreground";
+    }
+  };
+
   return (
     <div 
       className={cn(
-        "group relative bg-card rounded-xl p-5 border border-border",
-        "shadow-corporate-sm hover:shadow-corporate-md transition-corporate",
-        "hover:-translate-y-0.5",
+        "liquid-glass-kpi p-5 group",
         className
       )}
     >
-      {/* Subtle gradient overlay on hover */}
-      <div className={cn(
-        "absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none",
-        valueColor === "primary" && "bg-gradient-to-br from-primary/3 via-transparent to-transparent",
-        valueColor === "success" && "bg-gradient-to-br from-success/3 via-transparent to-transparent",
-        valueColor === "danger" && "bg-gradient-to-br from-destructive/3 via-transparent to-transparent"
-      )} />
-      
       <div className="relative z-10">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className={cn(
-            "p-2.5 rounded-lg transition-all duration-200 group-hover:scale-105",
-            valueColor === "primary" && "bg-primary/10 text-primary",
-            valueColor === "success" && "bg-success/10 text-success",
-            valueColor === "danger" && "bg-destructive/10 text-destructive",
-            valueColor === "default" && "bg-muted text-muted-foreground"
+            "p-2.5 rounded-xl transition-all duration-200 group-hover:scale-105",
+            getIconContainerClass()
           )}>
             {icon}
           </div>
@@ -74,7 +70,7 @@ export function KPICard({
             <TrendBadge 
               value={trend === "down" ? -Math.abs(change) : change}
               size="sm"
-              animated={trend === "up"}
+              animated={false}
             />
           )}
         </div>
@@ -104,9 +100,9 @@ export function KPICard({
 
         {/* Title and change label */}
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">{title}</span>
+          <span className="text-sm text-muted-foreground font-medium">{title}</span>
           {changeLabel && (
-            <span className="text-xs text-muted-foreground">{changeLabel}</span>
+            <span className="text-xs text-muted-foreground/70">{changeLabel}</span>
           )}
         </div>
       </div>

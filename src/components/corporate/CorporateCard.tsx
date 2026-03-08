@@ -11,9 +11,8 @@ export function CorporateCard({ children, className, hover = true }: CorporateCa
   return (
     <div 
       className={cn(
-        "bg-card border border-border rounded-xl p-6",
-        "shadow-corporate-sm",
-        hover && "hover:shadow-corporate-md hover:-translate-y-0.5 transition-corporate",
+        "liquid-glass-card p-6",
+        !hover && "hover:transform-none",
         className
       )}
     >
