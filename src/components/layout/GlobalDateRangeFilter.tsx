@@ -151,80 +151,94 @@ export function GlobalDateRangeFilter() {
 
             <Separator className="opacity-30" />
 
-            {/* Custom range */}
+            {/* Custom range toggle */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                Personalizar
-              </p>
+              <button
+                onClick={() => setShowCustom(!showCustom)}
+                className="flex items-center justify-between w-full px-1 py-1.5 rounded-lg hover:bg-accent/40 transition-colors"
+              >
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Personalizar
+                </p>
+                <ChevronDown className={cn(
+                  "w-3.5 h-3.5 text-muted-foreground transition-transform duration-200",
+                  showCustom && "rotate-180"
+                )} />
+              </button>
 
-              {/* Date inputs */}
-              <div className="flex items-center gap-2 mb-3">
-                <div className="flex-1">
-                  <label className="text-[10px] text-muted-foreground mb-1 block">Início</label>
-                  <input
-                    ref={fromRef}
-                    type="text"
-                    value={fromInput}
-                    onChange={(e) => setFromInput(e.target.value)}
-                    onBlur={handleFromInputBlur}
-                    placeholder="dd/mm/aaaa"
-                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-border/50 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-primary/30 text-foreground"
+              {showCustom && (
+                <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {/* Date inputs */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-muted-foreground mb-1 block">Início</label>
+                      <input
+                        ref={fromRef}
+                        type="text"
+                        value={fromInput}
+                        onChange={(e) => setFromInput(e.target.value)}
+                        onBlur={handleFromInputBlur}
+                        placeholder="dd/mm/aaaa"
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-border/50 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-primary/30 text-foreground"
+                      />
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground mt-4 shrink-0" />
+                    <div className="flex-1">
+                      <label className="text-[10px] text-muted-foreground mb-1 block">Fim</label>
+                      <input
+                        ref={toRef}
+                        type="text"
+                        value={toInput}
+                        onChange={(e) => setToInput(e.target.value)}
+                        onBlur={handleToInputBlur}
+                        placeholder="dd/mm/aaaa"
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-border/50 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-primary/30 text-foreground"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Range calendar */}
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={selectedRange?.from}
+                    selected={selectedRange}
+                    onSelect={handleRangeSelect}
+                    numberOfMonths={2}
+                    locale={ptBR}
+                    className="p-2 pointer-events-auto text-xs"
                   />
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-muted-foreground mt-4 shrink-0" />
-                <div className="flex-1">
-                  <label className="text-[10px] text-muted-foreground mb-1 block">Fim</label>
-                  <input
-                    ref={toRef}
-                    type="text"
-                    value={toInput}
-                    onChange={(e) => setToInput(e.target.value)}
-                    onBlur={handleToInputBlur}
-                    placeholder="dd/mm/aaaa"
-                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-border/50 bg-background/50 backdrop-blur-sm focus:outline-none focus:ring-1 focus:ring-primary/30 text-foreground"
-                  />
-                </div>
-              </div>
 
-              {/* Range calendar */}
-              <Calendar
-                initialFocus
-                mode="range"
-                defaultMonth={selectedRange?.from}
-                selected={selectedRange}
-                onSelect={handleRangeSelect}
-                numberOfMonths={2}
-                locale={ptBR}
-                className="p-2 pointer-events-auto text-xs"
-              />
-
-              {/* Footer */}
-              <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/20">
-                <div className="text-[11px] text-muted-foreground">
-                  {hasValidCustomRange ? (
-                    <span>
-                      {format(selectedRange!.from!, "dd MMM yyyy", { locale: ptBR })}
-                      {" → "}
-                      {format(selectedRange!.to!, "dd MMM yyyy", { locale: ptBR })}
-                    </span>
-                  ) : (
-                    <span className="italic">Selecione início e fim</span>
-                  )}
+                  {/* Footer */}
+                  <div className="flex items-center justify-between pt-3 border-t border-border/20">
+                    <div className="text-[11px] text-muted-foreground">
+                      {hasValidCustomRange ? (
+                        <span>
+                          {format(selectedRange!.from!, "dd MMM yyyy", { locale: ptBR })}
+                          {" → "}
+                          {format(selectedRange!.to!, "dd MMM yyyy", { locale: ptBR })}
+                        </span>
+                      ) : (
+                        <span className="italic">Selecione início e fim</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="sm" onClick={() => setOpen(false)} className="text-xs h-7">
+                        Cancelar
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleApplyCustom}
+                        disabled={!hasValidCustomRange}
+                        className="text-xs h-7"
+                      >
+                        Aplicar
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setOpen(false)} className="text-xs h-7">
-                    Cancelar
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={handleApplyCustom}
-                    disabled={!hasValidCustomRange}
-                    className="text-xs h-7"
-                  >
-                    Aplicar
-                  </Button>
-                </div>
-              </div>
+              )}
+            </div>
             </div>
           </div>
         </PopoverContent>
