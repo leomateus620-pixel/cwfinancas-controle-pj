@@ -158,6 +158,11 @@ Deno.serve(async (req) => {
           "bank_balances",
           admin.from("bank_balances").delete().eq("connection_id", connectionId).eq("user_id", userId)
         );
+        // Also clean orphaned records with NULL connection_id
+        await deleteFrom(
+          "bank_balances (orphans)",
+          admin.from("bank_balances").delete().is("connection_id", null).eq("user_id", userId)
+        );
       } else {
         await deleteFrom(
           "bank_balances",
