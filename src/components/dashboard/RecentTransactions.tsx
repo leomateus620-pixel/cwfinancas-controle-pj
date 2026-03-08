@@ -1,5 +1,4 @@
 import { ArrowUpRight, ArrowDownLeft, Loader2, FileQuestion } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useTransactions } from "@/hooks/useTransactions";
 import { formatCurrencyBR } from "@/lib/currency";
@@ -17,78 +16,72 @@ export function RecentTransactions() {
   const recentTransactions = transactions.slice(0, 5);
 
   return (
-    <Card className="border-border shadow-corporate-sm hover:shadow-corporate-md transition-corporate rounded-xl overflow-hidden">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-base font-semibold text-foreground">Transações Recentes</CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">Últimas movimentações</CardDescription>
-          </div>
+    <div className="liquid-glass-card p-6">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-foreground">Transações Recentes</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Últimas movimentações</p>
+      </div>
+      {isLoading ? (
+        <div className="flex items-center justify-center h-56">
+          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="flex items-center justify-center h-56">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : recentTransactions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-56 text-center">
-            <FileQuestion className="w-10 h-10 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">Nenhuma transação encontrada</p>
-            <p className="text-xs text-muted-foreground mt-1">Importe dados ou adicione transações</p>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {recentTransactions.map((transaction) => (
-              <div 
-                key={transaction.id}
-                className={cn(
-                  "flex items-center justify-between py-3 px-3 -mx-1 rounded-lg",
-                  "hover:bg-muted/50 transition-colors cursor-pointer group"
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div 
-                    className={cn(
-                      "w-9 h-9 rounded-lg flex items-center justify-center",
-                      transaction.type === "income" 
-                        ? "bg-success/10" 
-                        : "bg-destructive/10"
-                    )}
-                  >
-                    {transaction.type === "income" ? (
-                      <ArrowDownLeft className="w-4 h-4 text-success" />
-                    ) : (
-                      <ArrowUpRight className="w-4 h-4 text-destructive" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                      {transaction.description}
-                    </p>
-                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                      <span className="px-1.5 py-0.5 bg-muted rounded text-[10px]">{transaction.category}</span>
-                      <span>•</span>
-                      <span>{formatDate(transaction.date)}</span>
-                    </p>
-                  </div>
-                </div>
-                <span 
+      ) : recentTransactions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-56 text-center">
+          <FileQuestion className="w-10 h-10 text-muted-foreground mb-3" />
+          <p className="text-sm text-muted-foreground">Nenhuma transação encontrada</p>
+          <p className="text-xs text-muted-foreground mt-1">Importe dados ou adicione transações</p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {recentTransactions.map((transaction) => (
+            <div 
+              key={transaction.id}
+              className={cn(
+                "flex items-center justify-between py-3 px-3 -mx-1 rounded-xl",
+                "hover:bg-white/40 transition-all duration-200 cursor-pointer group"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div 
                   className={cn(
-                    "text-sm font-semibold tabular-nums",
+                    "w-9 h-9 rounded-xl flex items-center justify-center ring-1",
                     transaction.type === "income" 
-                      ? "text-success" 
-                      : "text-destructive"
+                      ? "bg-success/8 ring-success/10" 
+                      : "bg-destructive/8 ring-destructive/10"
                   )}
                 >
-                  {transaction.type === "income" ? "+" : "-"}
-                  {formatCurrencyBR(Math.abs(Number(transaction.amount)))}
-                </span>
+                  {transaction.type === "income" ? (
+                    <ArrowDownLeft className="w-4 h-4 text-success" />
+                  ) : (
+                    <ArrowUpRight className="w-4 h-4 text-destructive" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                    {transaction.description}
+                  </p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                    <span className="px-1.5 py-0.5 bg-muted/40 rounded-md text-[10px] font-medium">{transaction.category}</span>
+                    <span>•</span>
+                    <span>{formatDate(transaction.date)}</span>
+                  </p>
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              <span 
+                className={cn(
+                  "text-sm font-semibold tabular-nums",
+                  transaction.type === "income" 
+                    ? "text-success" 
+                    : "text-destructive"
+                )}
+              >
+                {transaction.type === "income" ? "+" : "-"}
+                {formatCurrencyBR(Math.abs(Number(transaction.amount)))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

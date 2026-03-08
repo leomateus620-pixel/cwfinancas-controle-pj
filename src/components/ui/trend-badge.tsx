@@ -15,27 +15,26 @@ export function TrendBadge({
   label,
   size = "md",
   showIcon = true,
-  animated = true,
+  animated = false,
   className,
 }: TrendBadgeProps) {
   const isPositive = value > 0;
   const isNegative = value < 0;
-  const isNeutral = value === 0;
 
   const getTrendColor = () => {
-    if (isPositive) return "text-success bg-success/10 border-success/20";
-    if (isNegative) return "text-destructive bg-destructive/10 border-destructive/20";
-    return "text-muted-foreground bg-muted border-border";
+    if (isPositive) return "bg-success/8 text-success border-success/15";
+    if (isNegative) return "bg-destructive/8 text-destructive border-destructive/15";
+    return "bg-muted/50 text-muted-foreground border-border/40";
   };
 
   const getSizeClass = () => {
     switch (size) {
       case "sm":
-        return "text-xs px-2 py-0.5 gap-1";
+        return "text-xs px-2.5 py-0.5 gap-1";
       case "lg":
         return "text-base px-4 py-1.5 gap-2";
       default:
-        return "text-sm px-2.5 py-1 gap-1.5";
+        return "text-sm px-3 py-1 gap-1.5";
     }
   };
 
@@ -55,20 +54,14 @@ export function TrendBadge({
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-full font-semibold border transition-all duration-300",
+        "inline-flex items-center font-semibold border transition-all duration-200 glass-pill-badge",
         getTrendColor(),
         getSizeClass(),
-        animated && isPositive && "animate-pulse-glow",
         className
       )}
     >
       {showIcon && (
-        <TrendIcon
-          className={cn(
-            getIconSize(),
-            animated && isPositive && "animate-trend-bounce"
-          )}
-        />
+        <TrendIcon className={getIconSize()} />
       )}
       <span>{isPositive ? "+" : ""}{Math.abs(value).toFixed(1)}%</span>
       {label && <span className="text-muted-foreground font-normal">{label}</span>}
