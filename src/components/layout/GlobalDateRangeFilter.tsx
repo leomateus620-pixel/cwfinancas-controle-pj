@@ -239,7 +239,6 @@ export function GlobalDateRangeFilter() {
                 </div>
               )}
             </div>
-            </div>
           </div>
         </PopoverContent>
       </Popover>
