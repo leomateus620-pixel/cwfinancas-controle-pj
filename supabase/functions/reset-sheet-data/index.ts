@@ -133,6 +133,32 @@ Deno.serve(async (req) => {
           admin.from("financial_daily_aggregates").delete().eq("user_id", userId)
         );
       }
+
+      // 4b. Delete accounts_payable_receivable
+      if (connectionId) {
+        await deleteFrom(
+          "accounts_payable_receivable",
+          admin.from("accounts_payable_receivable").delete().eq("connection_id", connectionId).eq("user_id", userId)
+        );
+      } else {
+        await deleteFrom(
+          "accounts_payable_receivable",
+          admin.from("accounts_payable_receivable").delete().eq("user_id", userId)
+        );
+      }
+
+      // 4c. Delete bank_balances
+      if (connectionId) {
+        await deleteFrom(
+          "bank_balances",
+          admin.from("bank_balances").delete().eq("connection_id", connectionId).eq("user_id", userId)
+        );
+      } else {
+        await deleteFrom(
+          "bank_balances",
+          admin.from("bank_balances").delete().eq("user_id", userId)
+        );
+      }
     }
 
     // --- DRE (scope ALL or DRE_ONLY) ---
@@ -277,8 +303,21 @@ Deno.serve(async (req) => {
           }
           deleted["google_sheet_sync_logs"] = logsDeleted;
         } else {
-          deleted["google_sheet_sync_logs"] = 0;
+        deleted["google_sheet_sync_logs"] = 0;
         }
+      }
+
+      // 13. Delete sync_tab_audit
+      if (connectionId) {
+        await deleteFrom(
+          "sync_tab_audit",
+          admin.from("sync_tab_audit").delete().eq("connection_id", connectionId).eq("user_id", userId)
+        );
+      } else {
+        await deleteFrom(
+          "sync_tab_audit",
+          admin.from("sync_tab_audit").delete().eq("user_id", userId)
+        );
       }
     }
 
