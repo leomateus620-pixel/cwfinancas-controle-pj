@@ -1160,13 +1160,14 @@ function normalizeAPRStatus(raw: string | null | undefined, recordType: string):
   return "desconhecido";
 }
 
-function generateAPRContentHash(recordType: string, periodKey: string, description: string | null, counterpart: string | null, amount: number): string {
+function generateAPRContentHash(recordType: string, periodKey: string, description: string | null, counterpart: string | null, amount: number, sourceRow?: number): string {
   return generateRowHash({
     t: recordType,
     p: periodKey,
     d: (description || "").toLowerCase().trim().replace(/\s+/g, " "),
     c: (counterpart || "").toLowerCase().trim(),
     a: Math.round(amount * 100),
+    r: sourceRow || 0,
   });
 }
 
