@@ -34,8 +34,10 @@ export function OverviewPage() {
       {/* LEVEL 1 — Hero Card */}
       <div className="liquid-glass-card-hero p-7 md:p-8">
         {/* Decorative orb */}
-        <div className="absolute top-0 right-0 w-56 h-56 bg-gradient-to-br from-primary/8 to-info/4 rounded-full blur-3xl -translate-y-1/3 translate-x-1/4 pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-success/5 to-transparent rounded-full blur-2xl translate-y-1/4 -translate-x-1/4 pointer-events-none" />
+        <div style={{ position: 'absolute', inset: 0 }} className="pointer-events-none overflow-visible">
+          <div className="absolute top-0 right-0 w-56 h-56 bg-gradient-to-br from-primary/8 to-info/4 rounded-full blur-3xl -translate-y-1/3 translate-x-1/4" />
+          <div className="absolute bottom-0 left-0 w-32 h-32 bg-gradient-to-tr from-success/5 to-transparent rounded-full blur-2xl translate-y-1/4 -translate-x-1/4" />
+        </div>
         
         <div className="flex items-start gap-5 relative z-10">
           <div className="p-4 rounded-2xl bg-primary/8 ring-1 ring-primary/10">
