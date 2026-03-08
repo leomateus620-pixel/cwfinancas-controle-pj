@@ -100,9 +100,26 @@ export default function DREPage() {
 
   const { data: lines, isLoading: isLoadingLines } = useLines(selectedPeriod?.id);
 
-  const kpis = lines ? calculateKPIs(lines, viewMode) : null;
   const nucleos = lines ? getNucleos(lines) : [];
   const isLcf = activeTemplate === "LCF_NUCLEO" || (periodOptions || []).some(p => p.templateType === "LCF_NUCLEO");
+
+  // Auto-select first nucleo when switching to by_nucleo mode
+  useEffect(() => {
+    if (viewMode === "by_nucleo" && nucleos.length > 0 && !nucleos.includes(selectedNucleo)) {
+      setSelectedNucleo(nucleos[0]);
+    }
+  }, [viewMode, nucleos, selectedNucleo]);
+
+  // Filter lines for KPI calculation based on view mode and selected nucleo
+  const kpiLines = useMemo(() => {
+    if (!lines) return null;
+    if (viewMode === "by_nucleo" && selectedNucleo) {
+      return lines.filter(l => l.nucleo === selectedNucleo);
+    }
+    return lines;
+  }, [lines, viewMode, selectedNucleo]);
+
+  const kpis = kpiLines ? calculateKPIs(kpiLines, viewMode) : null;
   const isSyncing = syncDRE.isPending;
 
   const handleSync = () => {
