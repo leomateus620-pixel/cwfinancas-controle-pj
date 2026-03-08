@@ -329,11 +329,9 @@ export function useGoogleSheets() {
 
   // Sync data (single tab)
   const syncData = useMutation({
-    mutationFn: async ({ connectionId, forceRefresh }: { connectionId: string; forceRefresh?: boolean } | string) => {
-      const id = typeof arguments[0] === "string" ? arguments[0] as string : (arguments[0] as any).connectionId;
-      const force = typeof arguments[0] === "string" ? true : ((arguments[0] as any).forceRefresh ?? true);
+    mutationFn: async (connectionId: string) => {
       const { data, error } = await supabase.functions.invoke("google-sheets-sync", {
-        body: { connection_id: id, force_refresh: force },
+        body: { connection_id: connectionId, force_refresh: true },
       });
 
       if (error) {
