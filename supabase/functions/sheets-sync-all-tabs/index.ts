@@ -2379,7 +2379,7 @@ Deno.serve(async (req) => {
             status_raw: r.status_raw || null,
             status_normalized: normalizeAPRStatus(r.status_raw, recordType),
             notes: r.notes || null,
-            content_hash: generateAPRContentHash(recordType, r.period_key, r.description, r.counterpart, r.amount),
+            content_hash: generateAPRContentHash(recordType, r.period_key, r.description, r.counterpart, r.amount, r.source_row),
             sync_run_id: syncRunId,
             last_seen_at: new Date().toISOString(),
             raw_data: r.raw_data || null,
