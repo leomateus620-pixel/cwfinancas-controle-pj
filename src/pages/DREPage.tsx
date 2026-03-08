@@ -262,6 +262,18 @@ export default function DREPage() {
               </ToggleGroupItem>
             </ToggleGroup>
           )}
+          {viewMode === "by_nucleo" && nucleos.length > 0 && (
+            <Select value={selectedNucleo} onValueChange={setSelectedNucleo}>
+              <SelectTrigger className="w-[150px] h-9 text-sm">
+                <SelectValue placeholder="Núcleo" />
+              </SelectTrigger>
+              <SelectContent>
+                {nucleos.map(n => (
+                  <SelectItem key={n} value={n}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button onClick={handleSync} disabled={isSyncing || !activeConnectionId} size="sm" className="h-9">
             <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
             Atualizar
