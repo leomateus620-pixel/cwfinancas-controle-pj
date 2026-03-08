@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Search, Eye, EyeOff } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, Eye, EyeOff, Building2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { formatCurrencyBR } from "@/lib/currency";
 import { getSimpleLabel, getTooltip } from "./DreLabels";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -9,6 +8,8 @@ import type { DRELine } from "@/hooks/useDRE";
 
 interface DreDetailsAccordionProps {
   lines: DRELine[];
+  viewMode?: "consolidated" | "by_nucleo";
+  nucleos?: string[];
 }
 
 function formatBRL(value: number | null | undefined): string {
@@ -41,7 +42,6 @@ function groupLines(lines: DRELine[]): GroupedSection[] {
     } else if (currentSection) {
       currentSection.lines.push(line);
     } else {
-      // Lines without a group header
       sections.push({
         label: line.line_label,
         simpleLabel: getSimpleLabel(line.line_label),
@@ -113,7 +113,6 @@ function SectionRow({ section, searchTerm }: { section: GroupedSection; searchTe
             {section.simpleLabel}
           </span>
         </div>
-        {/* Show subtotal if exists */}
         {section.lines.some(l => l.is_subtotal) && (
           <span className="text-xs font-semibold tabular-nums text-muted-foreground">
             {formatBRL(section.lines.find(l => l.is_subtotal)?.value)}
@@ -141,11 +140,43 @@ function SectionRow({ section, searchTerm }: { section: GroupedSection; searchTe
   );
 }
 
-export function DreDetailsAccordion({ lines }: DreDetailsAccordionProps) {
+function NucleoBlock({ nucleo, lines, searchTerm }: { nucleo: string; lines: DRELine[]; searchTerm: string }) {
+  const [isOpen, setIsOpen] = useState(true);
+  const sections = groupLines(lines);
+
+  return (
+    <div className="border border-border/30 rounded-xl overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between py-3 px-5 bg-primary/5 hover:bg-primary/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Building2 className="h-4 w-4 text-primary" />
+          <span className="text-sm font-bold text-foreground uppercase tracking-wider">
+            {nucleo}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            ({lines.length} linhas)
+          </span>
+        </div>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+      </button>
+      {isOpen && (
+        <div className="animate-fade-in-up">
+          {sections.map((section, idx) => (
+            <SectionRow key={`${section.label}-${idx}`} section={section} searchTerm={searchTerm} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DreDetailsAccordion({ lines, viewMode = "consolidated", nucleos = [] }: DreDetailsAccordionProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const sections = groupLines(lines);
+  const isByNucleo = viewMode === "by_nucleo" && nucleos.length > 0;
 
   return (
     <div className="liquid-glass overflow-hidden">
@@ -160,7 +191,7 @@ export function DreDetailsAccordion({ lines }: DreDetailsAccordionProps) {
           </span>
         </div>
         <span className="text-xs text-muted-foreground">
-          {lines.length} linhas
+          {lines.length} linhas{isByNucleo ? ` · ${nucleos.length} núcleos` : ""}
         </span>
       </button>
 
@@ -177,11 +208,29 @@ export function DreDetailsAccordion({ lines }: DreDetailsAccordionProps) {
               />
             </div>
           </div>
-          <div className="max-h-[500px] overflow-y-auto">
-            {sections.map((section, idx) => (
-              <SectionRow key={`${section.label}-${idx}`} section={section} searchTerm={searchTerm} />
-            ))}
-          </div>
+
+          {isByNucleo ? (
+            <div className="p-4 pt-2 space-y-4 max-h-[600px] overflow-y-auto">
+              {nucleos.map((nucleo) => {
+                const nucleoLines = lines.filter(l => l.nucleo === nucleo);
+                if (nucleoLines.length === 0) return null;
+                return (
+                  <NucleoBlock
+                    key={nucleo}
+                    nucleo={nucleo}
+                    lines={nucleoLines}
+                    searchTerm={searchTerm}
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <div className="max-h-[500px] overflow-y-auto">
+              {groupLines(lines).map((section, idx) => (
+                <SectionRow key={`${section.label}-${idx}`} section={section} searchTerm={searchTerm} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
