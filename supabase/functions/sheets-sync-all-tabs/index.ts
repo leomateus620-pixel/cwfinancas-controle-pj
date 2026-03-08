@@ -1858,7 +1858,7 @@ Deno.serve(async (req) => {
 
     // ===== FINGERPRINT CHECK (Drive modifiedTime) =====
     const driveFingerprint = await getDriveFingerprint(accessToken!, connection.spreadsheet_id);
-    if (driveFingerprint && connection.last_source_fingerprint === driveFingerprint) {
+    if (!forceRefresh && driveFingerprint && connection.last_source_fingerprint === driveFingerprint) {
       console.log(`[${requestId}] Drive fingerprint unchanged, skipping sync`);
       await finalizeJob(supabase, jobId, "success", undefined, undefined, {
         tabs_total: 0, tabs_done: 0, rows_read: 0, rows_imported: 0, current_tab: "Sem alterações",
