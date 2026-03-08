@@ -1150,9 +1150,9 @@ for (const [normalized, keywords] of [
 }
 
 function normalizeAPRStatus(raw: string | null | undefined, recordType: string): string {
-  if (!raw) return "desconhecido";
+  if (!raw) return "pendente";
   const norm = safeStr(raw).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  if (!norm) return "desconhecido";
+  if (!norm) return "pendente";
   const map = recordType === "payable" ? STATUS_MAP_PAYABLE : STATUS_MAP_RECEIVABLE;
   for (const [key, val] of Object.entries(map)) {
     if (norm === key || norm.includes(key)) return val;
