@@ -32,6 +32,7 @@ export default function DREPage() {
   const [selectedYear, setSelectedYear] = useState<string>("");
   const [selectedScenario, setSelectedScenario] = useState<string>("realizado");
   const [viewMode, setViewMode] = useState<"consolidated" | "by_nucleo">("consolidated");
+  const [selectedNucleo, setSelectedNucleo] = useState<string>("");
 
   const activeConnectionId = selectedConnectionId || connections?.[0]?.id || "";
 
