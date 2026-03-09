@@ -162,7 +162,7 @@ export function ForecastsPage() {
             />
             <ForecastChart forecastData={forecastData} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <ForecastCashFlow forecastMonths={forecastMonths} />
+              <ForecastCashFlow forecastMonths={forecastMonths} realMonths={realMonths} />
               <ForecastInsightsPanel insights={insights} />
             </div>
           </div>
