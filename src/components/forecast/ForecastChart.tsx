@@ -28,20 +28,27 @@ export function ForecastChart({ forecastData }: Props) {
   const [activeSeries, setActiveSeries] = useState<Series>("receita");
 
   const realMonths = forecastData.filter((d) => !d.is_forecast);
-  const lastRealMonth = realMonths.length > 0 ? realMonths[realMonths.length - 1].month_key : null;
+  const forecastMonths = forecastData.filter((d) => d.is_forecast);
+  const lastReal = realMonths.length > 0 ? realMonths[realMonths.length - 1] : null;
+  const lastRealMonth = lastReal?.month_key ?? null;
 
-  const chartData = forecastData.map((d) => {
+  // Build chart data — bridge last real point into forecast series for visual continuity
+  const chartData = forecastData.map((d, idx) => {
     const [year, mon] = d.month_key.split("-");
     const label = `${MONTH_LABELS[mon]} ${year.slice(2)}`;
+
+    const isFirstForecast = d.is_forecast && lastReal && forecastMonths[0]?.month_key === d.month_key;
 
     const getValues = () => {
       switch (activeSeries) {
         case "receita":
           return {
             real: d.is_forecast ? null : d.receita_real,
-            previsto: d.is_forecast ? d.receita_prev_base : null,
+            previsto: d.is_forecast ? d.receita_prev_base : (isFirstForecast ? d.receita_prev_base : null),
             otimista: d.is_forecast ? d.receita_prev_opt : null,
             pessimista: d.is_forecast ? d.receita_prev_pess : null,
+            // Bridge point: also show forecast value on last real month
+            bridge: null as number | null,
           };
         case "despesa":
           return {
@@ -49,6 +56,7 @@ export function ForecastChart({ forecastData }: Props) {
             previsto: d.is_forecast ? d.despesa_prev_base : null,
             otimista: d.is_forecast ? d.despesa_prev_opt : null,
             pessimista: d.is_forecast ? d.despesa_prev_pess : null,
+            bridge: null as number | null,
           };
         case "saldo":
           return {
@@ -56,12 +64,24 @@ export function ForecastChart({ forecastData }: Props) {
             previsto: d.is_forecast ? d.saldo_prev_base : null,
             otimista: d.is_forecast ? d.saldo_prev_opt : null,
             pessimista: d.is_forecast ? d.saldo_prev_pess : null,
+            bridge: null as number | null,
           };
       }
     };
 
     return { month: label, monthKey: d.month_key, ...getValues() };
   });
+
+  // Bridge: set last real point's "previsto" to its real value so lines connect
+  if (lastReal && forecastMonths.length > 0) {
+    const lastRealIdx = chartData.findIndex((d) => d.monthKey === lastReal.month_key);
+    if (lastRealIdx >= 0) {
+      const realVal = activeSeries === "receita" ? lastReal.receita_real
+        : activeSeries === "despesa" ? lastReal.despesa_real
+        : lastReal.saldo_real;
+      chartData[lastRealIdx].previsto = realVal;
+    }
+  }
 
   const transitionLabel = lastRealMonth
     ? (() => {
@@ -141,6 +161,7 @@ export function ForecastChart({ forecastData }: Props) {
                 const data = payload[0]?.payload;
                 const real = data?.real;
                 const prev = data?.previsto;
+                const isTransition = data?.monthKey === lastRealMonth;
                 return (
                   <div className="liquid-glass-caixa p-3 text-sm !rounded-xl shadow-lg">
                     <p className="font-semibold text-foreground mb-1">{label}</p>
@@ -149,7 +170,7 @@ export function ForecastChart({ forecastData }: Props) {
                         Real: <span className="font-semibold">{formatCurrencyBR(real)}</span>
                       </p>
                     )}
-                    {prev != null && (
+                    {prev != null && !isTransition && (
                       <>
                         <p className="text-emerald-600">
                           Previsto: <span className="font-semibold">{formatCurrencyBR(prev)}</span>
@@ -194,6 +215,7 @@ export function ForecastChart({ forecastData }: Props) {
               strokeWidth={2}
               strokeDasharray="6 3"
               fill="url(#forecastGrad)"
+              connectNulls={false}
             />
             <Area
               type="monotone"

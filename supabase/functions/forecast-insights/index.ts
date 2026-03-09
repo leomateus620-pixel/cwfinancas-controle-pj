@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     const db = createClient(supabaseUrl, supabaseServiceKey);
     const { horizon = "6m" } = await req.json();
 
-    // Fetch forecast data (always sheet_id=null since we aggregate all)
+    // Fetch forecast data
     const { data: forecastData, error: fError } = await db
       .from("forecast_monthly")
       .select("*")
@@ -50,55 +50,108 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Fetch top categories from transactions for richer context
+    const { data: transactions } = await db
+      .from("transactions")
+      .select("amount, category, movement_type")
+      .eq("user_id", userId)
+      .neq("movement_type", "TRANSFER");
+
+    const catTotals = new Map<string, number>();
+    const catTotalsRec = new Map<string, number>();
+    if (transactions) {
+      for (const tx of transactions) {
+        const amt = Math.abs(Number(tx.amount));
+        if (tx.movement_type === "EXPENSE") {
+          catTotals.set(tx.category, (catTotals.get(tx.category) || 0) + amt);
+        } else if (tx.movement_type === "INCOME") {
+          catTotalsRec.set(tx.category, (catTotalsRec.get(tx.category) || 0) + amt);
+        }
+      }
+    }
+
+    const topDespesas = Array.from(catTotals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    const totalDesp = topDespesas.reduce((s, [, v]) => s + v, 0);
+
+    const topReceitas = Array.from(catTotalsRec.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    const totalRec = topReceitas.reduce((s, [, v]) => s + v, 0);
+
     const realMonths = forecastData.filter((d: any) => !d.is_forecast);
     const predictedMonths = forecastData.filter((d: any) => d.is_forecast);
 
-    const receitaReal = realMonths.map((d: any) => Number(d.receita_real));
-    const despesaReal = realMonths.map((d: any) => Number(d.despesa_real));
-    const avgReceita = receitaReal.reduce((a: number, b: number) => a + b, 0) / receitaReal.length;
-    const avgDespesa = despesaReal.reduce((a: number, b: number) => a + b, 0) / despesaReal.length;
+    const formatBRL = (v: number) => v >= 1000 ? `R$ ${(v / 1000).toFixed(1)}k` : `R$ ${v.toFixed(0)}`;
 
-    const recentReceita = receitaReal.slice(-3);
-    const olderReceita = receitaReal.slice(0, 3);
-    const receitaTrend = recentReceita.length > 0 && olderReceita.length > 0
-      ? ((recentReceita.reduce((a: number, b: number) => a + b, 0) / recentReceita.length) /
-         (olderReceita.reduce((a: number, b: number) => a + b, 0) / olderReceita.length) - 1) * 100
-      : 0;
+    // Build monthly breakdown tables
+    const realTable = realMonths.map((d: any) => 
+      `${d.month_key}: Receita ${formatBRL(d.receita_real)}, Despesa ${formatBRL(d.despesa_real)}, Saldo ${formatBRL(d.saldo_real)}`
+    ).join("\n");
 
-    const avgPrevReceita = predictedMonths.length > 0
-      ? predictedMonths.reduce((s: number, d: any) => s + Number(d.receita_prev_base || 0), 0) / predictedMonths.length
-      : 0;
-    const avgPrevDespesa = predictedMonths.length > 0
-      ? predictedMonths.reduce((s: number, d: any) => s + Number(d.despesa_prev_base || 0), 0) / predictedMonths.length
-      : 0;
+    const forecastTable = predictedMonths.map((d: any) => 
+      `${d.month_key}: Receita ${formatBRL(d.receita_prev_base)}, Despesa ${formatBRL(d.despesa_prev_base)}, Saldo ${formatBRL(d.saldo_prev_base)}`
+    ).join("\n");
+
+    // Accumulated projected balance
+    let accBalance = realMonths.length > 0 ? Number(realMonths[realMonths.length - 1].saldo_real) : 0;
+    const accProjection = predictedMonths.map((d: any) => {
+      accBalance += Number(d.saldo_prev_base || 0);
+      return `${d.month_key}: Saldo acumulado ${formatBRL(accBalance)}`;
+    }).join("\n");
+
+    // Months with negative projected margin
+    const negativeMonths = predictedMonths.filter((d: any) => (d.saldo_prev_base || 0) < 0);
+
+    const topDespStr = topDespesas.map(([cat, val]) => 
+      `- ${cat}: ${formatBRL(val)} (${totalDesp > 0 ? ((val / totalDesp) * 100).toFixed(0) : 0}%)`
+    ).join("\n");
+
+    const topRecStr = topReceitas.map(([cat, val]) => 
+      `- ${cat}: ${formatBRL(val)} (${totalRec > 0 ? ((val / totalRec) * 100).toFixed(0) : 0}%)`
+    ).join("\n");
 
     const warnings = realMonths.filter((d: any) => d.validation_status === "warning").length;
     const confidence = forecastData[0]?.confidence_score || 0;
 
-    const formatBRL = (v: number) => `R$ ${(v / 1000).toFixed(0)}k`;
-
     const prompt = `Você é um CFO virtual analisando projeções financeiras de uma empresa brasileira.
-Dados históricos (${realMonths.length} meses): receita média ${formatBRL(avgReceita)}/mês, despesa média ${formatBRL(avgDespesa)}/mês.
-Tendência de receita nos últimos 3 meses vs primeiros 3 meses: ${receitaTrend > 0 ? "+" : ""}${receitaTrend.toFixed(1)}%.
-Previsão base (próximos ${predictedMonths.length} meses): receita média ${formatBRL(avgPrevReceita)}/mês, despesa média ${formatBRL(avgPrevDespesa)}/mês.
-Margem projetada: ${avgPrevReceita > 0 ? ((avgPrevReceita - avgPrevDespesa) / avgPrevReceita * 100).toFixed(1) : 0}%.
+
+## DADOS HISTÓRICOS (${realMonths.length} meses)
+${realTable}
+
+## TOP 5 CATEGORIAS DE RECEITA
+${topRecStr || "Sem dados de categorias"}
+
+## TOP 5 CATEGORIAS DE DESPESA
+${topDespStr || "Sem dados de categorias"}
+
+## PROJEÇÃO BASE (próximos ${predictedMonths.length} meses)
+${forecastTable}
+
+## SALDO ACUMULADO PROJETADO
+${accProjection}
+
+${negativeMonths.length > 0 ? `⚠️ MESES COM MARGEM NEGATIVA PROJETADA: ${negativeMonths.map((d: any) => d.month_key).join(", ")}` : "✅ Todos os meses projetados com margem positiva."}
+
 Score de confiança: ${confidence}/100.
 ${warnings > 0 ? `ALERTA: ${warnings} meses com divergência entre transações e DRE.` : ""}
 
 Responda em JSON com exatamente esta estrutura:
 {
-  "summary": "Resumo executivo de 2-3 frases estilo CFO, direto e em português BR",
-  "insights": [{"title": "...", "evidence": "dado numérico real", "impact": "alto/medio/baixo", "recommendation": "ação concreta"}],
-  "risks": [{"title": "...", "evidence": "dado numérico", "severity": "alto/medio/baixo", "mitigation": "como mitigar"}],
-  "opportunities": [{"title": "...", "evidence": "dado numérico", "potential": "estimativa", "next_steps": "próximo passo"}],
-  "recommendations": [{"title": "...", "action": "ação específica", "expected_impact": "resultado esperado"}]
+  "summary": "Resumo executivo de 2-3 frases estilo CFO, direto e em português BR, citando números reais",
+  "insights": [{"title": "...", "evidence": "dado numérico real dos dados acima", "impact": "alto/medio/baixo", "recommendation": "ação concreta baseada nas categorias"}],
+  "risks": [{"title": "...", "evidence": "dado numérico dos dados acima", "severity": "alto/medio/baixo", "mitigation": "como mitigar com ação específica"}],
+  "opportunities": [{"title": "...", "evidence": "dado numérico dos dados acima", "potential": "estimativa baseada nos dados", "next_steps": "próximo passo concreto"}],
+  "recommendations": [{"title": "...", "action": "ação específica referenciando categorias reais", "expected_impact": "resultado esperado com número"}]
 }
 
 Regras:
-- NÃO invente números. Use apenas os dados fornecidos.
-- Cite evidências numéricas reais.
+- NÃO invente números. Use APENAS os dados fornecidos acima.
+- Cite categorias reais de receita e despesa nas recomendações.
+- Se houver meses com margem negativa, destaque como risco prioritário.
 - Máximo 3 itens por lista.
-- Tom direto, profissional, estilo "resumo do CFO".
+- Tom direto, profissional, estilo "resumo do CFO para o CEO".
 - Responda APENAS o JSON, sem markdown.`;
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -142,6 +195,9 @@ Regras:
     // Delete previous insights for this user (sheet_id=null)
     await db.from("forecast_insights").delete().eq("user_id", userId).is("sheet_id", null).eq("horizon", horizon);
 
+    const avgReceita = realMonths.reduce((s: number, d: any) => s + Number(d.receita_real), 0) / realMonths.length;
+    const avgDespesa = realMonths.reduce((s: number, d: any) => s + Number(d.despesa_real), 0) / realMonths.length;
+
     const { error: insError } = await db.from("forecast_insights").insert({
       user_id: userId,
       sheet_id: null,
@@ -157,7 +213,8 @@ Regras:
         confidence,
         avg_receita: avgReceita,
         avg_despesa: avgDespesa,
-        receita_trend: receitaTrend,
+        top_categorias_despesa: topDespesas.map(([cat, val]) => ({ categoria: cat, total: val })),
+        top_categorias_receita: topReceitas.map(([cat, val]) => ({ categoria: cat, total: val })),
       },
     });
     if (insError) throw insError;

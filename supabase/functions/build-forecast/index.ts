@@ -29,7 +29,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Auth: use getUser instead of getClaims
     const authClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -40,17 +39,16 @@ Deno.serve(async (req) => {
     }
     const userId = user.id;
 
-    // Service role client for data access
     const db = createClient(supabaseUrl, supabaseServiceKey);
 
     const { sheet_id, horizon = "6m" } = await req.json();
     const horizonMonths = horizon === "3m" ? 3 : horizon === "12m" ? 12 : 6;
 
     // ========== STEP 1: Consolidate monthly dataset ==========
-    // Always fetch ALL user transactions (don't filter by source_sheet_id)
+    // Include movement_type to correctly classify income vs expense
     const { data: transactions, error: txError } = await db
       .from("transactions")
-      .select("date, amount, type, category")
+      .select("date, amount, type, category, movement_type")
       .eq("user_id", userId)
       .order("date", { ascending: true });
 
@@ -63,22 +61,28 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Group by month
+    // Group by month — use movement_type instead of amount sign
     const monthMap = new Map<string, { receitas: number; despesas: number; categories: Map<string, number> }>();
 
     for (const tx of transactions) {
-      const monthKey = tx.date.substring(0, 7); // YYYY-MM
+      // Skip transfers — they don't affect operational forecast
+      if (tx.movement_type === "TRANSFER") continue;
+
+      const monthKey = tx.date.substring(0, 7);
       if (!monthMap.has(monthKey)) {
         monthMap.set(monthKey, { receitas: 0, despesas: 0, categories: new Map() });
       }
       const m = monthMap.get(monthKey)!;
-      if (tx.amount > 0) {
-        m.receitas += Number(tx.amount);
-      } else {
-        m.despesas += Math.abs(Number(tx.amount));
+      const amount = Math.abs(Number(tx.amount));
+
+      if (tx.movement_type === "INCOME") {
+        m.receitas += amount;
+      } else if (tx.movement_type === "EXPENSE") {
+        m.despesas += amount;
       }
-      const catKey = `${tx.amount > 0 ? "R" : "D"}:${tx.category}`;
-      m.categories.set(catKey, (m.categories.get(catKey) || 0) + Math.abs(Number(tx.amount)));
+
+      const catKey = `${tx.movement_type === "INCOME" ? "R" : "D"}:${tx.category}`;
+      m.categories.set(catKey, (m.categories.get(catKey) || 0) + amount);
     }
 
     const sortedMonths = Array.from(monthMap.keys()).sort();
@@ -288,7 +292,6 @@ Deno.serve(async (req) => {
     confidence = Math.max(10, Math.min(100, confidence));
 
     // ========== STEP 4: Upsert to database ==========
-    // Store with sheet_id=null since we aggregate all transactions
     const allRows = [
       ...realData.map((d) => ({
         user_id: userId,
@@ -319,7 +322,6 @@ Deno.serve(async (req) => {
       })),
     ];
 
-    // Delete existing data for this user (sheet_id=null)
     await db
       .from("forecast_monthly")
       .delete()

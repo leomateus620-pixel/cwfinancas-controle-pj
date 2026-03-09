@@ -9,10 +9,15 @@ const MONTH_LABELS: Record<string, string> = {
 
 interface Props {
   forecastMonths: ForecastMonthly[];
+  realMonths?: ForecastMonthly[];
 }
 
-export function ForecastCashFlow({ forecastMonths }: Props) {
+export function ForecastCashFlow({ forecastMonths, realMonths = [] }: Props) {
   const items = forecastMonths.slice(0, 6);
+
+  // Start accumulated balance from last real month's saldo
+  const lastRealSaldo = realMonths.length > 0 ? realMonths[realMonths.length - 1].saldo_real : 0;
+  let accumulated = lastRealSaldo;
 
   return (
     <div className="liquid-glass-caixa relative overflow-hidden p-6">
@@ -20,7 +25,7 @@ export function ForecastCashFlow({ forecastMonths }: Props) {
         Fluxo de Caixa Projetado
       </h3>
       <p className="text-sm text-muted-foreground mb-4">
-        Entradas, saídas e saldo previsto
+        Entradas, saídas, saldo mensal e acumulado
       </p>
       <div className="space-y-3">
         {items.map((item) => {
@@ -29,6 +34,7 @@ export function ForecastCashFlow({ forecastMonths }: Props) {
           const rec = item.receita_prev_base || 0;
           const desp = item.despesa_prev_base || 0;
           const saldo = item.saldo_prev_base || 0;
+          accumulated += saldo;
 
           return (
             <div
@@ -40,21 +46,28 @@ export function ForecastCashFlow({ forecastMonths }: Props) {
                   <div className={`w-2 h-2 rounded-full ${saldo >= 0 ? "bg-emerald-500" : "bg-red-400"}`} />
                   <span className="font-medium text-foreground">{label}</span>
                 </div>
-                <span
-                  className={`text-xl font-extrabold tabular-nums tracking-tight ${
-                    saldo >= 0 ? "text-emerald-600" : "text-red-500"
-                  }`}
-                >
-                  {saldo >= 0 ? "+" : ""}
-                  {formatCurrencyBR(saldo)}
-                </span>
+                <div className="text-right">
+                  <span
+                    className={`text-xl font-extrabold tabular-nums tracking-tight ${
+                      saldo >= 0 ? "text-emerald-600" : "text-red-500"
+                    }`}
+                  >
+                    {saldo >= 0 ? "+" : ""}
+                    {formatCurrencyBR(saldo)}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/8 text-emerald-600 font-medium text-xs">
-                  ↓ {formatCurrencyBR(rec)}
-                </span>
-                <span className="px-2.5 py-1 rounded-lg bg-red-500/8 text-red-500 font-medium text-xs">
-                  ↑ {formatCurrencyBR(desp)}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 text-sm">
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-600 font-medium text-xs">
+                    ↓ {formatCurrencyBR(rec)}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-red-500/10 text-red-500 font-medium text-xs">
+                    ↑ {formatCurrencyBR(desp)}
+                  </span>
+                </div>
+                <span className={`text-xs font-medium tabular-nums ${accumulated >= 0 ? "text-muted-foreground" : "text-red-500"}`}>
+                  Acum: {formatCurrencyBR(accumulated)}
                 </span>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import { TrendingUp, TrendingDown, Target, AlertCircle, Shield } from "lucide-react";
+import { TrendingUp, TrendingDown, Target, Shield, Wallet } from "lucide-react";
 import type { ForecastMonthly } from "@/hooks/useForecast";
 import { formatCurrencyBR } from "@/lib/currency";
 
@@ -21,17 +21,19 @@ export function ForecastKPIs({ realMonths, forecastMonths, confidence }: Props) 
   const recentAvg = recent.length > 0 ? recent.reduce((s, d) => s + d.receita_real, 0) / recent.length : 0;
   const olderAvg = older.length > 0 ? older.reduce((s, d) => s + d.receita_real, 0) / older.length : 0;
   const trendPct = olderAvg > 0 ? ((recentAvg - olderAvg) / olderAvg) * 100 : 0;
+  const hasTrend = older.length > 0;
 
-  const recentDesp = recent.length > 0 ? recent.reduce((s, d) => s + d.despesa_real, 0) / recent.length : 0;
-  const olderDesp = older.length > 0 ? older.reduce((s, d) => s + d.despesa_real, 0) / older.length : 0;
-  const despTrend = olderDesp > 0 ? ((recentDesp - olderDesp) / olderDesp) * 100 : 0;
+  // Accumulated projected balance (sum of all forecast saldos)
+  const saldoAcumulado = forecastMonths.reduce((s, d) => s + (d.saldo_prev_base || 0), 0);
+  // Last real saldo for context
+  const lastRealSaldo = realMonths.length > 0 ? realMonths[realMonths.length - 1].saldo_real : 0;
 
   const kpis = [
     {
-      title: "Receita Prevista (Trimestre)",
+      title: "Receita Prevista (Trim.)",
       value: formatCurrencyBR(receitaQ),
-      change: trendPct,
-      changeLabel: "tendência recente",
+      change: hasTrend ? trendPct : null,
+      changeLabel: hasTrend ? "tendência recente" : `média mensal ${formatCurrencyBR(receitaQ / Math.max(nextQ.length, 1))}`,
       icon: <TrendingUp className="w-5 h-5" />,
       accentColor: "border-l-emerald-500",
       iconBg: "bg-emerald-500/10 text-emerald-600",
@@ -48,25 +50,25 @@ export function ForecastKPIs({ realMonths, forecastMonths, confidence }: Props) 
     {
       title: "Confiança da Previsão",
       value: `${Math.round(confidence)}%`,
-      change: 0,
+      change: null,
       changeLabel: confidence >= 70 ? "alta confiabilidade" : "dados limitados",
       icon: <Shield className="w-5 h-5" />,
       accentColor: "border-l-sky-500",
       iconBg: "bg-sky-500/10 text-sky-600",
     },
     {
-      title: "Tendência de Despesas",
-      value: `${despTrend > 0 ? "+" : ""}${despTrend.toFixed(1)}%`,
-      change: -despTrend,
-      changeLabel: "últimos 3 meses",
-      icon: despTrend > 5 ? <AlertCircle className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />,
-      accentColor: despTrend > 5 ? "border-l-amber-500" : "border-l-emerald-500",
-      iconBg: despTrend > 5 ? "bg-amber-500/10 text-amber-600" : "bg-emerald-500/10 text-emerald-600",
+      title: "Saldo Projetado Acum.",
+      value: formatCurrencyBR(saldoAcumulado),
+      change: saldoAcumulado > 0 ? null : null,
+      changeLabel: saldoAcumulado >= 0 ? "resultado positivo" : "atenção: resultado negativo",
+      icon: <Wallet className="w-5 h-5" />,
+      accentColor: saldoAcumulado >= 0 ? "border-l-emerald-500" : "border-l-red-500",
+      iconBg: saldoAcumulado >= 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500",
     },
   ];
 
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {kpis.map((kpi, i) => (
         <div
           key={i}
@@ -84,7 +86,7 @@ export function ForecastKPIs({ realMonths, forecastMonths, confidence }: Props) 
             {kpi.value}
           </p>
           <div className="flex items-center gap-1 mt-2">
-            {kpi.change !== 0 && (
+            {kpi.change != null && kpi.change !== 0 && (
               <span
                 className={`text-xs font-medium ${kpi.change > 0 ? "text-emerald-600" : "text-red-500"}`}
               >
