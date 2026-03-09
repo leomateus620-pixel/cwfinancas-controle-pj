@@ -1,5 +1,7 @@
+import { useState, useCallback } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import { FinanceIntroAnimation } from "@/components/FinanceIntroAnimation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -39,51 +41,63 @@ const queryClient = new QueryClient({
   },
 });
 
-const App = () => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <GlobalErrorHandler />
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <AuthProvider>
-            <Routes>
-              {/* Public routes */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              
-              {/* Protected routes */}
-              <Route element={
-                <ProtectedRoute>
-                  <DateRangeProvider>
-                    <DashboardLayout />
-                  </DateRangeProvider>
-                </ProtectedRoute>
-              }>
-                <Route path="/" element={<HomePage />} />
-                <Route path="/overview" element={<OverviewPage />} />
-                <Route path="/income" element={<IncomePage />} />
-                <Route path="/expenses" element={<ExpensesPage />} />
-                <Route path="/cash-flow" element={<CashFlowPage />} />
-                <Route path="/dre" element={<DREPage />} />
-                <Route path="/forecasts" element={<ForecastsPage />} />
-                <Route path="/invoices" element={<InvoicesPage />} />
-                <Route path="/upload" element={<UploadPage />} />
-                <Route path="/insights" element={<InsightsPage />} />
-                <Route path="/google-sheets" element={<GoogleSheetsPage />} />
-                <Route path="/accounts" element={<AccountsPage />} />
-                <Route path="/settings" element={<SettingsPage />} />
-              </Route>
-              
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </AuthProvider>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </ErrorBoundary>
-);
+const App = () => {
+  const [showIntro, setShowIntro] = useState(
+    () => !sessionStorage.getItem("cwf-intro-seen")
+  );
+
+  const handleIntroComplete = useCallback(() => {
+    sessionStorage.setItem("cwf-intro-seen", "true");
+    setShowIntro(false);
+  }, []);
+
+  return (
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          {showIntro && <FinanceIntroAnimation onComplete={handleIntroComplete} />}
+          <GlobalErrorHandler />
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <AuthProvider>
+              <Routes>
+                {/* Public routes */}
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                
+                {/* Protected routes */}
+                <Route element={
+                  <ProtectedRoute>
+                    <DateRangeProvider>
+                      <DashboardLayout />
+                    </DateRangeProvider>
+                  </ProtectedRoute>
+                }>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/overview" element={<OverviewPage />} />
+                  <Route path="/income" element={<IncomePage />} />
+                  <Route path="/expenses" element={<ExpensesPage />} />
+                  <Route path="/cash-flow" element={<CashFlowPage />} />
+                  <Route path="/dre" element={<DREPage />} />
+                  <Route path="/forecasts" element={<ForecastsPage />} />
+                  <Route path="/invoices" element={<InvoicesPage />} />
+                  <Route path="/upload" element={<UploadPage />} />
+                  <Route path="/insights" element={<InsightsPage />} />
+                  <Route path="/google-sheets" element={<GoogleSheetsPage />} />
+                  <Route path="/accounts" element={<AccountsPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                </Route>
+                
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </AuthProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
+};
 
 export default App;
