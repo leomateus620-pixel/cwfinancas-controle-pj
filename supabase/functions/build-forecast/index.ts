@@ -94,9 +94,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const lowDataMode = sortedMonths.length < 4;
-
-    // Build real data array
+    // Build real data array (ALL months for display)
     const realData: MonthlyData[] = sortedMonths.map((mk) => {
       const m = monthMap.get(mk)!;
       return {
@@ -108,6 +106,24 @@ Deno.serve(async (req) => {
         calibration_notes: [],
       };
     });
+
+    // Determine current month and filter for calculation series
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    
+    // Only use COMPLETED past months for projection math
+    const seriesData = realData.filter((d) => d.month_key < currentMonth);
+    
+    if (seriesData.length < 2) {
+      // Fall back: if not enough completed months, use all except future
+      const fallback = realData.filter((d) => d.month_key <= currentMonth);
+      if (fallback.length >= 2) {
+        seriesData.push(...fallback.filter((d) => !seriesData.includes(d)));
+      }
+    }
+
+    const effectiveSeriesLength = seriesData.length >= 2 ? seriesData.length : realData.filter((d) => d.month_key <= currentMonth).length;
+    const lowDataMode = effectiveSeriesLength < 4;
 
     // ========== STEP 2: Validate with DRE ==========
     const { data: drePeriods } = await db
