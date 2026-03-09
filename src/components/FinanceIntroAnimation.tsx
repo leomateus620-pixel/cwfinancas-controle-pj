@@ -97,11 +97,24 @@ export function FinanceIntroAnimation({ onComplete }: FinanceIntroAnimationProps
   );
 }
 
-function KPIPill({ label, value, color }: { label: string; value: string; color: string }) {
+function KPIPill({ label, value, color, glowColor }: { label: string; value: string; color: string; glowColor: string }) {
   return (
-    <div className="flex flex-col items-center px-4 py-2 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm">
-      <span className="text-[10px] uppercase tracking-wider text-white/40">{label}</span>
-      <span className={`text-sm font-bold tabular-nums ${color}`}>{value}</span>
+    <div
+      className="relative flex flex-col items-center px-5 py-3 rounded-2xl backdrop-blur-xl bg-gradient-to-br from-white/10 to-white/5 border border-white/15 overflow-hidden"
+      style={{ boxShadow: `0 4px 24px -4px ${glowColor}, 0 0 0 1px rgba(255,255,255,0.06) inset` }}
+    >
+      {/* Noise texture overlay */}
+      <div
+        className="absolute inset-0 rounded-2xl opacity-[0.04] pointer-events-none"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+          backgroundSize: '128px 128px',
+        }}
+      />
+      {/* Highlight superior */}
+      <div className="absolute top-0 left-1/4 right-1/4 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+      <span className="relative text-[10px] uppercase tracking-wider text-white/45 font-medium">{label}</span>
+      <span className={`relative text-sm font-bold tabular-nums ${color}`}>{value}</span>
     </div>
   );
 }
