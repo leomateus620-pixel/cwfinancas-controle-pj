@@ -56,6 +56,14 @@ export function AIInsightsPanel({ connectionId, dateFrom, dateTo }: AIInsightsPa
         cacheDate={cacheDate}
       />
 
+      {insights.summary && (
+        <div className="liquid-glass-card p-6 md:p-8 border-l-4 border-primary/30">
+          <p className="text-sm md:text-base text-foreground/90 leading-relaxed font-medium">
+            {insights.summary}
+          </p>
+        </div>
+      )}
+
       <InsightsSummaryGrid insights={insights} kpis={kpis} />
     </div>
   );
