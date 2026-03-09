@@ -41,7 +41,7 @@ export function FinanceIntroAnimation({ onComplete }: FinanceIntroAnimationProps
         />
       </div>
 
-      <p className={`text-sm text-white/50 text-center mt-3 transition-all duration-500 ${
+      <p className={`text-sm font-medium text-center mt-3 transition-all duration-500 bg-gradient-to-r from-[hsl(221,85%,53%)] to-[hsl(174,60%,51%)] bg-clip-text text-transparent ${
         phase >= 1 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
       }`}>
         Controle Financeiro Inteligente
