@@ -1,12 +1,21 @@
 
 
-## Plan: Improve Header Text Contrast in Caixa Atual Card
+## Plano: Resumo Executivo no topo dos Insights
 
-The "CAIXA ATUAL" label and "Março 2026" subtitle use low-opacity classes making them nearly invisible.
+Adicionar o `insights.summary` como um parágrafo destacado entre o header e os 4 cards, dentro de `AIInsightsPanel.tsx`.
 
-### Changes in `src/components/home/CaixaAtualCard.tsx`
+### Mudança
 
-- **"CAIXA ATUAL"** (~line 64): `text-muted-foreground` → `text-foreground/80` — stronger contrast
-- **"Março 2026"** (~line 67): `text-muted-foreground/40` → `text-muted-foreground/70` — visible but still secondary
-- **Wallet icon** (~line 61): `text-muted-foreground` → `text-foreground/60` — slightly bolder to match
+**`src/components/insights/AIInsightsPanel.tsx`** — Inserir um bloco visual entre `<InsightTraceability>` e `<InsightsSummaryGrid>`:
+
+```tsx
+{/* Executive Summary */}
+<div className="liquid-glass-card p-6 md:p-8 border-l-4 border-primary/30">
+  <p className="text-sm md:text-base text-foreground/90 leading-relaxed font-medium">
+    {insights.summary}
+  </p>
+</div>
+```
+
+O bloco usa `liquid-glass-card` consistente com o visual existente, com uma borda lateral de destaque (`border-l-4 border-primary/30`) para diferenciar visualmente como um resumo executivo. Nenhum outro arquivo precisa ser modificado.
 
