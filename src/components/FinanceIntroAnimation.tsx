@@ -48,12 +48,12 @@ export function FinanceIntroAnimation({ onComplete }: FinanceIntroAnimationProps
       </p>
 
       {/* KPI Pills */}
-      <div className={`flex gap-3 mt-8 transition-all duration-600 ease-out ${
+      <div className={`flex gap-4 mt-8 transition-all duration-600 ease-out ${
         phase >= 2 ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
       }`}>
-        <KPIPill label="Receita" value="+12.4k" color="text-emerald-400" />
-        <KPIPill label="Despesas" value="-4.1k" color="text-red-400" />
-        <KPIPill label="Lucro" value="+8.3k" color="text-primary" />
+        <KPIPill label="Receita" value="+12.4k" color="text-emerald-400" glowColor="rgba(52,211,153,0.15)" />
+        <KPIPill label="Despesas" value="-4.1k" color="text-red-400" glowColor="rgba(248,113,113,0.15)" />
+        <KPIPill label="Lucro" value="+8.3k" color="text-primary" glowColor="rgba(59,130,246,0.15)" />
       </div>
 
       {/* Mini Chart */}
