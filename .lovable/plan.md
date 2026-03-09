@@ -1,24 +1,12 @@
 
 
-## Plano: Liquid Glass nos KPI Cards + Tagline com cores da logo
+## Plan: Improve Header Text Contrast in Caixa Atual Card
 
-### Mudanças em `src/components/FinanceIntroAnimation.tsx`
+The "CAIXA ATUAL" label and "Março 2026" subtitle use low-opacity classes making them nearly invisible.
 
-**1. KPI Pills com estilo Liquid Glass**
-- Substituir o estilo atual dos cards (`bg-white/5 border border-white/10 backdrop-blur-sm`) por um design liquid glass texturizado:
-  - `backdrop-blur-xl` (24px)
-  - Borda luminosa com `border-white/15`
-  - Background com gradiente translúcido `bg-gradient-to-br from-white/10 to-white/5`
-  - `::before` pseudo-element com noise texture (via inline style ou classe utilitária)
-  - Sombra suave com glow sutil baseado na cor do card (emerald para receita, red para despesas, blue para lucro)
-  - Border-radius maior (`rounded-2xl`)
-  - Padding mais generoso
+### Changes in `src/components/home/CaixaAtualCard.tsx`
 
-**2. Tagline "Controle Financeiro Inteligente" com cores da logo**
-- A logo CW PJ usa azul institucional (primary ~`hsl(221 85% 53%)`) e teal/cyan como cores principais
-- Aplicar um gradiente de texto (`bg-clip-text text-transparent`) usando as cores da logo: azul (`#2563eb`) → teal (`#14b8a6`)
-- Aumentar levemente o font-weight para `font-medium`
-
-### Arquivo modificado
-- `src/components/FinanceIntroAnimation.tsx`
+- **"CAIXA ATUAL"** (~line 64): `text-muted-foreground` → `text-foreground/80` — stronger contrast
+- **"Março 2026"** (~line 67): `text-muted-foreground/40` → `text-muted-foreground/70` — visible but still secondary
+- **Wallet icon** (~line 61): `text-muted-foreground` → `text-foreground/60` — slightly bolder to match
 
