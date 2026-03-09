@@ -94,9 +94,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const lowDataMode = sortedMonths.length < 4;
-
-    // Build real data array
+    // Build real data array (ALL months for display)
     const realData: MonthlyData[] = sortedMonths.map((mk) => {
       const m = monthMap.get(mk)!;
       return {
@@ -108,6 +106,24 @@ Deno.serve(async (req) => {
         calibration_notes: [],
       };
     });
+
+    // Determine current month and filter for calculation series
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    
+    // Only use COMPLETED past months for projection math
+    const seriesData = realData.filter((d) => d.month_key < currentMonth);
+    
+    if (seriesData.length < 2) {
+      // Fall back: if not enough completed months, use all except future
+      const fallback = realData.filter((d) => d.month_key <= currentMonth);
+      if (fallback.length >= 2) {
+        seriesData.push(...fallback.filter((d) => !seriesData.includes(d)));
+      }
+    }
+
+    const effectiveSeriesLength = seriesData.length >= 2 ? seriesData.length : realData.filter((d) => d.month_key <= currentMonth).length;
+    const lowDataMode = effectiveSeriesLength < 4;
 
     // ========== STEP 2: Validate with DRE ==========
     const { data: drePeriods } = await db
@@ -184,8 +200,10 @@ Deno.serve(async (req) => {
     }
 
     // ========== STEP 3: Baseline deterministic forecast ==========
-    const receitaSeries = realData.map((d) => d.receita_real);
-    const despesaSeries = realData.map((d) => d.despesa_real);
+    // Use only completed months (seriesData) for projection math
+    const calcData = seriesData.length >= 2 ? seriesData : realData.filter((d) => d.month_key <= currentMonth);
+    const receitaSeries = calcData.map((d) => d.receita_real);
+    const despesaSeries = calcData.map((d) => d.despesa_real);
 
     function weightedMovingAvg(series: number[]): number {
       const n = series.length;
@@ -227,21 +245,28 @@ Deno.serve(async (req) => {
     const recStd = stdDev(receitaSeries);
     const despStd = stdDev(despesaSeries);
 
-    const n = realData.length;
+    const n = calcData.length;
 
-    // Generate forecasts
-    const lastMonth = sortedMonths[sortedMonths.length - 1];
-    const [lastYear, lastMon] = lastMonth.split("-").map(Number);
+    // Projection floors: never go below 30% of historical average
+    const recFloor = recAvg * 0.3;
+    const despFloor = despAvg * 0.3;
+
+    // Start forecasts from current month (not last data month)
+    const [curYear, curMon] = currentMonth.split("-").map(Number);
     
     const forecastData: any[] = [];
-    for (let i = 1; i <= horizonMonths; i++) {
-      let fMonth = lastMon + i;
-      let fYear = lastYear;
+    for (let i = 0; i <= horizonMonths; i++) {
+      let fMonth = curMon + i;
+      let fYear = curYear;
       while (fMonth > 12) { fMonth -= 12; fYear++; }
       const monthKey = `${fYear}-${String(fMonth).padStart(2, "0")}`;
-      const idx = n + i - 1;
+      
+      // Skip if this month already exists as real data
+      if (realData.some((d) => d.month_key === monthKey)) continue;
+      
+      const idx = n + i;
 
-      const sameMonthData = realData.filter((d) => d.month_key.endsWith(`-${String(fMonth).padStart(2, "0")}`));
+      const sameMonthData = calcData.filter((d) => d.month_key.endsWith(`-${String(fMonth).padStart(2, "0")}`));
       let seasonalFactorRec = 1;
       let seasonalFactorDesp = 1;
       if (sameMonthData.length > 0) {
@@ -254,8 +279,8 @@ Deno.serve(async (req) => {
       }
 
       const slopeDampen = lowDataMode ? 0.3 : 1.0;
-      const recBase = Math.max(0, (recAvg + recSlope * idx * slopeDampen) * seasonalFactorRec);
-      const despBase = Math.max(0, (despAvg + despSlope * idx * slopeDampen) * seasonalFactorDesp);
+      const recBase = Math.max(recFloor, (recAvg + recSlope * idx * slopeDampen) * seasonalFactorRec);
+      const despBase = Math.max(despFloor, (despAvg + despSlope * idx * slopeDampen) * seasonalFactorDesp);
       const saldoBase = recBase - despBase;
 
       forecastData.push({
