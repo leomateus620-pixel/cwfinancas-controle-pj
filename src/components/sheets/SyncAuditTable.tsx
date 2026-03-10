@@ -17,17 +17,20 @@ interface SyncAuditTableProps {
 export function SyncAuditTable({ audits }: SyncAuditTableProps) {
   if (audits.length === 0) return null;
 
+  const getNoOps = (audit: SyncTabAudit) => (audit.skip_reasons?.noOps as number) || 0;
+
   const totals = audits.reduce(
     (acc, a) => ({
       scanned: acc.scanned + a.rows_scanned,
       withValue: acc.withValue + a.rows_with_value,
       imported: acc.imported + a.rows_imported,
       skipped: acc.skipped + a.rows_skipped,
+      noOps: acc.noOps + getNoOps(a),
     }),
-    { scanned: 0, withValue: 0, imported: 0, skipped: 0 }
+    { scanned: 0, withValue: 0, imported: 0, skipped: 0, noOps: 0 }
   );
 
-  const totalDiff = totals.withValue - totals.imported;
+  const totalDiff = totals.withValue - totals.imported - totals.noOps;
 
   return (
     <div className="space-y-2">
