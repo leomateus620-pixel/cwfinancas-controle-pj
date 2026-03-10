@@ -414,7 +414,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch sample data (first 100 rows for profiling)
+    // Fetch sample data (first 100 rows for profiling) with retry
     let rows: string[][];
     if (xlsxWorkbook) {
       const allXlsxRows = xlsxSheetToRows(xlsxWorkbook, sourceTab!);
@@ -422,18 +422,31 @@ Deno.serve(async (req) => {
     } else {
       const range = `'${sourceTab}'!A1:Z100`;
       const sheetsUrl = `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}/values/${encodeURIComponent(range)}`;
-      const sheetsResponse = await fetch(sheetsUrl, {
-        headers: { "Authorization": `Bearer ${accessToken}` },
-      });
-      if (!sheetsResponse.ok) {
-        const errBody = await sheetsResponse.text();
-        console.error("Google Sheets API error:", sheetsResponse.status, errBody);
+      
+      let sheetsResponse: Response | null = null;
+      const maxRetries = 3;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        sheetsResponse = await fetch(sheetsUrl, {
+          headers: { "Authorization": `Bearer ${accessToken}` },
+        });
+        if (sheetsResponse.ok || (sheetsResponse.status !== 503 && sheetsResponse.status !== 429)) {
+          break;
+        }
+        console.warn(`Google Sheets API returned ${sheetsResponse.status}, retry ${attempt + 1}/${maxRetries}`);
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      }
+
+      if (!sheetsResponse!.ok) {
+        const errBody = await sheetsResponse!.text();
+        console.error("Google Sheets API error:", sheetsResponse!.status, errBody);
         return new Response(
           JSON.stringify({ error: "Failed to fetch sheet data", details: errBody }),
           { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const sheetsData = await sheetsResponse.json();
+      const sheetsData = await sheetsResponse!.json();
       rows = sheetsData.values || [];
     }
 
