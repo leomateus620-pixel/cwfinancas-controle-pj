@@ -62,7 +62,7 @@ export function SyncAuditTable({ audits }: SyncAuditTableProps) {
         </TableHeader>
         <TableBody>
           {audits.map((audit) => {
-            const diff = audit.rows_with_value - audit.rows_imported;
+            const diff = audit.rows_with_value - audit.rows_imported - getNoOps(audit);
             return (
               <TableRow key={audit.id}>
                 <TableCell className="font-medium">{audit.tab_name}</TableCell>
