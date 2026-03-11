@@ -1228,6 +1228,14 @@ function isAPRSkippableRow(cells: string[]): { skip: boolean; reason?: string } 
   if (longText && !cells.some(c => parseBRL(c) !== null)) return { skip: true, reason: "instruction_row" };
   // All empty
   if (cells.every(c => !safeStr(c).trim())) return { skip: true, reason: "empty_row" };
+  // APR header rows (e.g. "CLIENTE", "FORNECEDOR", "DESPESA" as column labels)
+  const firstCell = safeStr(cells[0]).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const aprHeaderKeywords = ["cliente", "fornecedor", "despesa", "descricao", "vcto", "vencimento"];
+  if (firstCell && aprHeaderKeywords.includes(firstCell)) {
+    // Verify it's a header: most cells are text (not amounts)
+    const numericCount = cells.filter(c => parseBRL(c) !== null && parseBRL(c) !== 0).length;
+    if (numericCount <= 1) return { skip: true, reason: "apr_header_row" };
+  }
   return { skip: false };
 }
 
@@ -1514,13 +1522,23 @@ function parseAPRHorizontal(
     }
   }
 
-  // If no labels found, use positional heuristic for the Financeiro GR layout:
-  // col0 = Vcto, col1 = Despesa/Cliente, col2 = Forma de pgto (if leftCols >= 3)
+  // If no labels found, use positional heuristic based on record type and column count
   if (Object.keys(leftColMap).length === 0 && leftCols >= 2) {
-    leftColMap.vencimento = 0;
-    leftColMap.descricao = 1;
-    if (leftCols >= 3) leftColMap.forma_pgto = 2;
-    console.log(`[${requestId}] APR horizontal: using positional heuristic for ${leftCols} left columns`);
+    if (recordType === "payable" && leftCols >= 3) {
+      // Payable: col0=Vcto, col1=Despesa, col2=Obs
+      leftColMap.vencimento = 0;
+      leftColMap.descricao = 1;
+      leftColMap.observacao = 2;
+    } else if (recordType === "receivable" && leftCols === 2) {
+      // Receivable: col0=Cliente, col1=Forma Pgto (no vencimento)
+      leftColMap.descricao = 0;
+      leftColMap.forma_pgto = 1;
+    } else {
+      leftColMap.vencimento = 0;
+      leftColMap.descricao = 1;
+      if (leftCols >= 3) leftColMap.observacao = 2;
+    }
+    console.log(`[${requestId}] APR horizontal: using positional heuristic for ${leftCols} left columns (${recordType})`);
   }
 
   console.log(`[${requestId}] APR horizontal: leftColMap=${JSON.stringify(leftColMap)}`);
@@ -1559,10 +1577,15 @@ function parseAPRHorizontal(
 
     const vctoIdx = leftColMap.vencimento;
     const baseDueDateParsed = vctoIdx !== undefined ? parseDate(row[vctoIdx]) : null;
-    // Extract "Dia XX" pattern for contextual date building
+    // Extract "Dia XX" pattern or plain number for contextual date building
     const vctoRaw = vctoIdx !== undefined ? safeStr(row[vctoIdx]).trim() : "";
     const diaMatch = vctoRaw.match(/Dia\s+(\d{1,2})/i);
-    const diaNumber = diaMatch ? parseInt(diaMatch[1], 10) : null;
+    let diaNumber = diaMatch ? parseInt(diaMatch[1], 10) : null;
+    // Accept plain numeric day (1-31) when no "Dia XX" pattern found
+    if (diaNumber === null && vctoRaw && /^\d{1,2}$/.test(vctoRaw)) {
+      const parsed = parseInt(vctoRaw, 10);
+      if (parsed >= 1 && parsed <= 31) diaNumber = parsed;
+    }
     
     const paymentMethodLeft = leftColMap.forma_pgto !== undefined ? cells[leftColMap.forma_pgto].trim() || null : null;
     const notesLeft = leftColMap.observacao !== undefined ? cells[leftColMap.observacao].trim() || null : null;
@@ -1606,8 +1629,8 @@ function parseAPRHorizontal(
         }
       }
 
-      // When no sub-headers exist, treat the cell right after the amount as status
-      if (!hasSubHeaders && statusRaw === null && amountFoundAtGc >= 0) {
+      // Fallback: treat the cell right after the amount as status (works with or without sub-headers)
+      if (statusRaw === null && amountFoundAtGc >= 0) {
         const statusGc = amountFoundAtGc + 1;
         if (statusGc < groupCells.length) {
           const candidateStatus = groupCells[statusGc].trim();
