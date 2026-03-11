@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useTransactions } from "./useTransactions";
-import { usePeriodMetrics } from "./usePeriodMetrics";
 import { format, startOfMonth, subMonths, parseISO, isValid, differenceInMonths, addMonths } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useDateRange } from "@/contexts/DateRangeContext";
