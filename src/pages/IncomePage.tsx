@@ -382,8 +382,8 @@ export function IncomePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length > 0 ? (
-                filteredData.map((item) => (
+              {paginatedItems.length > 0 ? (
+                paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id} 
                     className="hover:bg-white/40 transition-all duration-200 cursor-pointer border-b border-border/20"
@@ -421,6 +421,18 @@ export function IncomePage() {
             </TableBody>
           </Table>
         </div>
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          hasPrevPage={hasPrevPage}
+          hasNextPage={hasNextPage}
+          onPrevPage={prevPage}
+          onNextPage={nextPage}
+          onGoToPage={goToPage}
+        />
       </div>
 
       <TransactionModal
