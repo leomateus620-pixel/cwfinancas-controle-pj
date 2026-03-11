@@ -1246,18 +1246,15 @@ function parseAPRTab(
   defaultYear: number,
   requestId: string
 ): APRParseResult {
-  const records: APRParsedRecord[] = [];
-  const skipReasons: Record<string, number> = {};
-  let scanned = 0;
-  let skipped = 0;
-
-  if (rows.length < 2) return { records, layout: "unknown", scanned: 0, skipped: 0, skipReasons };
+  if (rows.length < 2) return { records: [], layout: "unknown", scanned: 0, skipped: 0, skipReasons: {} };
 
   // Detect layout: check first 10 rows for month names in horizontal headers
-  const layout = detectAPRLayout(rows, requestId);
+  const layout = detectAPRLayout(rows, recordType, requestId);
   console.log(`[${requestId}] APR tab "${tabTitle}" layout detected: ${layout}`);
 
-  if (layout === "horizontal_monthly") {
+  if (layout === "contract_vertical") {
+    return parseAPRContractVertical(rows, recordType, tabTitle, defaultYear, requestId);
+  } else if (layout === "horizontal_monthly") {
     return parseAPRHorizontal(rows, recordType, tabTitle, defaultYear, requestId);
   } else if (layout === "block_contract") {
     return parseAPRBlock(rows, recordType, tabTitle, defaultYear, requestId);
