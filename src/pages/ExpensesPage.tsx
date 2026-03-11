@@ -35,6 +35,8 @@ import { TransactionModal } from "@/components/modals/TransactionModal";
 import { useTransactions, Transaction } from "@/hooks/useTransactions";
 import { TransactionFormData } from "@/lib/validators";
 import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
+import { usePagination } from "@/hooks/usePerformance";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("pt-BR");
