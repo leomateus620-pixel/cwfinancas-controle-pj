@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useHomeDashboard } from "@/hooks/useHomeDashboard";
 import { HomeKPICard } from "@/components/home/HomeKPICard";
 import { CaixaAtualCard } from "@/components/home/CaixaAtualCard";
-import { DailySummary } from "@/components/home/DailySummary";
+import { CashEvolutionChart } from "@/components/home/CashEvolutionChart";
 import { HealthScore } from "@/components/home/HealthScore";
 import { AlertsPanel } from "@/components/home/AlertsPanel";
 import { TopCategories } from "@/components/home/TopCategories";
@@ -11,7 +11,6 @@ import { HomeEmptyState } from "@/components/home/HomeEmptyState";
 import { HomeSkeletonLoading } from "@/components/home/HomeSkeletonLoading";
 
 import {
-  Wallet,
   TrendingUp,
   TrendingDown,
   BarChart3,
@@ -19,36 +18,44 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { formatCompactBR } from "@/lib/currency";
-
-const currentPeriodKey = format(new Date(), "yyyy-MM");
+import { formatCompactBR, formatCurrencyBR } from "@/lib/currency";
 
 export default function HomePage() {
   const data = useHomeDashboard();
 
   const insights = useMemo(() => {
     const list: string[] = [];
+    const trend = data.cashPositionTrend;
 
-    if (data.dailyTrend.length >= 2) {
-      const last = data.dailyTrend[data.dailyTrend.length - 1]?.value ?? 0;
-      const prev = data.dailyTrend[data.dailyTrend.length - 2]?.value ?? 0;
-      if (prev !== 0) {
-        const pct = ((last - prev) / Math.abs(prev)) * 100;
-        list.push(`Seu caixa ${pct >= 0 ? "cresceu" : "caiu"} ${Math.abs(pct).toFixed(1)}% em relação a ontem.`);
+    if (trend.length >= 2) {
+      const last = trend[trend.length - 1];
+      const prev = trend[trend.length - 2];
+      if (prev.value !== 0) {
+        const pct = ((last.value - prev.value) / Math.abs(prev.value)) * 100;
+        const dir = pct >= 0 ? "avançou" : "recuou";
+        list.push(`Caixa ${dir} ${Math.abs(pct).toFixed(1)}% entre ${prev.label} e ${last.label}.`);
       }
     }
 
-    if (data.topExpenseCategories.length > 0) {
-      const top = data.topExpenseCategories[0];
-      list.push(`A categoria "${top.name}" concentrou ${Math.round(top.percent)}% das despesas este mês.`);
+    if (trend.length >= 3) {
+      const last3 = trend.slice(-3);
+      const increasing = last3[1].value > last3[0].value && last3[2].value > last3[1].value;
+      const decreasing = last3[1].value < last3[0].value && last3[2].value < last3[1].value;
+      if (increasing) list.push("Tendência de crescimento nos últimos 3 meses consecutivos.");
+      else if (decreasing) list.push("Atenção: caixa em queda nos últimos 3 meses consecutivos.");
+    }
+
+    if (trend.length > 0) {
+      const last = trend[trend.length - 1];
+      list.push(`Posição em 05/${last.label}: ${formatCurrencyBR(last.value)}.`);
     }
 
     if (list.length === 0) {
-      list.push("Importe seus dados para ver insights automáticos aqui.");
+      list.push("Importe seus dados para ver a evolução do caixa aqui.");
     }
 
     return list.slice(0, 3);
-  }, [data]);
+  }, [data.cashPositionTrend]);
 
   if (data.isLoading) {
     return (
@@ -116,7 +123,6 @@ export default function HomePage() {
                 valueColor="text-red-600"
                 delay={120}
               />
-
               <HomeKPICard
                 label="Resultado do Mês"
                 value={formatCompactBR(data.monthResult)}
@@ -141,13 +147,11 @@ export default function HomePage() {
               />
             </div>
 
-
-
-            {/* Middle row: Summary + Health */}
+            {/* Middle row: Cash Evolution + Health */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2">
-                <DailySummary
-                  dailyTrend={data.dailyTrend}
+                <CashEvolutionChart
+                  data={data.cashPositionTrend}
                   insights={insights}
                   delay={420}
                 />
