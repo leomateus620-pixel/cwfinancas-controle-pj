@@ -1619,8 +1619,8 @@ function parseAPRHorizontal(
         }
       }
 
-      // When no sub-headers exist, treat the cell right after the amount as status
-      if (!hasSubHeaders && statusRaw === null && amountFoundAtGc >= 0) {
+      // Fallback: treat the cell right after the amount as status (works with or without sub-headers)
+      if (statusRaw === null && amountFoundAtGc >= 0) {
         const statusGc = amountFoundAtGc + 1;
         if (statusGc < groupCells.length) {
           const candidateStatus = groupCells[statusGc].trim();
