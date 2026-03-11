@@ -189,7 +189,7 @@ export function useHomeDashboard(): HomeDashboardData {
     return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, dailyTrend, last30Income, last30Expense, prev30Income, prev30Expense };
   }, [currTx, prevTx, allTx]);
 
-  const currentBalance = allTotals.balance;
+  const currentBalance = computed.monthIncome - computed.monthExpense;
   const monthResult = computed.monthIncome - computed.monthExpense;
   const prevMonthResult = computed.prevMonthIncome - computed.prevMonthExpense;
   const variationValue = monthResult - prevMonthResult;
