@@ -1228,6 +1228,14 @@ function isAPRSkippableRow(cells: string[]): { skip: boolean; reason?: string } 
   if (longText && !cells.some(c => parseBRL(c) !== null)) return { skip: true, reason: "instruction_row" };
   // All empty
   if (cells.every(c => !safeStr(c).trim())) return { skip: true, reason: "empty_row" };
+  // APR header rows (e.g. "CLIENTE", "FORNECEDOR", "DESPESA" as column labels)
+  const firstCell = safeStr(cells[0]).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const aprHeaderKeywords = ["cliente", "fornecedor", "despesa", "descricao", "vcto", "vencimento"];
+  if (firstCell && aprHeaderKeywords.includes(firstCell)) {
+    // Verify it's a header: most cells are text (not amounts)
+    const numericCount = cells.filter(c => parseBRL(c) !== null && parseBRL(c) !== 0).length;
+    if (numericCount <= 1) return { skip: true, reason: "apr_header_row" };
+  }
   return { skip: false };
 }
 
