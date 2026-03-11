@@ -70,14 +70,16 @@ export function useHomeDashboard(): HomeDashboardData {
   const prevStart = format(startOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
   const prevEnd = format(endOfMonth(subMonths(now, 1)), "yyyy-MM-dd");
 
-  const { transactions: currTx, isLoading: txLoading, totals: allTotals } = useTransactions({
-    startDate: currStart,
+  // Single query for both months (current + previous) to reduce round-trips
+  const { transactions: allHomeTx, isLoading: txLoading } = useTransactions({
+    startDate: prevStart,
     endDate: currEnd,
   });
-  const { transactions: prevTx, isLoading: prevTxLoading } = useTransactions({
-    startDate: prevStart,
-    endDate: prevEnd,
-  });
+
+  // Split into current and previous month
+  const currTx = useMemo(() => (allHomeTx || []).filter(t => t.date >= currStart && t.date <= currEnd), [allHomeTx, currStart, currEnd]);
+  const prevTx = useMemo(() => (allHomeTx || []).filter(t => t.date >= prevStart && t.date <= prevEnd), [allHomeTx, prevStart, prevEnd]);
+  const prevTxLoading = false; // Covered by single query
   const { invoices, isLoading: invLoading } = useInvoices();
   const { connections, isLoading: syncLoading } = useSyncStatus();
 
