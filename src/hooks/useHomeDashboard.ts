@@ -47,7 +47,7 @@ export interface HomeDashboardData {
   runwayDays: number | null;
   topExpenseCategories: Array<{ name: string; value: number; percent: number }>;
   alerts: HomeDashboardAlert[];
-  dailyTrend: Array<{ date: string; value: number }>;
+  cashPositionTrend: Array<{ month: string; label: string; value: number }>;
   healthScore: number;
   healthFactors: Array<{ label: string; score: number; weight: number }>;
   trendLabel: string;
@@ -127,6 +127,60 @@ export function useHomeDashboard(): HomeDashboardData {
   // Combine both queries for trend/runway calculations
   const allTx = useMemo(() => [...(currTx || []), ...(prevTx || [])], [currTx, prevTx]);
 
+  // Separate query for ALL transactions (no date filter) for cash position on 5th
+  const { data: allTxForCash } = useQuery({
+    queryKey: ["home-cash-position-all", session?.user?.id],
+    queryFn: async () => {
+      if (!session?.user?.id) return [];
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("type, amount, date, movement_type")
+        .neq("movement_type", "TRANSFER")
+        .order("date", { ascending: true })
+        .limit(10000);
+      if (error) throw error;
+      return data as Array<{ type: string; amount: number; date: string; movement_type: string }>;
+    },
+    enabled: !!session?.user?.id,
+    staleTime: 120_000,
+  });
+
+  // Cash position on 5th of each month
+  const cashPositionTrend = useMemo(() => {
+    if (!allTxForCash || allTxForCash.length === 0) return [];
+    
+    // Get all unique months from the data
+    const monthSet = new Set<string>();
+    allTxForCash.forEach(t => {
+      const m = t.date.substring(0, 7); // "yyyy-MM"
+      monthSet.add(m);
+    });
+    const months = Array.from(monthSet).sort();
+    
+    const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    
+    // For each month, cumulative balance of all transactions up to day 5
+    const points: Array<{ month: string; label: string; value: number }> = [];
+    
+    for (const month of months) {
+      const cutoffDate = `${month}-05`;
+      // Sum ALL transactions from beginning up to (and including) the 5th of this month
+      let cumBalance = 0;
+      for (const t of allTxForCash) {
+        if (t.date > cutoffDate) break;
+        cumBalance += t.type === "income" ? Number(t.amount) : -Number(t.amount);
+      }
+      
+      const [y, m] = month.split("-");
+      const monthIdx = parseInt(m) - 1;
+      const label = `${MONTH_NAMES[monthIdx]}/${y.slice(2)}`;
+      
+      points.push({ month, label, value: cumBalance });
+    }
+    
+    return points;
+  }, [allTxForCash]);
+
   const computed = useMemo(() => {
     // Current month KPIs - use only currTx
     const currentMonthTx = (currTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
@@ -150,28 +204,6 @@ export function useHomeDashboard(): HomeDashboardData {
       percent: monthExpense > 0 ? (value / monthExpense) * 100 : 0,
     }));
 
-    // Daily trend (last 30 days cumulative) - combine both queries
-    const thirtyDaysAgo = subDays(now, 30);
-    const dailyMap = new Map<string, number>();
-    for (let i = 0; i <= 30; i++) {
-      const d = format(addDays(thirtyDaysAgo, i), "yyyy-MM-dd");
-      dailyMap.set(d, 0);
-    }
-    allTx.forEach(t => {
-      const d = t.date;
-      if (d >= format(thirtyDaysAgo, "yyyy-MM-dd") && d <= format(now, "yyyy-MM-dd")) {
-        const val = t.type === "income" ? Number(t.amount) : -Number(t.amount);
-        dailyMap.set(d, (dailyMap.get(d) || 0) + val);
-      }
-    });
-    const dailyTrend: Array<{ date: string; value: number }> = [];
-    let cumulative = 0;
-    const sortedDays = Array.from(dailyMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [date, val] of sortedDays) {
-      cumulative += val;
-      dailyTrend.push({ date, value: cumulative });
-    }
-
     // Trend: last 30 days vs prev 30 days (combine both queries)
     const today = format(now, "yyyy-MM-dd");
     const d30ago = format(subDays(now, 30), "yyyy-MM-dd");
@@ -186,7 +218,7 @@ export function useHomeDashboard(): HomeDashboardData {
     const prev30Income = prev30.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const prev30Expense = prev30.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, dailyTrend, last30Income, last30Expense, prev30Income, prev30Expense };
+    return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, last30Income, last30Expense, prev30Income, prev30Expense };
   }, [currTx, prevTx, allTx]);
 
   const currentBalance = computed.monthIncome - computed.monthExpense;
@@ -392,7 +424,7 @@ export function useHomeDashboard(): HomeDashboardData {
     runwayDays,
     topExpenseCategories: computed.topExpenseCategories,
     alerts,
-    dailyTrend: computed.dailyTrend,
+    cashPositionTrend,
     healthScore,
     healthFactors,
     trendLabel,
