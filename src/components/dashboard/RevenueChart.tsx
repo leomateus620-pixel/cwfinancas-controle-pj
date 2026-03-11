@@ -10,9 +10,14 @@ import {
   Legend
 } from "recharts";
 import { TrendBadge } from "@/components/ui/trend-badge";
-import { useTransactions } from "@/hooks/useTransactions";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
 import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
+import { Transaction } from "@/hooks/useTransactions";
+
+interface RevenueChartProps {
+  transactions?: Transaction[];
+  isLoading?: boolean;
+}
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -71,8 +76,10 @@ const renderLegend = () => {
 
 const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-export function RevenueChart() {
-  const { transactions, isLoading } = useTransactions({ excludeTransfers: true });
+export function RevenueChart({ transactions: txProp, isLoading: loadingProp }: RevenueChartProps) {
+  // Use provided transactions or empty array
+  const transactions = txProp ?? [];
+  const isLoading = loadingProp ?? false;
 
   const revenueData = useMemo(() => {
     if (!transactions.length) return [];

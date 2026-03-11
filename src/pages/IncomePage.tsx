@@ -1,7 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { TrendingUp, Plus, Filter, Download, DollarSign, ShoppingCart, Briefcase, ArrowDownLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { usePagination } from "@/hooks/usePerformance";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { 
   Table, 
   TableBody, 
@@ -55,15 +57,36 @@ export function IncomePage() {
 
   const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "income", excludeTransfers: true });
 
+  // Debounced search
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const filteredData = useMemo(() => {
     return transactions.filter((item) => {
       const matchesSearch = 
-        item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (item.client_vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+        item.description.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        (item.client_vendor?.toLowerCase().includes(debouncedSearch.toLowerCase()) ?? false);
       const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });
-  }, [transactions, searchTerm, categoryFilter]);
+  }, [transactions, debouncedSearch, categoryFilter]);
+
+  const {
+    paginatedItems,
+    currentPage,
+    totalPages,
+    totalItems,
+    startIndex,
+    endIndex,
+    hasNextPage,
+    hasPrevPage,
+    nextPage,
+    prevPage,
+    goToPage,
+  } = usePagination(filteredData, 50);
 
   const categories = useMemo(() => {
     const cats = [...new Set(transactions.map(t => t.category))];
@@ -358,8 +381,8 @@ export function IncomePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length > 0 ? (
-                filteredData.map((item) => (
+              {paginatedItems.length > 0 ? (
+                paginatedItems.map((item) => (
                   <TableRow 
                     key={item.id} 
                     className="hover:bg-white/40 transition-all duration-200 cursor-pointer border-b border-border/20"
@@ -397,6 +420,18 @@ export function IncomePage() {
             </TableBody>
           </Table>
         </div>
+        <TablePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          startIndex={startIndex}
+          endIndex={endIndex}
+          hasPrevPage={hasPrevPage}
+          hasNextPage={hasNextPage}
+          onPrevPage={prevPage}
+          onNextPage={nextPage}
+          onGoToPage={goToPage}
+        />
       </div>
 
       <TransactionModal

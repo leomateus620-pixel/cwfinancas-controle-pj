@@ -8,8 +8,13 @@ import {
   Sector
 } from "recharts";
 import { AnimatedValue } from "@/components/ui/animated-value";
-import { useTransactions } from "@/hooks/useTransactions";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
+import { Transaction } from "@/hooks/useTransactions";
+
+interface ProfitDistributionChartProps {
+  transactions?: Transaction[];
+  isLoading?: boolean;
+}
 
 const categoryColors = [
   "hsl(var(--chart-1))",
@@ -66,9 +71,14 @@ const renderActiveShape = (props: any) => {
   );
 };
 
-export function ProfitDistributionChart() {
+export function ProfitDistributionChart({ transactions: txProp, isLoading: loadingProp }: ProfitDistributionChartProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
-  const { transactions, isLoading } = useTransactions({ type: "income" });
+  
+  const allTransactions = txProp ?? [];
+  const isLoading = loadingProp ?? false;
+
+  // Filter to income only
+  const transactions = useMemo(() => allTransactions.filter(t => t.type === "income"), [allTransactions]);
 
   const profitData = useMemo(() => {
     if (!transactions.length) return [];

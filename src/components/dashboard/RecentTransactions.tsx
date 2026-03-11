@@ -1,7 +1,12 @@
 import { ArrowUpRight, ArrowDownLeft, Loader2, FileQuestion } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useTransactions } from "@/hooks/useTransactions";
 import { formatCurrencyBR } from "@/lib/currency";
+import { Transaction } from "@/hooks/useTransactions";
+
+interface RecentTransactionsProps {
+  transactions?: Transaction[];
+  isLoading?: boolean;
+}
 
 const formatDate = (dateStr: string) => {
   return new Date(dateStr).toLocaleDateString("pt-BR", {
@@ -10,10 +15,9 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-export function RecentTransactions() {
-  const { transactions, isLoading } = useTransactions();
-
-  const recentTransactions = transactions.slice(0, 5);
+export function RecentTransactions({ transactions: txProp, isLoading: loadingProp }: RecentTransactionsProps) {
+  const recentTransactions = txProp ?? [];
+  const isLoading = loadingProp ?? false;
 
   return (
     <div className="liquid-glass-card p-6">

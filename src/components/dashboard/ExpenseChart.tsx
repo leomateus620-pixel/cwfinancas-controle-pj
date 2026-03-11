@@ -10,9 +10,14 @@ import {
   Cell,
   LabelList
 } from "recharts";
-import { useTransactions } from "@/hooks/useTransactions";
 import { ChartSkeleton } from "@/components/ui/chart-skeleton";
 import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
+import { Transaction } from "@/hooks/useTransactions";
+
+interface ExpenseChartProps {
+  transactions?: Transaction[];
+  isLoading?: boolean;
+}
 
 const categoryColors = [
   "hsl(var(--chart-1))",
@@ -69,8 +74,12 @@ const CustomLabel = (props: any) => {
   );
 };
 
-export function ExpenseChart() {
-  const { transactions, isLoading } = useTransactions({ type: "expense", excludeTransfers: true });
+export function ExpenseChart({ transactions: txProp, isLoading: loadingProp }: ExpenseChartProps) {
+  const allTransactions = txProp ?? [];
+  const isLoading = loadingProp ?? false;
+
+  // Filter to expenses only
+  const transactions = useMemo(() => allTransactions.filter(t => t.type === "expense"), [allTransactions]);
 
   const expenseData = useMemo(() => {
     if (!transactions.length) return [];
