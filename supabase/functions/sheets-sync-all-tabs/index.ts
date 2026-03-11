@@ -1139,8 +1139,8 @@ for (const [normalized, keywords] of [
 }
 
 for (const [normalized, keywords] of [
-  ["recebido", ["recebido", "rec", "ok", "liquidado", "quitado"]],
-  ["pendente", ["pendente", "em aberto", "aberto", "a receber"]],
+  ["recebido", ["recebido", "rec", "ok", "liquidado", "quitado", "pago"]],
+  ["pendente", ["pendente", "em aberto", "aberto", "a receber", "a pagar"]],
   ["previsto", ["previsto", "estimado", "expected"]],
   ["confirmar", ["confirmar", "a confirmar", "verificar"]],
   ["emitir", ["emitir", "a emitir"]],
@@ -1246,18 +1246,15 @@ function parseAPRTab(
   defaultYear: number,
   requestId: string
 ): APRParseResult {
-  const records: APRParsedRecord[] = [];
-  const skipReasons: Record<string, number> = {};
-  let scanned = 0;
-  let skipped = 0;
-
-  if (rows.length < 2) return { records, layout: "unknown", scanned: 0, skipped: 0, skipReasons };
+  if (rows.length < 2) return { records: [], layout: "unknown", scanned: 0, skipped: 0, skipReasons: {} };
 
   // Detect layout: check first 10 rows for month names in horizontal headers
-  const layout = detectAPRLayout(rows, requestId);
+  const layout = detectAPRLayout(rows, recordType, requestId);
   console.log(`[${requestId}] APR tab "${tabTitle}" layout detected: ${layout}`);
 
-  if (layout === "horizontal_monthly") {
+  if (layout === "contract_vertical") {
+    return parseAPRContractVertical(rows, recordType, tabTitle, defaultYear, requestId);
+  } else if (layout === "horizontal_monthly") {
     return parseAPRHorizontal(rows, recordType, tabTitle, defaultYear, requestId);
   } else if (layout === "block_contract") {
     return parseAPRBlock(rows, recordType, tabTitle, defaultYear, requestId);
@@ -1266,7 +1263,24 @@ function parseAPRTab(
   }
 }
 
-function detectAPRLayout(rows: unknown[][], requestId: string): string {
+function detectAPRLayout(rows: unknown[][], recordType: string, requestId: string): string {
+  // For receivables: check for contract_vertical layout first ("Total contrato" markers)
+  let totalContratoCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) continue;
+    for (const cell of row) {
+      const norm = safeStr(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (norm.includes("total contrato") || norm.includes("total do contrato")) {
+        totalContratoCount++;
+      }
+    }
+  }
+  if (totalContratoCount >= 2) {
+    console.log(`[${requestId}] Contract-vertical layout detected: ${totalContratoCount} "total contrato" markers found`);
+    return "contract_vertical";
+  }
+
   // Scan first 10 rows for month patterns in horizontal layout
   // Must handle both text month names AND Excel serial date numbers
   const scanLimit = Math.min(rows.length, 10);
@@ -1275,7 +1289,6 @@ function detectAPRLayout(rows: unknown[][], requestId: string): string {
     if (!Array.isArray(row)) continue;
     let monthCount = 0;
     for (const cell of row) {
-      // Pass raw cell value (could be number) to detectMonthFromText
       const monthInfo = detectMonthFromText(cell as string);
       if (monthInfo) monthCount++;
     }
@@ -1453,6 +1466,157 @@ function parseAPRVertical(
   }
 
   return { records, layout: "vertical_rows", scanned: rows.length - headerRow - 1, skipped, skipReasons };
+}
+
+// ============ Contract-Vertical Parser (Receivables by Contract) ============
+// Layout: Blocks separated by "Total contrato: R$ XX.XXX,00"
+// Each block: contract name row, then monthly rows [month/year, forma pgto, valor, status]
+
+function parseAPRContractVertical(
+  rows: unknown[][],
+  recordType: string,
+  tabTitle: string,
+  defaultYear: number,
+  requestId: string
+): APRParseResult {
+  const records: APRParsedRecord[] = [];
+  const skipReasons: Record<string, number> = {};
+  let skipped = 0;
+  let scanned = 0;
+
+  // Payment method keywords
+  const pgtoKeywords = ["pix", "boleto", "ted", "doc", "cartao", "cartão", "debito", "credito", "transferencia", "deposito", "cheque", "dinheiro"];
+  // Status keywords
+  const allStatuses = ["pago", "pg", "ok", "liquidado", "pendente", "aberto", "agendado", "recebido", "rec", "previsto", "confirmar", "emitir", "cancelado", "a pagar", "a receber"];
+
+  let currentContractName: string | null = null;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = (rows[i] || []) as unknown[];
+    const cells = row.map(c => safeStr(c).trim());
+    scanned++;
+
+    // Skip empty rows
+    if (cells.every(c => !c)) {
+      skipped++;
+      skipReasons["empty_row"] = (skipReasons["empty_row"] || 0) + 1;
+      continue;
+    }
+
+    const joinedLower = cells.map(c => c.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")).join(" ");
+
+    // Skip "Total contrato" lines (subtotals)
+    if (joinedLower.includes("total contrato") || joinedLower.includes("total do contrato")) {
+      skipped++;
+      skipReasons["total_contrato"] = (skipReasons["total_contrato"] || 0) + 1;
+      continue;
+    }
+
+    // Skip general total/summary rows
+    if (/\b(total geral|total|subtotal|soma|somatorio|resumo)\b/.test(joinedLower) && !joinedLower.includes("contrato")) {
+      skipped++;
+      skipReasons["total_row"] = (skipReasons["total_row"] || 0) + 1;
+      continue;
+    }
+
+    // Detect if this row has a month reference
+    let monthInfo: { month: number; year: number | null } | null = null;
+    let amount: number | null = null;
+    let statusRaw: string | null = null;
+    let paymentMethod: string | null = null;
+
+    for (const cell of cells) {
+      if (!cell) continue;
+      const cellNorm = cell.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+      // Try to detect month
+      if (!monthInfo) {
+        const mi = detectMonthFromText(cell);
+        if (mi) { monthInfo = mi; continue; }
+      }
+
+      // Try to parse as amount
+      if (amount === null) {
+        const val = parseBRL(cell);
+        if (val !== null && val !== 0) { amount = val; continue; }
+      }
+
+      // Check for status (multi-word statuses first)
+      if (!statusRaw) {
+        for (const s of allStatuses) {
+          if (cellNorm === s || cellNorm.includes(s)) {
+            statusRaw = cell;
+            break;
+          }
+        }
+        if (statusRaw) continue;
+      }
+
+      // Check for payment method
+      if (!paymentMethod) {
+        for (const k of pgtoKeywords) {
+          if (cellNorm.includes(k)) {
+            paymentMethod = cell;
+            break;
+          }
+        }
+      }
+    }
+
+    // If this row has a month AND an amount → it's a data row for the current contract
+    if (monthInfo && amount !== null) {
+      const year = monthInfo.year || defaultYear;
+      const periodKey = `${year}-${String(monthInfo.month).padStart(2, "0")}`;
+      // Build due_date as first day of the month
+      const dueDate = `${year}-${String(monthInfo.month).padStart(2, "0")}-01`;
+
+      records.push({
+        period_key: periodKey,
+        source_row: i + 1,
+        due_date: dueDate,
+        description: currentContractName || "Sem descrição",
+        counterpart: currentContractName || null,
+        nf_number: null,
+        payment_method: paymentMethod || null,
+        amount: Math.abs(amount),
+        status_raw: statusRaw || null,
+        notes: null,
+        raw_data: Object.fromEntries(cells.map((c, idx) => [`col_${idx}`, c])),
+      });
+      continue;
+    }
+
+    // If no month and no amount but has text → likely a contract name row
+    const nonEmptyCells = cells.filter(c => c.length > 0);
+    if (nonEmptyCells.length > 0 && !monthInfo && amount === null) {
+      // Check it's not a header row (like "CLIENTE", "MÊS", etc.)
+      const firstNorm = nonEmptyCells[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const headerKeywords = ["cliente", "mes", "valor", "status", "forma", "pgto", "pagamento", "contrato"];
+      const isHeader = headerKeywords.includes(firstNorm);
+      
+      if (!isHeader && nonEmptyCells[0].length > 1) {
+        currentContractName = nonEmptyCells[0];
+        continue;
+      } else {
+        skipped++;
+        skipReasons["header_or_label"] = (skipReasons["header_or_label"] || 0) + 1;
+        continue;
+      }
+    }
+
+    // Row with amount but no month → skip (likely a misparse)
+    if (amount !== null && !monthInfo) {
+      skipped++;
+      skipReasons["amount_no_month"] = (skipReasons["amount_no_month"] || 0) + 1;
+      continue;
+    }
+
+    skipped++;
+    skipReasons["unclassified"] = (skipReasons["unclassified"] || 0) + 1;
+  }
+
+  console.log(`[${requestId}] APR contract-vertical: parsed ${records.length} records from ${scanned} rows, contracts detected, skipped=${skipped}`);
+  return { records, layout: "contract_vertical", scanned, skipped, skipReasons };
 }
 
 function parseAPRHorizontal(
