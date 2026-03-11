@@ -6,6 +6,7 @@ import { Wallet, ChevronRight, TrendingUp, TrendingDown, ArrowDownRight } from "
 import { format, parse } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { formatCompactBR } from "@/lib/currency";
+import { useNavigate } from "react-router-dom";
 import {
   Drawer,
   DrawerTrigger,
@@ -15,6 +16,7 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
+import { GlassCard } from "./GlassCard";
 import bankCaixinhaImg from "@/assets/bank-caixinha.png";
 import bankSicrediImg from "@/assets/bank-sicredi.jpg";
 import bankAsaasImg from "@/assets/bank-asaas.png";
@@ -125,7 +127,54 @@ function ComparisonBar({
   );
 }
 
-export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, delay = 0 }: CaixaAtualCardProps) {
+/* ─── Compact card when no bank balances exist ─── */
+function CompactCaixaCard({ currentBalance, delay }: { currentBalance: number; delay: number }) {
+  const navigate = useNavigate();
+
+  return (
+    <div
+      className="opacity-0 animate-fade-in-up"
+      style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards" }}
+    >
+      <GlassCard className="p-5 md:p-6">
+        <div className="flex items-start justify-between mb-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-primary/10">
+            <Wallet className="w-5 h-5 text-primary" />
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button className="text-muted-foreground/50 hover:text-muted-foreground transition-colors text-xs">ⓘ</button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-[240px] text-xs">
+              Saldo atual calculado com base nas transações importadas. Importe saldos bancários para detalhamento por banco.
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
+        <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">Caixa Atual</p>
+        <p className="text-2xl md:text-3xl font-bold tabular-nums tracking-tight text-foreground">
+          {formatCompactBR(currentBalance)}
+        </p>
+
+        <button
+          onClick={() => navigate("/cash-flow")}
+          className="mt-3 flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors group"
+        >
+          Ver detalhes
+          <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+        </button>
+      </GlassCard>
+    </div>
+  );
+}
+
+/* ─── Expanded card with bank balances ─── */
+function ExpandedCaixaCard({
+  currentBalance,
+  monthIncome,
+  monthExpense,
+  delay,
+}: CaixaAtualCardProps) {
   const { periods } = useAllBankBalancePeriods();
   const [selectedPeriod, setSelectedPeriod] = useState(currentPeriodKey);
   const { rows, isLoading, isEmpty, previousClosingTotal, closingTotal } = useBankBalances(selectedPeriod);
@@ -134,7 +183,6 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
   const hasBanks = rows.length > 0;
   const monthResult = monthIncome - monthExpense;
   const selectedLabel = formatPeriodLabel(selectedPeriod);
-
   const allPeriods = periods.includes(currentPeriodKey) ? periods : [...periods, currentPeriodKey].sort();
 
   return (
@@ -187,30 +235,21 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                     className="opacity-0 animate-fade-in-up liquid-glass-bank-card p-5 md:p-6"
                     style={{ animationDelay: `${delay + 120 * (idx + 1)}ms`, animationFillMode: "forwards" }}
                   >
-                    {/* Bank logo & name */}
                     <div className="flex flex-col items-center mb-4">
                       {logo ? (
                         <div className="rounded-xl bg-white/70 p-1.5 border border-white/50 shadow-sm">
-                          <img
-                            src={logo}
-                            alt={row.bank_name}
-                            className="h-10 w-auto max-w-[120px] rounded-lg object-contain"
-                          />
+                          <img src={logo} alt={row.bank_name} className="h-10 w-auto max-w-[120px] rounded-lg object-contain" />
                         </div>
                       ) : (
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-muted/30 border border-white/50">
                           <Wallet className="w-5 h-5 text-muted-foreground/50" />
                         </div>
                       )}
-                      <p className={cn(
-                        "text-[11px] font-bold tracking-[0.15em] uppercase mt-2.5",
-                        bankColor.text
-                      )}>
+                      <p className={cn("text-[11px] font-bold tracking-[0.15em] uppercase mt-2.5", bankColor.text)}>
                         {row.bank_name}
                       </p>
                     </div>
 
-                    {/* Saldo Final (primary) */}
                     <div className="space-y-3">
                       <div>
                         <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-foreground/40 mb-1">Saldo Final</p>
@@ -218,17 +257,11 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                           {formatCompactBR(closing)}
                         </p>
                       </div>
-
-                      {/* Separator */}
                       <div className="border-t border-foreground/[0.04]" />
-
-                      {/* Saldo Inicial (secondary) */}
                       <div>
                         <p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-foreground/35 mb-0.5">Saldo Inicial</p>
                         <p className="text-sm font-medium tabular-nums text-foreground/55">{formatCompactBR(opening)}</p>
                       </div>
-
-                      {/* Delta badge */}
                       {opening !== 0 && (
                         <span
                           className={cn(
@@ -248,7 +281,6 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                 );
               })}
             </div>
-
             <ComparisonBar currentTotal={closingTotal} previousTotal={previousClosingTotal} />
           </>
         ) : (
@@ -305,18 +337,11 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
                     const bankColor = getBankColor(row.bank_name);
 
                     return (
-                      <div
-                        key={row.id}
-                        className="liquid-glass-detail-card p-5"
-                      >
+                      <div key={row.id} className="liquid-glass-detail-card p-5">
                         <div className="flex items-center gap-3 mb-4">
                           {logo ? (
                             <div className="rounded-xl bg-white/70 p-1.5 border border-white/50 shadow-sm">
-                              <img
-                                src={logo}
-                                alt={row.bank_name}
-                                className="h-10 w-auto max-w-[120px] rounded-lg object-contain"
-                              />
+                              <img src={logo} alt={row.bank_name} className="h-10 w-auto max-w-[120px] rounded-lg object-contain" />
                             </div>
                           ) : (
                             <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-muted/30">
@@ -381,4 +406,17 @@ export function CaixaAtualCard({ currentBalance, monthIncome, monthExpense, dela
       </div>
     </div>
   );
+}
+
+/* ─── Main export: decides compact vs expanded ─── */
+export function CaixaAtualCard(props: CaixaAtualCardProps) {
+  const { rows, isLoading } = useBankBalances(currentPeriodKey);
+  const hasBankData = !isLoading && rows.length > 0;
+
+  // While loading, render compact to avoid layout jump
+  if (isLoading || !hasBankData) {
+    return <CompactCaixaCard currentBalance={props.currentBalance} delay={props.delay ?? 0} />;
+  }
+
+  return <ExpandedCaixaCard {...props} />;
 }
