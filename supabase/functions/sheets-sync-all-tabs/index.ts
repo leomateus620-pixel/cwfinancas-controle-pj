@@ -1522,13 +1522,23 @@ function parseAPRHorizontal(
     }
   }
 
-  // If no labels found, use positional heuristic for the Financeiro GR layout:
-  // col0 = Vcto, col1 = Despesa/Cliente, col2 = Forma de pgto (if leftCols >= 3)
+  // If no labels found, use positional heuristic based on record type and column count
   if (Object.keys(leftColMap).length === 0 && leftCols >= 2) {
-    leftColMap.vencimento = 0;
-    leftColMap.descricao = 1;
-    if (leftCols >= 3) leftColMap.forma_pgto = 2;
-    console.log(`[${requestId}] APR horizontal: using positional heuristic for ${leftCols} left columns`);
+    if (recordType === "payable" && leftCols >= 3) {
+      // Payable: col0=Vcto, col1=Despesa, col2=Obs
+      leftColMap.vencimento = 0;
+      leftColMap.descricao = 1;
+      leftColMap.observacao = 2;
+    } else if (recordType === "receivable" && leftCols === 2) {
+      // Receivable: col0=Cliente, col1=Forma Pgto (no vencimento)
+      leftColMap.descricao = 0;
+      leftColMap.forma_pgto = 1;
+    } else {
+      leftColMap.vencimento = 0;
+      leftColMap.descricao = 1;
+      if (leftCols >= 3) leftColMap.observacao = 2;
+    }
+    console.log(`[${requestId}] APR horizontal: using positional heuristic for ${leftCols} left columns (${recordType})`);
   }
 
   console.log(`[${requestId}] APR horizontal: leftColMap=${JSON.stringify(leftColMap)}`);
