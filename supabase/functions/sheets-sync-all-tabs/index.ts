@@ -1567,10 +1567,15 @@ function parseAPRHorizontal(
 
     const vctoIdx = leftColMap.vencimento;
     const baseDueDateParsed = vctoIdx !== undefined ? parseDate(row[vctoIdx]) : null;
-    // Extract "Dia XX" pattern for contextual date building
+    // Extract "Dia XX" pattern or plain number for contextual date building
     const vctoRaw = vctoIdx !== undefined ? safeStr(row[vctoIdx]).trim() : "";
     const diaMatch = vctoRaw.match(/Dia\s+(\d{1,2})/i);
-    const diaNumber = diaMatch ? parseInt(diaMatch[1], 10) : null;
+    let diaNumber = diaMatch ? parseInt(diaMatch[1], 10) : null;
+    // Accept plain numeric day (1-31) when no "Dia XX" pattern found
+    if (diaNumber === null && vctoRaw && /^\d{1,2}$/.test(vctoRaw)) {
+      const parsed = parseInt(vctoRaw, 10);
+      if (parsed >= 1 && parsed <= 31) diaNumber = parsed;
+    }
     
     const paymentMethodLeft = leftColMap.forma_pgto !== undefined ? cells[leftColMap.forma_pgto].trim() || null : null;
     const notesLeft = leftColMap.observacao !== undefined ? cells[leftColMap.observacao].trim() || null : null;
