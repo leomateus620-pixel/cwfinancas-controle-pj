@@ -424,7 +424,7 @@ export function useHomeDashboard(): HomeDashboardData {
     runwayDays,
     topExpenseCategories: computed.topExpenseCategories,
     alerts,
-    dailyTrend: computed.dailyTrend,
+    cashPositionTrend,
     healthScore,
     healthFactors,
     trendLabel,
