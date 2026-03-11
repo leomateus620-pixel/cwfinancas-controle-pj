@@ -52,8 +52,9 @@ export function useTransactions(filters?: {
 
       let query = supabase
         .from("transactions")
-        .select("*")
-        .order("date", { ascending: false });
+        .select("id, type, description, amount, category, date, client_vendor, movement_type, notes")
+        .order("date", { ascending: false })
+        .limit(5000);
 
       if (filters?.type) {
         query = query.eq("type", filters.type);
@@ -76,6 +77,7 @@ export function useTransactions(filters?: {
       return data as Transaction[];
     },
     enabled: !!user?.id,
+    staleTime: 60_000,
   });
 
   const createTransaction = useMutation({
