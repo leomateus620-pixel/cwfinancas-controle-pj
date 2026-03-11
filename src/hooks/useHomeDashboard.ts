@@ -47,7 +47,7 @@ export interface HomeDashboardData {
   runwayDays: number | null;
   topExpenseCategories: Array<{ name: string; value: number; percent: number }>;
   alerts: HomeDashboardAlert[];
-  dailyTrend: Array<{ date: string; value: number }>;
+  cashPositionTrend: Array<{ month: string; label: string; value: number }>;
   healthScore: number;
   healthFactors: Array<{ label: string; score: number; weight: number }>;
   trendLabel: string;
