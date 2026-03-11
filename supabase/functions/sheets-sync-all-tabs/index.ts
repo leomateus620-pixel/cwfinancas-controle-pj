@@ -1263,7 +1263,24 @@ function parseAPRTab(
   }
 }
 
-function detectAPRLayout(rows: unknown[][], requestId: string): string {
+function detectAPRLayout(rows: unknown[][], recordType: string, requestId: string): string {
+  // For receivables: check for contract_vertical layout first ("Total contrato" markers)
+  let totalContratoCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) continue;
+    for (const cell of row) {
+      const norm = safeStr(cell).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      if (norm.includes("total contrato") || norm.includes("total do contrato")) {
+        totalContratoCount++;
+      }
+    }
+  }
+  if (totalContratoCount >= 2) {
+    console.log(`[${requestId}] Contract-vertical layout detected: ${totalContratoCount} "total contrato" markers found`);
+    return "contract_vertical";
+  }
+
   // Scan first 10 rows for month patterns in horizontal layout
   // Must handle both text month names AND Excel serial date numbers
   const scanLimit = Math.min(rows.length, 10);
@@ -1272,7 +1289,6 @@ function detectAPRLayout(rows: unknown[][], requestId: string): string {
     if (!Array.isArray(row)) continue;
     let monthCount = 0;
     for (const cell of row) {
-      // Pass raw cell value (could be number) to detectMonthFromText
       const monthInfo = detectMonthFromText(cell as string);
       if (monthInfo) monthCount++;
     }
