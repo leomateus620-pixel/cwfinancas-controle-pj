@@ -1139,8 +1139,8 @@ for (const [normalized, keywords] of [
 }
 
 for (const [normalized, keywords] of [
-  ["recebido", ["recebido", "rec", "ok", "liquidado", "quitado"]],
-  ["pendente", ["pendente", "em aberto", "aberto", "a receber"]],
+  ["recebido", ["recebido", "rec", "ok", "liquidado", "quitado", "pago"]],
+  ["pendente", ["pendente", "em aberto", "aberto", "a receber", "a pagar"]],
   ["previsto", ["previsto", "estimado", "expected"]],
   ["confirmar", ["confirmar", "a confirmar", "verificar"]],
   ["emitir", ["emitir", "a emitir"]],
