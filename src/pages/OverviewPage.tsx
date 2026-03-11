@@ -9,13 +9,14 @@ import { formatCurrencyBR } from "@/lib/currency";
 
 import { AnimatedValue } from "@/components/ui/animated-value";
 import { TrendBadge } from "@/components/ui/trend-badge";
-import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
+import { useOverviewData } from "@/hooks/useOverviewData";
 
 export function OverviewPage() {
   const { 
     currentBalance, balanceChange, isLoading,
     transferIn, transferOut,
-  } = usePeriodMetrics();
+    transactions, recentTransactions,
+  } = useOverviewData();
 
   const transferTotal = transferIn + transferOut;
 
@@ -99,14 +100,14 @@ export function OverviewPage() {
 
       {/* LEVEL 3 — Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <RevenueChart />
-        <ExpenseChart />
+        <RevenueChart transactions={transactions} isLoading={isLoading} />
+        <ExpenseChart transactions={transactions} isLoading={isLoading} />
       </div>
 
       {/* Bottom Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <ProfitDistributionChart />
-        <RecentTransactions />
+        <ProfitDistributionChart transactions={transactions} isLoading={isLoading} />
+        <RecentTransactions transactions={recentTransactions} isLoading={isLoading} />
         <DataQualityCard />
       </div>
     </div>
