@@ -50,15 +50,36 @@ export function ExpensesPage() {
 
   const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense", excludeTransfers: true });
 
+  // Debounced search
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   const filteredData = useMemo(() => {
     return transactions.filter((item) => {
       const matchesSearch = 
-        item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (item.client_vendor?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+        item.description.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        (item.client_vendor?.toLowerCase().includes(debouncedSearch.toLowerCase()) ?? false);
       const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
       return matchesSearch && matchesCategory;
     });
-  }, [transactions, searchTerm, categoryFilter]);
+  }, [transactions, debouncedSearch, categoryFilter]);
+
+  const {
+    paginatedItems,
+    currentPage,
+    totalPages,
+    totalItems,
+    startIndex,
+    endIndex,
+    hasNextPage,
+    hasPrevPage,
+    nextPage,
+    prevPage,
+    goToPage,
+  } = usePagination(filteredData, 50);
 
   const categories = useMemo(() => {
     const cats = [...new Set(transactions.map(t => t.category))];
