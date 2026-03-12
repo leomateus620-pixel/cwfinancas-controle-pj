@@ -106,23 +106,28 @@ function ComparisonBar({
   const positive = delta >= 0;
 
   return (
-    <div className="mt-5 flex items-center gap-2.5 px-2 py-2 rounded-xl liquid-glass-chip">
-      <span className="text-[10px] text-foreground/40 uppercase tracking-wider font-medium">vs mês anterior</span>
-      <span
-        className={cn(
-          "flex items-center gap-1 text-[10px] font-bold tabular-nums px-2.5 py-1 rounded-full",
-          positive
-            ? "text-[hsl(160,84%,30%)] bg-[hsl(160,84%,39%)]/10"
-            : "text-[hsl(0,72%,45%)] bg-[hsl(0,72%,51%)]/8"
-        )}
-      >
-        {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-        {positive ? "+" : ""}
-        {delta.toFixed(1)}%
-      </span>
-      <span className="text-[10px] text-foreground/35 tabular-nums font-medium">
-        {formatCompactBR(previousTotal)} → {formatCompactBR(currentTotal)}
-      </span>
+    <div className="mt-5 rounded-2xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-xl p-4 shadow-[0_2px_20px_-4px_hsl(var(--primary)/0.06)]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-foreground/50 mb-3">
+        vs mês anterior
+      </p>
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 text-sm font-bold tabular-nums px-3 py-1.5 rounded-xl border",
+            positive
+              ? "text-[hsl(160,84%,30%)] bg-[hsl(160,84%,39%)]/10 border-[hsl(160,84%,39%)]/15"
+              : "text-[hsl(0,60%,48%)] bg-[hsl(0,72%,51%)]/8 border-[hsl(0,72%,51%)]/12"
+          )}
+        >
+          {positive ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+          {positive ? "+" : ""}{delta.toFixed(1)}%
+        </span>
+        <span className="text-xs text-foreground/55 tabular-nums font-medium tracking-tight">
+          {formatCompactBR(previousTotal)}
+          <span className="mx-1.5 text-foreground/30">→</span>
+          {formatCompactBR(currentTotal)}
+        </span>
+      </div>
     </div>
   );
 }
