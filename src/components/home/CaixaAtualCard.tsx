@@ -187,7 +187,7 @@ function ExpandedCaixaCard({
 
   return (
     <div
-      className="opacity-0 animate-fade-in-up md:col-span-2"
+      className="opacity-0 animate-fade-in-up"
       style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards" }}
     >
       <div className="liquid-glass-caixa p-6 md:p-8">

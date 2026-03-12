@@ -97,14 +97,8 @@ export default function HomePage() {
           <HomeEmptyState />
         ) : (
           <div className="space-y-5">
-            {/* KPI Mosaic */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-              <CaixaAtualCard
-                currentBalance={data.currentBalance}
-                monthIncome={data.monthIncome}
-                monthExpense={data.monthExpense}
-                delay={0}
-              />
+            {/* Row 1: 4 compact KPIs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <HomeKPICard
                 label="Entradas do Mês"
                 value={formatCompactBR(data.monthIncome)}
@@ -143,37 +137,41 @@ export default function HomePage() {
                   data.runwayDays > 60 ? "text-emerald-600" :
                   data.runwayDays > 30 ? "text-amber-600" : "text-red-600"
                 }
+                delay={240}
+              />
+            </div>
+
+            {/* Row 2: Caixa Atual + Cash Evolution (50/50) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <CaixaAtualCard
+                currentBalance={data.currentBalance}
+                monthIncome={data.monthIncome}
+                monthExpense={data.monthExpense}
+                delay={300}
+              />
+              <CashEvolutionChart
+                data={data.cashPositionTrend}
+                insights={insights}
                 delay={360}
               />
             </div>
 
-            {/* Middle row: Cash Evolution + Health */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2">
-                <CashEvolutionChart
-                  data={data.cashPositionTrend}
-                  insights={insights}
-                  delay={420}
-                />
-              </div>
+            {/* Row 3: Health + Top Despesas + Alerts + Profit Quality */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <HealthScore
                 score={data.healthScore}
                 factors={data.healthFactors}
                 trendLabel={data.trendLabel}
                 trendPercent={data.trendPercent}
                 runwayDays={data.runwayDays}
-                delay={480}
+                delay={420}
               />
-            </div>
-
-            {/* Bottom row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <TopCategories categories={data.topExpenseCategories} delay={540} />
-              <AlertsPanel alerts={data.alerts} delay={600} />
+              <TopCategories categories={data.topExpenseCategories} delay={480} />
+              <AlertsPanel alerts={data.alerts} delay={540} />
               <ProfitQuality
                 value={data.profitQuality}
                 prevValue={data.profitQualityPrev}
-                delay={660}
+                delay={600}
               />
             </div>
           </div>
