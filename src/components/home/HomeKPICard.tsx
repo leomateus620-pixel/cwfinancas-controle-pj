@@ -42,7 +42,7 @@ export function HomeKPICard({ label, value, icon, tooltip, href, large, valueCol
 
         <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider mb-1">{label}</p>
         <p className={cn(
-          large ? "text-3xl md:text-4xl" : "text-2xl md:text-3xl",
+          large ? "text-2xl md:text-3xl" : "text-xl md:text-2xl",
           "font-bold tabular-nums tracking-tight",
           valueColor || "text-foreground"
         )}>
