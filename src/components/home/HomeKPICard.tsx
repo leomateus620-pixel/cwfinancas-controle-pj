@@ -50,6 +50,10 @@ export function HomeKPICard({ label, value, icon, tooltip, href, large, valueCol
           {value}
         </p>
 
+        {subtitle && (
+          <p className="text-muted-foreground/60 text-[11px] mt-0.5">{subtitle}</p>
+        )}
+
         {trend && (
           <div className="mt-2 flex items-center gap-1.5">
             <span className={cn(

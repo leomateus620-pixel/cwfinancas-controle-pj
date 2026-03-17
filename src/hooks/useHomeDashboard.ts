@@ -428,6 +428,8 @@ export function useHomeDashboard(): HomeDashboardData {
     variationPercent,
     variationValue,
     runwayDays,
+    runwaySource,
+    avgDailyExpense,
     topExpenseCategories: computed.topExpenseCategories,
     alerts,
     cashPositionTrend,

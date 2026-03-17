@@ -131,7 +131,13 @@ export default function HomePage() {
                 label="Fôlego de Caixa"
                 value={data.runwayDays === null ? "Infinito" : `${data.runwayDays} dias`}
                 icon={<Hourglass className="w-5 h-5 text-purple-600" />}
-                tooltip="Estimativa de quantos dias o saldo atual cobre, com base na média de despesas operacionais dos últimos 30 dias."
+                tooltip={
+                  data.runwaySource === "bank_balances"
+                    ? "Baseado no saldo bancário consolidado e na média de despesas operacionais dos últimos 30 dias."
+                    : "Estimativa de quantos dias o saldo atual cobre, com base na média de despesas operacionais dos últimos 30 dias."
+                }
+                href="/cash-flow"
+                subtitle={data.avgDailyExpense > 0 ? `~${formatCompactBR(data.avgDailyExpense)}/dia em despesas` : undefined}
                 valueColor={
                   data.runwayDays === null ? "text-emerald-600" :
                   data.runwayDays > 60 ? "text-emerald-600" :
