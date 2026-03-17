@@ -18,7 +18,7 @@ interface HomeKPICardProps {
   delay?: number;
 }
 
-export function HomeKPICard({ label, value, icon, tooltip, href, large, valueColor, trend, delay = 0 }: HomeKPICardProps) {
+export function HomeKPICard({ label, value, icon, tooltip, href, large, valueColor, trend, subtitle, delay = 0 }: HomeKPICardProps) {
   const navigate = useNavigate();
 
   return (
