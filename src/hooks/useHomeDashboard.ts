@@ -223,7 +223,11 @@ export function useHomeDashboard(): HomeDashboardData {
     return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, last30Income, last30Expense, prev30Income, prev30Expense };
   }, [currTx, prevTx, allTx]);
 
-  const currentBalance = computed.monthIncome - computed.monthExpense;
+  // Effective balance: prefer real bank balance when available
+  const hasBankData = !bankEmpty && bankClosingTotal !== null;
+  const effectiveBalance = hasBankData ? bankClosingTotal : (computed.monthIncome - computed.monthExpense);
+  const runwaySource: "bank_balances" | "transactions" = hasBankData ? "bank_balances" : "transactions";
+  const currentBalance = effectiveBalance;
   const monthResult = computed.monthIncome - computed.monthExpense;
   const prevMonthResult = computed.prevMonthIncome - computed.prevMonthExpense;
   const variationValue = monthResult - prevMonthResult;
