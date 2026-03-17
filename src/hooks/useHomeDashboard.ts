@@ -3,6 +3,7 @@ import { useProfile } from "./useProfile";
 import { useTransactions } from "./useTransactions";
 import { useInvoices } from "./useInvoices";
 import { useSyncStatus } from "./useSyncStatus";
+import { useBankBalances } from "./useBankBalances";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,6 +46,8 @@ export interface HomeDashboardData {
   variationPercent: number;
   variationValue: number;
   runwayDays: number | null;
+  runwaySource: "bank_balances" | "transactions";
+  avgDailyExpense: number;
   topExpenseCategories: Array<{ name: string; value: number; percent: number }>;
   alerts: HomeDashboardAlert[];
   cashPositionTrend: Array<{ month: string; label: string; value: number }>;
@@ -63,6 +66,7 @@ export interface HomeDashboardData {
 export function useHomeDashboard(): HomeDashboardData {
   const { profile, isLoading: profileLoading } = useProfile();
   const { session } = useAuth();
+  const { closingTotal: bankClosingTotal, isEmpty: bankEmpty, isLoading: bankLoading } = useBankBalances();
 
   const now = new Date();
   const currStart = format(startOfMonth(now), "yyyy-MM-dd");
@@ -221,7 +225,11 @@ export function useHomeDashboard(): HomeDashboardData {
     return { monthIncome, monthExpense, prevMonthIncome, prevMonthExpense, topExpenseCategories, last30Income, last30Expense, prev30Income, prev30Expense };
   }, [currTx, prevTx, allTx]);
 
-  const currentBalance = computed.monthIncome - computed.monthExpense;
+  // Effective balance: prefer real bank balance when available
+  const hasBankData = !bankEmpty && bankClosingTotal !== null;
+  const effectiveBalance = hasBankData ? bankClosingTotal : (computed.monthIncome - computed.monthExpense);
+  const runwaySource: "bank_balances" | "transactions" = hasBankData ? "bank_balances" : "transactions";
+  const currentBalance = effectiveBalance;
   const monthResult = computed.monthIncome - computed.monthExpense;
   const prevMonthResult = computed.prevMonthIncome - computed.prevMonthExpense;
   const variationValue = monthResult - prevMonthResult;
@@ -241,10 +249,10 @@ export function useHomeDashboard(): HomeDashboardData {
   }, [allTx]);
 
   const runwayDays = useMemo(() => {
-    if (currentBalance <= 0) return 0;
-    if (avgDailyExpense === 0 && currentBalance > 0) return null; // infinity
-    return Math.round(currentBalance / avgDailyExpense);
-  }, [currentBalance, avgDailyExpense]);
+    if (effectiveBalance <= 0) return 0;
+    if (avgDailyExpense === 0 && effectiveBalance > 0) return null; // infinity
+    return Math.round(effectiveBalance / avgDailyExpense);
+  }, [effectiveBalance, avgDailyExpense]);
 
   // Trend calculation
   const { trendLabel, trendPercent } = useMemo(() => {
@@ -406,7 +414,7 @@ export function useHomeDashboard(): HomeDashboardData {
     });
   }, [computed, invoices, runwayDays]);
 
-  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading;
+  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading || bankLoading;
   const hasData = (currTx?.length ?? 0) > 0;
   const hasSyncConnection = (connections?.length ?? 0) > 0;
   const lastSyncAt = connections?.[0]?.last_sync_at ?? null;
@@ -422,6 +430,8 @@ export function useHomeDashboard(): HomeDashboardData {
     variationPercent,
     variationValue,
     runwayDays,
+    runwaySource,
+    avgDailyExpense,
     topExpenseCategories: computed.topExpenseCategories,
     alerts,
     cashPositionTrend,
