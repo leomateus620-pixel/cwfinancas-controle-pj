@@ -14,6 +14,7 @@ interface HomeKPICardProps {
   large?: boolean;
   valueColor?: string;
   trend?: { value: number; label: string } | null;
+  subtitle?: string;
   delay?: number;
 }
 
