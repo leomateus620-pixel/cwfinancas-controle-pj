@@ -247,10 +247,10 @@ export function useHomeDashboard(): HomeDashboardData {
   }, [allTx]);
 
   const runwayDays = useMemo(() => {
-    if (currentBalance <= 0) return 0;
-    if (avgDailyExpense === 0 && currentBalance > 0) return null; // infinity
-    return Math.round(currentBalance / avgDailyExpense);
-  }, [currentBalance, avgDailyExpense]);
+    if (effectiveBalance <= 0) return 0;
+    if (avgDailyExpense === 0 && effectiveBalance > 0) return null; // infinity
+    return Math.round(effectiveBalance / avgDailyExpense);
+  }, [effectiveBalance, avgDailyExpense]);
 
   // Trend calculation
   const { trendLabel, trendPercent } = useMemo(() => {
