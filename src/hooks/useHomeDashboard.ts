@@ -64,6 +64,7 @@ export interface HomeDashboardData {
 export function useHomeDashboard(): HomeDashboardData {
   const { profile, isLoading: profileLoading } = useProfile();
   const { session } = useAuth();
+  const { closingTotal: bankClosingTotal, isEmpty: bankEmpty, isLoading: bankLoading } = useBankBalances();
 
   const now = new Date();
   const currStart = format(startOfMonth(now), "yyyy-MM-dd");
