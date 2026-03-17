@@ -412,7 +412,7 @@ export function useHomeDashboard(): HomeDashboardData {
     });
   }, [computed, invoices, runwayDays]);
 
-  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading;
+  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading || bankLoading;
   const hasData = (currTx?.length ?? 0) > 0;
   const hasSyncConnection = (connections?.length ?? 0) > 0;
   const lastSyncAt = connections?.[0]?.last_sync_at ?? null;
