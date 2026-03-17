@@ -46,6 +46,8 @@ export interface HomeDashboardData {
   variationPercent: number;
   variationValue: number;
   runwayDays: number | null;
+  runwaySource: "bank_balances" | "transactions";
+  avgDailyExpense: number;
   topExpenseCategories: Array<{ name: string; value: number; percent: number }>;
   alerts: HomeDashboardAlert[];
   cashPositionTrend: Array<{ month: string; label: string; value: number }>;
