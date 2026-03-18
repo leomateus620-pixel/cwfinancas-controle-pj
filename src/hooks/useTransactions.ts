@@ -28,6 +28,8 @@ export function useTransactions(filters?: {
   endDate?: string;
   category?: string;
   excludeTransfers?: boolean;
+  /** When true, includes TRANSFER movement_type. Default: false (transfers excluded). */
+  includeTransfers?: boolean;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -46,7 +48,7 @@ export function useTransactions(filters?: {
   const effectiveEndDate = filters?.endDate || (globalRange ? format(globalRange.to, "yyyy-MM-dd") : undefined);
 
   const { data: transactions, isLoading, error } = useQuery({
-    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate, filters?.excludeTransfers],
+    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate, filters?.excludeTransfers, filters?.includeTransfers],
     queryFn: async () => {
       if (!user?.id) return [];
 
@@ -59,7 +61,10 @@ export function useTransactions(filters?: {
       if (filters?.type) {
         query = query.eq("type", filters.type);
       }
-      if (filters?.excludeTransfers) {
+      // Exclude transfers by default unless includeTransfers is explicitly true
+      // Legacy: excludeTransfers still supported for backward compat
+      const shouldExcludeTransfers = filters?.includeTransfers === true ? false : (filters?.excludeTransfers !== false);
+      if (shouldExcludeTransfers) {
         query = query.neq("movement_type", "TRANSFER");
       }
       if (effectiveStartDate) {

@@ -186,13 +186,13 @@ export function useHomeDashboard(): HomeDashboardData {
   }, [allTxForCash]);
 
   const computed = useMemo(() => {
-    // Current month KPIs - use only currTx
-    const currentMonthTx = (currTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
+    // Current month KPIs — transfers already excluded by useTransactions default
+    const currentMonthTx = currTx || [];
     const monthIncome = currentMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const monthExpense = currentMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    // Previous month - use only prevTx
-    const prevMonthTx = (prevTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
+    // Previous month
+    const prevMonthTx = prevTx || [];
     const prevMonthIncome = prevMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const prevMonthExpense = prevMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
@@ -213,7 +213,7 @@ export function useHomeDashboard(): HomeDashboardData {
     const d30ago = format(subDays(now, 30), "yyyy-MM-dd");
     const d60ago = format(subDays(now, 60), "yyyy-MM-dd");
 
-    const opTx = allTx.filter(t => (t as any).movement_type !== "TRANSFER");
+    const opTx = allTx;
     const last30 = opTx.filter(t => t.date >= d30ago && t.date <= today);
     const prev30 = opTx.filter(t => t.date >= d60ago && t.date < d30ago);
 
@@ -241,7 +241,7 @@ export function useHomeDashboard(): HomeDashboardData {
     const d30 = format(subDays(now, 30), "yyyy-MM-dd");
     const today = format(now, "yyyy-MM-dd");
     const opExpenses = allTx.filter(
-      t => t.type === "expense" && t.date >= d30 && t.date <= today && (t as any).movement_type !== "TRANSFER"
+      t => t.type === "expense" && t.date >= d30 && t.date <= today
     );
     const totalExpense = opExpenses.reduce((s, t) => s + Number(t.amount), 0);
     const daysWithData = new Set(opExpenses.map(t => t.date)).size;

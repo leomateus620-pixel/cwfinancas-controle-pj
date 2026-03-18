@@ -25,7 +25,7 @@ export interface UpcomingPayment {
 }
 
 export function useCashFlow() {
-  const { transactions, isLoading, error } = useTransactions();
+  const { transactions, isLoading, error } = useTransactions({ includeTransfers: true });
 
   let globalRange: { from: Date; to: Date } | null = null;
   try {

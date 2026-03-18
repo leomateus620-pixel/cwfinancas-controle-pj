@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { TrendingUp, Plus, Filter, Download, DollarSign, ShoppingCart, Briefcase, ArrowDownLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +56,8 @@ export function IncomePage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "income", excludeTransfers: true });
+  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "income" });
+  const [listOpen, setListOpen] = useState(false);
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -338,100 +340,113 @@ export function IncomePage() {
         </div>
       </div>
 
-      {/* Tabela de Transações */}
+      {/* Tabela de Transações - Recolhível */}
       <div className="liquid-glass-card p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <button
+          type="button"
+          onClick={() => setListOpen(!listOpen)}
+          className="w-full flex items-center justify-between gap-4 mb-2 cursor-pointer group"
+        >
           <div>
-            <h3 className="text-base font-semibold text-foreground">Transações de Receita</h3>
-            <p className="text-sm text-muted-foreground">Todas as entradas financeiras registradas</p>
+            <h3 className="text-base font-semibold text-foreground text-left">Transações de Receita</h3>
+            <p className="text-sm text-muted-foreground text-left">Todas as entradas financeiras registradas</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Buscar..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-[200px] rounded-xl border-border/40 bg-white/50 backdrop-blur-sm"
-            />
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[180px] rounded-xl border-border/40 bg-white/50 backdrop-blur-sm">
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue placeholder="Categoria" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas Categorias</SelectItem>
-                {categories.map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="icon" className="rounded-xl border-border/40 bg-white/50 backdrop-blur-sm">
-              <Download className="w-4 h-4" />
-            </Button>
+          <div className="flex items-center gap-2 text-muted-foreground group-hover:text-foreground transition-colors">
+            <span className="text-xs">{listOpen ? "Ocultar" : "Mostrar"} transações</span>
+            {listOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </div>
-        </div>
-        <div className="rounded-2xl border border-border/30 overflow-hidden bg-white/20">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/20 border-b border-border/30">
-                <TableHead>Descrição</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Conta/Banco</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedItems.length > 0 ? (
-                paginatedItems.map((item) => (
-                  <TableRow 
-                    key={item.id} 
-                    className="hover:bg-white/40 transition-all duration-200 cursor-pointer border-b border-border/20"
-                    onClick={() => handleEdit(item)}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-xl bg-success/10 backdrop-blur-sm flex items-center justify-center">
-                          <ArrowDownLeft className="w-4 h-4 text-success" />
-                        </div>
-                        <span className="font-medium">{item.description}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-secondary/50 text-secondary-foreground backdrop-blur-sm">
-                        {item.category}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{item.client_vendor || "-"}</TableCell>
-                    <TableCell className="text-muted-foreground">{formatDate(item.date)}</TableCell>
-                    <TableCell className="text-right font-semibold text-success">
-                      +{formatCurrencyBR(Number(item.amount))}
-                    </TableCell>
+        </button>
+
+        {listOpen && (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 mb-4">
+              <Input
+                placeholder="Buscar..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-[200px] rounded-xl border-border/40 bg-white/50 backdrop-blur-sm"
+              />
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[180px] rounded-xl border-border/40 bg-white/50 backdrop-blur-sm">
+                  <Filter className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas Categorias</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="icon" className="rounded-xl border-border/40 bg-white/50 backdrop-blur-sm">
+                <Download className="w-4 h-4" />
+              </Button>
+            </div>
+            <div className="rounded-2xl border border-border/30 overflow-hidden bg-white/20">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/20 border-b border-border/30">
+                    <TableHead>Descrição</TableHead>
+                    <TableHead>Categoria</TableHead>
+                    <TableHead>Conta/Banco</TableHead>
+                    <TableHead>Data</TableHead>
+                    <TableHead className="text-right">Valor</TableHead>
                   </TableRow>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                    {transactions.length === 0 
-                      ? "Nenhuma receita cadastrada. Clique em 'Nova Receita' para começar."
-                      : "Nenhum resultado encontrado para a busca."}
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-        <TablePagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          totalItems={totalItems}
-          startIndex={startIndex}
-          endIndex={endIndex}
-          hasPrevPage={hasPrevPage}
-          hasNextPage={hasNextPage}
-          onPrevPage={prevPage}
-          onNextPage={nextPage}
-          onGoToPage={goToPage}
-        />
+                </TableHeader>
+                <TableBody>
+                  {paginatedItems.length > 0 ? (
+                    paginatedItems.map((item) => (
+                      <TableRow 
+                        key={item.id} 
+                        className="hover:bg-white/40 transition-all duration-200 cursor-pointer border-b border-border/20"
+                        onClick={() => handleEdit(item)}
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-xl bg-success/10 backdrop-blur-sm flex items-center justify-center">
+                              <ArrowDownLeft className="w-4 h-4 text-success" />
+                            </div>
+                            <span className="font-medium">{item.description}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-secondary/50 text-secondary-foreground backdrop-blur-sm">
+                            {item.category}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{item.client_vendor || "-"}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatDate(item.date)}</TableCell>
+                        <TableCell className="text-right font-semibold text-success">
+                          +{formatCurrencyBR(Number(item.amount))}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        {transactions.length === 0 
+                          ? "Nenhuma receita cadastrada. Clique em 'Nova Receita' para começar."
+                          : "Nenhum resultado encontrado para a busca."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              startIndex={startIndex}
+              endIndex={endIndex}
+              hasPrevPage={hasPrevPage}
+              hasNextPage={hasNextPage}
+              onPrevPage={prevPage}
+              onNextPage={nextPage}
+              onGoToPage={goToPage}
+            />
+          </>
+        )}
       </div>
 
       <TransactionModal
