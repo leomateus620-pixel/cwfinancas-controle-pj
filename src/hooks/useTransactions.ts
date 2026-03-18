@@ -28,6 +28,8 @@ export function useTransactions(filters?: {
   endDate?: string;
   category?: string;
   excludeTransfers?: boolean;
+  /** When true, includes TRANSFER movement_type. Default: false (transfers excluded). */
+  includeTransfers?: boolean;
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
