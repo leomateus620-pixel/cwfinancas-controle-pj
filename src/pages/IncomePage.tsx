@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { TrendingUp, Plus, Filter, Download, DollarSign, ShoppingCart, Briefcase, ArrowDownLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
