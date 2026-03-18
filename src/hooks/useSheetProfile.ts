@@ -60,7 +60,9 @@ export function useSheetProfile({ connectionId, tabName, enabled = true }: UseSh
       });
 
       if (error) throw error;
-      if (data.error) throw new Error(data.error);
+      // Treat "Connection not found" as empty profile, not a crash
+      if (data?.error === "Connection not found") return null;
+      if (data?.error) throw new Error(data.error);
 
       return data as SheetProfile;
     },
