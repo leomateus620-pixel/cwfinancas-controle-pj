@@ -48,7 +48,7 @@ export function useTransactions(filters?: {
   const effectiveEndDate = filters?.endDate || (globalRange ? format(globalRange.to, "yyyy-MM-dd") : undefined);
 
   const { data: transactions, isLoading, error } = useQuery({
-    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate, filters?.excludeTransfers],
+    queryKey: ["transactions", user?.id, filters?.type, filters?.category, effectiveStartDate, effectiveEndDate, filters?.excludeTransfers, filters?.includeTransfers],
     queryFn: async () => {
       if (!user?.id) return [];
 
