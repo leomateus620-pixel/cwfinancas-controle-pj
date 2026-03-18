@@ -16,7 +16,7 @@ export interface OverviewData {
 
 export function useOverviewData(): OverviewData {
   const metrics = usePeriodMetrics();
-  const { transactions, isLoading: txLoading } = useTransactions({ excludeTransfers: true });
+  const { transactions, isLoading: txLoading } = useTransactions();
 
   const recentTransactions = useMemo(() => {
     return transactions.slice(0, 5);

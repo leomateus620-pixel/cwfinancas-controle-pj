@@ -80,6 +80,7 @@ Deno.serve(async (req) => {
       .select("id, category, description, raw_data, source_tab, source_sheet_id")
       .eq("user_id", userId)
       .eq("source", "sheets")
+      .neq("movement_type", "TRANSFER")
       .not("raw_data", "is", null);
 
     if (connection_id) {

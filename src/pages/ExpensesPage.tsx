@@ -48,7 +48,7 @@ export function ExpensesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense", excludeTransfers: true });
+  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState("");

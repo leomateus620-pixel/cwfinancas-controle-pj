@@ -392,6 +392,7 @@ Deno.serve(async (req) => {
       .from("transactions")
       .select("id, date, description, category, type, amount, client_vendor")
       .eq("user_id", userId)
+      .neq("movement_type", "TRANSFER")
       .gte("date", startDate)
       .lte("date", endDate)
       .order("date", { ascending: false });

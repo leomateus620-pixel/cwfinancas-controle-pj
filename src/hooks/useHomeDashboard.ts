@@ -241,7 +241,7 @@ export function useHomeDashboard(): HomeDashboardData {
     const d30 = format(subDays(now, 30), "yyyy-MM-dd");
     const today = format(now, "yyyy-MM-dd");
     const opExpenses = allTx.filter(
-      t => t.type === "expense" && t.date >= d30 && t.date <= today && (t as any).movement_type !== "TRANSFER"
+      t => t.type === "expense" && t.date >= d30 && t.date <= today
     );
     const totalExpense = opExpenses.reduce((s, t) => s + Number(t.amount), 0);
     const daysWithData = new Set(opExpenses.map(t => t.date)).size;
