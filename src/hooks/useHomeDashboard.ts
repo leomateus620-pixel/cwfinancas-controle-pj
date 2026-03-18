@@ -213,7 +213,7 @@ export function useHomeDashboard(): HomeDashboardData {
     const d30ago = format(subDays(now, 30), "yyyy-MM-dd");
     const d60ago = format(subDays(now, 60), "yyyy-MM-dd");
 
-    const opTx = allTx.filter(t => (t as any).movement_type !== "TRANSFER");
+    const opTx = allTx;
     const last30 = opTx.filter(t => t.date >= d30ago && t.date <= today);
     const prev30 = opTx.filter(t => t.date >= d60ago && t.date < d30ago);
 
