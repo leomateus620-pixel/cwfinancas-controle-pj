@@ -61,7 +61,10 @@ export function useTransactions(filters?: {
       if (filters?.type) {
         query = query.eq("type", filters.type);
       }
-      if (filters?.excludeTransfers) {
+      // Exclude transfers by default unless includeTransfers is explicitly true
+      // Legacy: excludeTransfers still supported for backward compat
+      const shouldExcludeTransfers = filters?.includeTransfers === true ? false : (filters?.excludeTransfers !== false);
+      if (shouldExcludeTransfers) {
         query = query.neq("movement_type", "TRANSFER");
       }
       if (effectiveStartDate) {
