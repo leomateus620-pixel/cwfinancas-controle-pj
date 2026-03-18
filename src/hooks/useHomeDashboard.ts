@@ -186,13 +186,13 @@ export function useHomeDashboard(): HomeDashboardData {
   }, [allTxForCash]);
 
   const computed = useMemo(() => {
-    // Current month KPIs - use only currTx
-    const currentMonthTx = (currTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
+    // Current month KPIs — transfers already excluded by useTransactions default
+    const currentMonthTx = currTx || [];
     const monthIncome = currentMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const monthExpense = currentMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
-    // Previous month - use only prevTx
-    const prevMonthTx = (prevTx || []).filter(t => (t as any).movement_type !== "TRANSFER");
+    // Previous month
+    const prevMonthTx = prevTx || [];
     const prevMonthIncome = prevMonthTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
     const prevMonthExpense = prevMonthTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
