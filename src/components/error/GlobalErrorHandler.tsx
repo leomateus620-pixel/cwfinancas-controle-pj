@@ -30,13 +30,19 @@ export function GlobalErrorHandler() {
   useEffect(() => {
     // Handle unhandled promise rejections
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      console.error("Unhandled promise rejection:", event.reason);
-      
-      // Prevent the default behavior
-      event.preventDefault();
-      
-      // Get safe error message
       const errorMessage = getErrorString(event.reason);
+      
+      // Auth refresh errors are handled by AuthContext
+      const isAuthError = errorMessage.includes("Refresh Token") 
+        || errorMessage.includes("refresh_token")
+        || errorMessage.includes("invalid_refresh_token");
+      if (isAuthError) {
+        event.preventDefault();
+        return;
+      }
+
+      console.error("Unhandled promise rejection:", event.reason);
+      event.preventDefault();
       
       toast({
         title: "Erro",
