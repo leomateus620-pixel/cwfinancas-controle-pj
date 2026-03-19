@@ -66,6 +66,7 @@ const App = () => {
             <AuthProvider>
               <Routes>
                 {/* Public routes */}
+                <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -80,7 +81,7 @@ const App = () => {
                     </DateRangeProvider>
                   </ProtectedRoute>
                 }>
-                  <Route path="/" element={<HomePage />} />
+                  <Route path="/dashboard" element={<HomePage />} />
                   <Route path="/overview" element={<OverviewPage />} />
                   <Route path="/income" element={<IncomePage />} />
                   <Route path="/expenses" element={<ExpensesPage />} />
