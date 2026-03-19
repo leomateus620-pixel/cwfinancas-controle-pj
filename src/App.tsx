@@ -28,6 +28,8 @@ import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import NotFound from "@/pages/NotFound";
+import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
+import TermsOfUsePage from "@/pages/TermsOfUsePage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
