@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User, Bell, Palette, Database, Shield, Loader2, LogOut } from "lucide-react";
+import { User, Bell, Palette, Database, Shield, Loader2, LogOut, FileText, Copy, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
