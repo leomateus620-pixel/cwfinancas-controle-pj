@@ -34,12 +34,20 @@ export function LoginPage() {
     try {
       const { error } = await signIn(data.email, data.password);
       if (error) {
+        let title = "Erro ao entrar";
+        let description = error.message;
+        
+        if (error.message === "Invalid login credentials") {
+          description = "E-mail ou senha incorretos";
+        } else if (error.message === "Email not confirmed") {
+          title = "E-mail não confirmado";
+          description = "Verifique sua caixa de entrada para confirmar sua conta antes de entrar.";
+        }
+        
         toast({
           variant: "destructive",
-          title: "Erro ao entrar",
-          description: error.message === "Invalid login credentials" 
-            ? "E-mail ou senha incorretos" 
-            : error.message,
+          title,
+          description,
         });
       } else {
         navigate(from, { replace: true });
