@@ -175,6 +175,17 @@ export function RegisterPage() {
             </p>
           </form>
         </div>
+
+        {/* Legal footer */}
+        <div className="flex items-center justify-center gap-3 mt-6 text-xs text-muted-foreground">
+          <Link to="/politica-de-privacidade" className="hover:text-primary hover:underline">
+            Política de Privacidade
+          </Link>
+          <span>•</span>
+          <Link to="/termos-de-uso" className="hover:text-primary hover:underline">
+            Termos de Uso
+          </Link>
+        </div>
       </div>
     </div>
   );

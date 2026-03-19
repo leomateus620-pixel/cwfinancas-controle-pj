@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, Link } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { DashboardHeader } from "./DashboardHeader";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -15,6 +15,15 @@ export function DashboardLayout() {
               <Outlet />
             </div>
           </main>
+          <footer className="px-6 py-3 text-center text-xs text-muted-foreground border-t border-border/30">
+            <Link to="/politica-de-privacidade" className="hover:text-primary hover:underline">
+              Política de Privacidade
+            </Link>
+            <span className="mx-2">•</span>
+            <Link to="/termos-de-uso" className="hover:text-primary hover:underline">
+              Termos de Uso
+            </Link>
+          </footer>
         </div>
       </div>
     </SidebarProvider>

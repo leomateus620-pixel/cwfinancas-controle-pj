@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { User, Bell, Palette, Database, Shield, Loader2, LogOut } from "lucide-react";
+import { User, Bell, Palette, Database, Shield, Loader2, LogOut, FileText, Copy, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -207,6 +207,54 @@ export function SettingsPage() {
             </div>
             <Button variant="destructive">Limpar</Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Documentos Legais */}
+      <Card className="border-border/50 shadow-premium-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileText className="w-5 h-5 text-primary" />
+            Documentos Legais
+          </CardTitle>
+          <CardDescription>
+            Links públicos para uso no Google OAuth e conformidade legal.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {[
+            { label: "Página Inicial", url: "https://cwfinancas-controle-pj.lovable.app/" },
+            { label: "Política de Privacidade", url: "https://cwfinancas-controle-pj.lovable.app/politica-de-privacidade" },
+            { label: "Termos de Uso", url: "https://cwfinancas-controle-pj.lovable.app/termos-de-uso" },
+          ].map((item, idx) => (
+            <div key={idx}>
+              {idx > 0 && <Separator className="mb-4" />}
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground text-sm">{item.label}</p>
+                  <p className="text-xs text-muted-foreground truncate">{item.url}</p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      navigator.clipboard.writeText(item.url);
+                      toast({ title: "Link copiado!", description: item.url });
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                    <a href={item.url} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 

@@ -28,6 +28,8 @@ import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import NotFound from "@/pages/NotFound";
+import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
+import TermsOfUsePage from "@/pages/TermsOfUsePage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,6 +68,8 @@ const App = () => {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/politica-de-privacidade" element={<PrivacyPolicyPage />} />
+                <Route path="/termos-de-uso" element={<TermsOfUsePage />} />
                 
                 {/* Protected routes */}
                 <Route element={
