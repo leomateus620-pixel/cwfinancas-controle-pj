@@ -11,6 +11,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/error/ErrorBoundary";
 import { GlobalErrorHandler } from "@/components/error/GlobalErrorHandler";
+import LandingPage from "@/pages/LandingPage";
 import HomePage from "@/pages/HomePage";
 import OverviewPage from "@/pages/OverviewPage";
 import IncomePage from "@/pages/IncomePage";
@@ -65,6 +66,7 @@ const App = () => {
             <AuthProvider>
               <Routes>
                 {/* Public routes */}
+                <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -79,7 +81,7 @@ const App = () => {
                     </DateRangeProvider>
                   </ProtectedRoute>
                 }>
-                  <Route path="/" element={<HomePage />} />
+                  <Route path="/dashboard" element={<HomePage />} />
                   <Route path="/overview" element={<OverviewPage />} />
                   <Route path="/income" element={<IncomePage />} />
                   <Route path="/expenses" element={<ExpensesPage />} />
