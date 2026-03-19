@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNavItems = [
-  { title: "Home", url: "/", icon: Home },
+  { title: "Home", url: "/dashboard", icon: Home },
   { title: "Dashboard", url: "/overview", icon: LayoutDashboard },
   { title: "Receitas", url: "/income", icon: TrendingUp },
   { title: "Despesas", url: "/expenses", icon: TrendingDown },
