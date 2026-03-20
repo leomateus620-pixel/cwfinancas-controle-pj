@@ -369,55 +369,78 @@ function GoogleSheetsPageContent() {
               Google Sheets
             </h1>
             <p className="text-muted-foreground mt-1">
-              Conecte suas planilhas para importar dados automaticamente.
+              {isSheetAdmin
+                ? "Conecte suas planilhas para importar dados automaticamente."
+                : "Visualize e sincronize sua planilha conectada."}
             </p>
           </div>
         </div>
-        <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
-          <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
-          <CardContent className="py-16 text-center relative z-10">
-            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 animate-float">
-              <FileSpreadsheet className="w-10 h-10 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground mb-3">
-              Conecte sua Conta Google
-            </h3>
-            <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-              Para importar dados das suas planilhas, primeiro conecte sua conta Google. 
-              Isso permitirá listar e selecionar as planilhas que você deseja sincronizar.
-            </p>
-            <Button 
-              onClick={handleConnect}
-              disabled={isConnecting}
-              size="lg"
-              className="gap-2 rounded-xl"
-            >
-              {isConnecting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <ExternalLink className="w-5 h-5" />
-              )}
-              <span>Conectar ao Google</span>
-            </Button>
-          </CardContent>
-        </Card>
 
-        {/* How it works */}
-        <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
-          <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
-          <CardHeader className="relative z-10">
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-success" />
-              Como Funciona
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
-            <p><strong>1.</strong> Clique em "Conectar ao Google" e autorize o acesso.</p>
-            <p><strong>2.</strong> Selecione a planilha e a aba com seus dados financeiros.</p>
-            <p><strong>3.</strong> O sistema detectará automaticamente as colunas.</p>
-            <p><strong>4.</strong> Confirme e importe os dados para o sistema.</p>
-          </CardContent>
-        </Card>
+        {isSheetAdmin ? (
+          <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+            <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+            <CardContent className="py-16 text-center relative z-10">
+              <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 animate-float">
+                <FileSpreadsheet className="w-10 h-10 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-3">
+                Conecte sua Conta Google
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
+                Para importar dados das suas planilhas, primeiro conecte sua conta Google. 
+                Isso permitirá listar e selecionar as planilhas que você deseja sincronizar.
+              </p>
+              <Button 
+                onClick={handleConnect}
+                disabled={isConnecting}
+                size="lg"
+                className="gap-2 rounded-xl"
+              >
+                {isConnecting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <ExternalLink className="w-5 h-5" />
+                )}
+                <span>Conectar ao Google</span>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+            <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+            <CardContent className="py-16 text-center relative z-10">
+              <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-6">
+                <Info className="w-10 h-10 text-muted-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-3">
+                Planilha ainda não configurada
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                Sua planilha será configurada pela equipe CW Finanças. 
+                Entre em contato com o administrador para conectar sua planilha.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* How it works - only for admins */}
+        {isSheetAdmin && (
+          <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
+            <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-success" />
+                Como Funciona
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
+              <p><strong>1.</strong> Clique em "Conectar ao Google" e autorize o acesso.</p>
+              <p><strong>2.</strong> Selecione a planilha e a aba com seus dados financeiros.</p>
+              <p><strong>3.</strong> O sistema detectará automaticamente as colunas.</p>
+              <p><strong>4.</strong> Confirme e importe os dados para o sistema.</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }
