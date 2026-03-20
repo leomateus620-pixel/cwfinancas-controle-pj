@@ -1,49 +1,39 @@
 
 
-## Diagnóstico: Erro `redirect_uri_mismatch` no Google OAuth
+## Plano: Restrição de Acesso à Gestão de Planilhas por Perfil
 
-### Análise do código
+### Objetivo
 
-O código já está **correto e dinâmico** — usa `window.location.origin` para construir a `redirect_uri`:
+Clientes comuns só podem **ver e sincronizar** a planilha já conectada. Apenas os admins (`leomateus620@gmail.com` e `contato@cwfinancas.com`) podem conectar, desconectar e gerenciar planilhas livremente.
 
-```typescript
-// src/hooks/useGoogleSheets.ts linha 131
-const redirectUri = `${window.location.origin}/google-sheets`;
-```
+### Abordagem
 
-Isso significa que quando o usuário acessa de `https://cwfinancas-controlepj.com`, a redirect URI enviada ao Google é `https://cwfinancas-controlepj.com/google-sheets`. **Não há nada para alterar no código.**
+Criar um hook/constante que identifica se o usuário logado é admin (baseado no e-mail), e usar isso na `GoogleSheetsPage` para esconder/desabilitar botões restritos.
 
-### Causa do erro
+### Arquivo: `src/pages/GoogleSheetsPage.tsx`
 
-O erro `redirect_uri_mismatch` é 100% configuração do **Google Cloud Console**. Analisando seus screenshots:
+Alterações na UI baseadas no e-mail do usuário:
 
-**Origens JavaScript autorizadas** — falta o domínio .com:
-- ✅ `https://id-preview--718772e9-73b0-4c8f-9c0d-f1285154bf02.lovable.app`
-- ❌ **Falta**: `https://cwfinancas-controlepj.com`
+| Elemento | Admin | Cliente |
+|---|---|---|
+| Botão "Conectar Planilha" | ✅ Visível | ❌ Oculto |
+| Botão "Desconectar Google" | ✅ Visível | ❌ Oculto |
+| Botão 🗑️ (deletar conexão) | ✅ Visível | ❌ Oculto |
+| Botão "Sincronizar" | ✅ Visível | ✅ Visível |
+| "Zona de Perigo" (reset) | ✅ Visível | ❌ Oculto |
+| Estado "not_connected" | Mostra botão conectar | Mostra mensagem "Entre em contato com o administrador" |
+| Estado "Nenhuma Planilha" (vazio) | Mostra botão conectar | Mostra mensagem informativa |
 
-**URIs de redirecionamento** — parecem corretos, mas verifique:
-- ✅ `https://cwfinancas-controlepj.com/google-sheets`
-- ✅ Preview URLs
+### Implementação
 
-### O que você precisa fazer no Google Cloud Console
+1. Importar `useAuth` no `GoogleSheetsPageContent`
+2. Definir lista de e-mails admin: `["leomateus620@gmail.com", "contato@cwfinancas.com"]`
+3. Derivar `const isSheetAdmin = ADMIN_EMAILS.includes(user?.email ?? "")`
+4. Condicionar renderização dos botões/seções com `{isSheetAdmin && ...}`
+5. No estado `not_connected` para não-admins: mostrar card informativo sem botão de conexão
+6. No estado de lista vazia para não-admins: mostrar mensagem "Sua planilha ainda não foi configurada. Entre em contato com o administrador."
 
-**Origens JavaScript autorizadas** — adicione:
-```
-https://cwfinancas-controlepj.com
-```
+### Segurança
 
-**URIs de redirecionamento autorizados** — confirme que tem:
-```
-https://cwfinancas-controlepj.com/google-sheets
-```
-
-Se você também usa `www`, adicione ambas as variantes:
-```
-https://www.cwfinancas-controlepj.com
-https://www.cwfinancas-controlepj.com/google-sheets
-```
-
-### Resumo
-
-Nenhuma alteração de código é necessária. O projeto já constrói as URIs dinamicamente. O problema é exclusivamente a falta do domínio `.com` nas **Origens JavaScript autorizadas** do Google Cloud Console.
+Esta é uma restrição de **UI apenas**, o que é suficiente para o caso de uso descrito (clientes não sabem que podem manipular a API diretamente). Para segurança completa no backend, seria necessário RLS adicional, mas para o cenário atual (impedir clientes de verem/acessarem planilhas de outros) o RLS existente por `user_id` já cobre isso.
 
