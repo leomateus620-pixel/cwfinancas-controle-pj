@@ -632,14 +632,16 @@ function GoogleSheetsPageContent() {
                         )}
                         <span className="hidden sm:inline">Sincronizar</span>
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(connection.id)}
-                        className="gap-2 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {isSheetAdmin && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(connection.id)}
+                          className="gap-2 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
