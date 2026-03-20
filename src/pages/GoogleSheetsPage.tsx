@@ -120,6 +120,8 @@ function GoogleSheetsPageContent() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isSheetAdmin = SHEET_ADMIN_EMAILS.includes(user?.email ?? "");
   
   const {
     oauthStatus,
