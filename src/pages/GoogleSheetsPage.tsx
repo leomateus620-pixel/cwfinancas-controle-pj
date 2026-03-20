@@ -48,6 +48,10 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorBoundary";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { Info } from "lucide-react";
+
+const SHEET_ADMIN_EMAILS = ["leomateus620@gmail.com", "contato@cwfinancas.com"];
 
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return "Nunca";
@@ -116,6 +120,8 @@ function GoogleSheetsPageContent() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isSheetAdmin = SHEET_ADMIN_EMAILS.includes(user?.email ?? "");
   
   const {
     oauthStatus,
@@ -363,55 +369,78 @@ function GoogleSheetsPageContent() {
               Google Sheets
             </h1>
             <p className="text-muted-foreground mt-1">
-              Conecte suas planilhas para importar dados automaticamente.
+              {isSheetAdmin
+                ? "Conecte suas planilhas para importar dados automaticamente."
+                : "Visualize e sincronize sua planilha conectada."}
             </p>
           </div>
         </div>
-        <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
-          <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
-          <CardContent className="py-16 text-center relative z-10">
-            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 animate-float">
-              <FileSpreadsheet className="w-10 h-10 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground mb-3">
-              Conecte sua Conta Google
-            </h3>
-            <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-              Para importar dados das suas planilhas, primeiro conecte sua conta Google. 
-              Isso permitirá listar e selecionar as planilhas que você deseja sincronizar.
-            </p>
-            <Button 
-              onClick={handleConnect}
-              disabled={isConnecting}
-              size="lg"
-              className="gap-2 rounded-xl"
-            >
-              {isConnecting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <ExternalLink className="w-5 h-5" />
-              )}
-              <span>Conectar ao Google</span>
-            </Button>
-          </CardContent>
-        </Card>
 
-        {/* How it works */}
-        <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
-          <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
-          <CardHeader className="relative z-10">
-            <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-success" />
-              Como Funciona
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
-            <p><strong>1.</strong> Clique em "Conectar ao Google" e autorize o acesso.</p>
-            <p><strong>2.</strong> Selecione a planilha e a aba com seus dados financeiros.</p>
-            <p><strong>3.</strong> O sistema detectará automaticamente as colunas.</p>
-            <p><strong>4.</strong> Confirme e importe os dados para o sistema.</p>
-          </CardContent>
-        </Card>
+        {isSheetAdmin ? (
+          <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+            <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+            <CardContent className="py-16 text-center relative z-10">
+              <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 animate-float">
+                <FileSpreadsheet className="w-10 h-10 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-3">
+                Conecte sua Conta Google
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
+                Para importar dados das suas planilhas, primeiro conecte sua conta Google. 
+                Isso permitirá listar e selecionar as planilhas que você deseja sincronizar.
+              </p>
+              <Button 
+                onClick={handleConnect}
+                disabled={isConnecting}
+                size="lg"
+                className="gap-2 rounded-xl"
+              >
+                {isConnecting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <ExternalLink className="w-5 h-5" />
+                )}
+                <span>Conectar ao Google</span>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+            <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+            <CardContent className="py-16 text-center relative z-10">
+              <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-6">
+                <Info className="w-10 h-10 text-muted-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground mb-3">
+                Planilha ainda não configurada
+              </h3>
+              <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                Sua planilha será configurada pela equipe CW Finanças. 
+                Entre em contato com o administrador para conectar sua planilha.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* How it works - only for admins */}
+        {isSheetAdmin && (
+          <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
+            <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+            <CardHeader className="relative z-10">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-success" />
+                Como Funciona
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
+              <p><strong>1.</strong> Clique em "Conectar ao Google" e autorize o acesso.</p>
+              <p><strong>2.</strong> Selecione a planilha e a aba com seus dados financeiros.</p>
+              <p><strong>3.</strong> O sistema detectará automaticamente as colunas.</p>
+              <p><strong>4.</strong> Confirme e importe os dados para o sistema.</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     );
   }
@@ -431,31 +460,35 @@ function GoogleSheetsPageContent() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button 
-            variant="outline"
-            onClick={handleDisconnectGoogle}
-            disabled={disconnectGoogle.isPending}
-            className="gap-2 rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            {disconnectGoogle.isPending ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <LogOut className="w-4 h-4" />
-            )}
-            <span className="hidden sm:inline">Desconectar Google</span>
-          </Button>
-          <Button 
-            onClick={handleConnect}
-            disabled={isConnecting || exchangeCode.isPending || isCheckingAuth}
-            className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium"
-          >
-            {isConnecting || exchangeCode.isPending || isCheckingAuth ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-            )}
-            <span>Conectar Planilha</span>
-          </Button>
+          {isSheetAdmin && (
+            <>
+              <Button 
+                variant="outline"
+                onClick={handleDisconnectGoogle}
+                disabled={disconnectGoogle.isPending}
+                className="gap-2 rounded-xl text-destructive hover:text-destructive hover:bg-destructive/10"
+              >
+                {disconnectGoogle.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <LogOut className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Desconectar Google</span>
+              </Button>
+              <Button 
+                onClick={handleConnect}
+                disabled={isConnecting || exchangeCode.isPending || isCheckingAuth}
+                className="gap-2 rounded-xl bg-primary hover:bg-primary/90 group transition-premium"
+              >
+                {isConnecting || exchangeCode.isPending || isCheckingAuth ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                )}
+                <span>Conectar Planilha</span>
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -599,14 +632,16 @@ function GoogleSheetsPageContent() {
                         )}
                         <span className="hidden sm:inline">Sincronizar</span>
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(connection.id)}
-                        className="gap-2 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      {isSheetAdmin && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(connection.id)}
+                          className="gap-2 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -614,7 +649,7 @@ function GoogleSheetsPageContent() {
             );
           })}
         </div>
-      ) : (
+      ) : isSheetAdmin ? (
         <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
           <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
           <CardContent className="py-16 text-center relative z-10">
@@ -641,6 +676,22 @@ function GoogleSheetsPageContent() {
             </Button>
           </CardContent>
         </Card>
+      ) : (
+        <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+          <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+          <CardContent className="py-16 text-center relative z-10">
+            <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-6">
+              <Info className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground mb-3">
+              Planilha ainda não configurada
+            </h3>
+            <p className="text-muted-foreground text-sm max-w-md mx-auto">
+              Sua planilha será configurada pela equipe CW Finanças. 
+              Entre em contato com o administrador para conectar sua planilha.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Profile Status Cards for each connection */}
@@ -659,8 +710,8 @@ function GoogleSheetsPageContent() {
       {/* Sync History Section - only show when there are connections */}
       <SyncHistorySection />
 
-      {/* Danger Zone: Reset Data */}
-      {(connections ?? []).length > 0 && (
+      {/* Danger Zone: Reset Data - admin only */}
+      {isSheetAdmin && (connections ?? []).length > 0 && (
         <Card className="border-destructive/30 shadow-premium-sm overflow-hidden relative">
           <div className="absolute inset-0 bg-destructive/5 pointer-events-none" />
           <CardHeader className="relative z-10">
@@ -737,33 +788,35 @@ function GoogleSheetsPageContent() {
         </Card>
       )}
 
-      {/* Info Card */}
-      <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
-        <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
-        <CardHeader className="relative z-10">
-          <CardTitle className="text-base flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-success" />
-            Como Funciona
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
-          <p>
-            <strong>1.</strong> Clique em "Conectar Planilha" e autorize o acesso ao Google Sheets.
-          </p>
-          <p>
-            <strong>2.</strong> Selecione a planilha e a aba que contém seus dados financeiros.
-          </p>
-          <p>
-            <strong>3.</strong> O sistema detectará automaticamente as colunas (Data, Valor, Descrição, etc).
-          </p>
-          <p>
-            <strong>4.</strong> Confirme o mapeamento e importe os dados para o sistema.
-          </p>
-          <p>
-            <strong>5.</strong> Sincronize manualmente ou configure sincronização automática.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Info Card - admin only */}
+      {isSheetAdmin && (
+        <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
+          <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+          <CardHeader className="relative z-10">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-success" />
+              Como Funciona
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
+            <p>
+              <strong>1.</strong> Clique em "Conectar Planilha" e autorize o acesso ao Google Sheets.
+            </p>
+            <p>
+              <strong>2.</strong> Selecione a planilha e a aba que contém seus dados financeiros.
+            </p>
+            <p>
+              <strong>3.</strong> O sistema detectará automaticamente as colunas (Data, Valor, Descrição, etc).
+            </p>
+            <p>
+              <strong>4.</strong> Confirme o mapeamento e importe os dados para o sistema.
+            </p>
+            <p>
+              <strong>5.</strong> Sincronize manualmente ou configure sincronização automática.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Spreadsheet Selector Modal */}
       <SpreadsheetSelectorModal 
