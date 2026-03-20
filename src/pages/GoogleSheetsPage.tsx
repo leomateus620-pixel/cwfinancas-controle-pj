@@ -649,51 +649,49 @@ function GoogleSheetsPageContent() {
             );
           })}
         </div>
+      ) : isSheetAdmin ? (
+        <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+          <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+          <CardContent className="py-16 text-center relative z-10">
+            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 animate-float">
+              <FileSpreadsheet className="w-10 h-10 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground mb-3">
+              Nenhuma Planilha Conectada
+            </h3>
+            <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
+              Conecte suas planilhas do Google Sheets para importar transações, notas fiscais e outros dados financeiros automaticamente.
+            </p>
+            <Button 
+              onClick={handleConnect}
+              disabled={isConnecting || isCheckingAuth}
+              className="gap-2 rounded-xl"
+            >
+              {isConnecting || isCheckingAuth ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4" />
+              )}
+              <span>Conectar Primeira Planilha</span>
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        {isSheetAdmin ? (
-          <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
-            <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
-            <CardContent className="py-16 text-center relative z-10">
-              <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-6 animate-float">
-                <FileSpreadsheet className="w-10 h-10 text-primary" />
-              </div>
-              <h3 className="text-xl font-semibold text-foreground mb-3">
-                Nenhuma Planilha Conectada
-              </h3>
-              <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-                Conecte suas planilhas do Google Sheets para importar transações, notas fiscais e outros dados financeiros automaticamente.
-              </p>
-              <Button 
-                onClick={handleConnect}
-                disabled={isConnecting || isCheckingAuth}
-                className="gap-2 rounded-xl"
-              >
-                {isConnecting || isCheckingAuth ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-                <span>Conectar Primeira Planilha</span>
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
-            <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
-            <CardContent className="py-16 text-center relative z-10">
-              <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-6">
-                <Info className="w-10 h-10 text-muted-foreground" />
-              </div>
-              <h3 className="text-xl font-semibold text-foreground mb-3">
-                Planilha ainda não configurada
-              </h3>
-              <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                Sua planilha será configurada pela equipe CW Finanças. 
-                Entre em contato com o administrador para conectar sua planilha.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+        <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+          <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
+          <CardContent className="py-16 text-center relative z-10">
+            <div className="w-20 h-20 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-6">
+              <Info className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground mb-3">
+              Planilha ainda não configurada
+            </h3>
+            <p className="text-muted-foreground text-sm max-w-md mx-auto">
+              Sua planilha será configurada pela equipe CW Finanças. 
+              Entre em contato com o administrador para conectar sua planilha.
+            </p>
+          </CardContent>
+        </Card>
       )}
 
       {/* Profile Status Cards for each connection */}
