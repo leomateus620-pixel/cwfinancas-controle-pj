@@ -48,6 +48,10 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorBoundary";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { Info } from "lucide-react";
+
+const SHEET_ADMIN_EMAILS = ["leomateus620@gmail.com", "contato@cwfinancas.com"];
 
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return "Nunca";
