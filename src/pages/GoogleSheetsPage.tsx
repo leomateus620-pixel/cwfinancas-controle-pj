@@ -712,8 +712,8 @@ function GoogleSheetsPageContent() {
       {/* Sync History Section - only show when there are connections */}
       <SyncHistorySection />
 
-      {/* Danger Zone: Reset Data */}
-      {(connections ?? []).length > 0 && (
+      {/* Danger Zone: Reset Data - admin only */}
+      {isSheetAdmin && (connections ?? []).length > 0 && (
         <Card className="border-destructive/30 shadow-premium-sm overflow-hidden relative">
           <div className="absolute inset-0 bg-destructive/5 pointer-events-none" />
           <CardHeader className="relative z-10">
@@ -790,33 +790,35 @@ function GoogleSheetsPageContent() {
         </Card>
       )}
 
-      {/* Info Card */}
-      <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
-        <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
-        <CardHeader className="relative z-10">
-          <CardTitle className="text-base flex items-center gap-2">
-            <CheckCircle className="w-5 h-5 text-success" />
-            Como Funciona
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
-          <p>
-            <strong>1.</strong> Clique em "Conectar Planilha" e autorize o acesso ao Google Sheets.
-          </p>
-          <p>
-            <strong>2.</strong> Selecione a planilha e a aba que contém seus dados financeiros.
-          </p>
-          <p>
-            <strong>3.</strong> O sistema detectará automaticamente as colunas (Data, Valor, Descrição, etc).
-          </p>
-          <p>
-            <strong>4.</strong> Confirme o mapeamento e importe os dados para o sistema.
-          </p>
-          <p>
-            <strong>5.</strong> Sincronize manualmente ou configure sincronização automática.
-          </p>
-        </CardContent>
-      </Card>
+      {/* Info Card - admin only */}
+      {isSheetAdmin && (
+        <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
+          <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+          <CardHeader className="relative z-10">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CheckCircle className="w-5 h-5 text-success" />
+              Como Funciona
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="relative z-10 space-y-3 text-sm text-muted-foreground">
+            <p>
+              <strong>1.</strong> Clique em "Conectar Planilha" e autorize o acesso ao Google Sheets.
+            </p>
+            <p>
+              <strong>2.</strong> Selecione a planilha e a aba que contém seus dados financeiros.
+            </p>
+            <p>
+              <strong>3.</strong> O sistema detectará automaticamente as colunas (Data, Valor, Descrição, etc).
+            </p>
+            <p>
+              <strong>4.</strong> Confirme o mapeamento e importe os dados para o sistema.
+            </p>
+            <p>
+              <strong>5.</strong> Sincronize manualmente ou configure sincronização automática.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Spreadsheet Selector Modal */}
       <SpreadsheetSelectorModal 
