@@ -548,7 +548,8 @@ function GoogleSheetsPageContent() {
             const isSyncing = (syncData.isPending && syncData.variables === connection.id) || (syncAllTabs.isPending && syncAllTabs.variables?.connectionId === connection.id);
             const jobForConnection = activeJob?.connection_id === connection.id ? activeJob : null;
             const isJobRunning = !!jobForConnection;
-            const syncDisabled = isSyncing || isJobRunning;
+            const expired = !isSheetAdmin && isConnectionExpired(connection.created_at);
+            const syncDisabled = isSyncing || isJobRunning || expired;
 
             return (
               <Card 
