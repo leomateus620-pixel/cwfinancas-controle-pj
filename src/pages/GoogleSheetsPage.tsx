@@ -53,6 +53,8 @@ import { Info } from "lucide-react";
 
 const SHEET_ADMIN_EMAILS = ["leomateus620@gmail.com", "contato@cwfinancas.com"];
 
+const CONNECTION_VALIDITY_DAYS = 30;
+
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return "Nunca";
   return new Date(dateStr).toLocaleString("pt-BR", {
@@ -62,6 +64,21 @@ const formatDate = (dateStr: string | null) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const getConnectionExpiry = (createdAt: string) => {
+  const created = new Date(createdAt);
+  const expiry = new Date(created.getTime() + CONNECTION_VALIDITY_DAYS * 24 * 60 * 60 * 1000);
+  return expiry;
+};
+
+const isConnectionExpired = (createdAt: string) => {
+  return new Date() > getConnectionExpiry(createdAt);
+};
+
+const formatExpiryDate = (createdAt: string) => {
+  const expiry = getConnectionExpiry(createdAt);
+  return expiry.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
 type PageState = "loading" | "not_connected" | "error" | "success";
