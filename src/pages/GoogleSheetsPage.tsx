@@ -397,7 +397,7 @@ function GoogleSheetsPageContent() {
           </div>
         </div>
 
-        {isSheetAdmin ? (
+        {canConnect ? (
           <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
             <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
             <CardContent className="py-16 text-center relative z-10">
@@ -408,8 +408,9 @@ function GoogleSheetsPageContent() {
                 Conecte sua Conta Google
               </h3>
               <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-                Para importar dados das suas planilhas, primeiro conecte sua conta Google. 
-                Isso permitirá listar e selecionar as planilhas que você deseja sincronizar.
+                {isSheetAdmin
+                  ? "Para importar dados das suas planilhas, primeiro conecte sua conta Google. Isso permitirá listar e selecionar as planilhas que você deseja sincronizar."
+                  : "Conecte sua conta Google para selecionar a planilha com seus dados financeiros. Você poderá realizar uma única conexão."}
               </p>
               <Button 
                 onClick={handleConnect}
