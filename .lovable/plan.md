@@ -1,39 +1,52 @@
 
 
-## Plano: Restrição de Acesso à Gestão de Planilhas por Perfil
+## Plano: Conexão Única para Clientes com Validade de 30 Dias
 
 ### Objetivo
 
-Clientes comuns só podem **ver e sincronizar** a planilha já conectada. Apenas os admins (`leomateus620@gmail.com` e `contato@cwfinancas.com`) podem conectar, desconectar e gerenciar planilhas livremente.
+Permitir que clientes (não-admin) conectem sua conta Google e selecionem UMA planilha, uma única vez. A conexão terá validade de 30 dias, após a qual o cliente precisará reconectar.
 
-### Abordagem
+### Mudanças
 
-Criar um hook/constante que identifica se o usuário logado é admin (baseado no e-mail), e usar isso na `GoogleSheetsPage` para esconder/desabilitar botões restritos.
+**Arquivo: `src/pages/GoogleSheetsPage.tsx`**
 
-### Arquivo: `src/pages/GoogleSheetsPage.tsx`
+1. **Estado `not_connected` para não-admins**: trocar a mensagem informativa pelo botão "Conectar ao Google", mas somente se o usuário ainda não tiver nenhuma conexão ativa
+2. **Após conexão criada**: esconder botão de conectar (já tem 1 conexão = não pode criar outra)
+3. **Mostrar validade**: exibir a data de expiração (30 dias após `created_at`) no card da conexão
+4. **Conexão expirada**: se passaram 30 dias, mostrar banner informando que a conexão expirou e permitir reconectar (substituindo a antiga)
 
-Alterações na UI baseadas no e-mail do usuário:
+**Arquivo: `src/hooks/useGoogleSheets.ts`**
 
-| Elemento | Admin | Cliente |
-|---|---|---|
-| Botão "Conectar Planilha" | ✅ Visível | ❌ Oculto |
-| Botão "Desconectar Google" | ✅ Visível | ❌ Oculto |
-| Botão 🗑️ (deletar conexão) | ✅ Visível | ❌ Oculto |
-| Botão "Sincronizar" | ✅ Visível | ✅ Visível |
-| "Zona de Perigo" (reset) | ✅ Visível | ❌ Oculto |
-| Estado "not_connected" | Mostra botão conectar | Mostra mensagem "Entre em contato com o administrador" |
-| Estado "Nenhuma Planilha" (vazio) | Mostra botão conectar | Mostra mensagem informativa |
+5. Na `createConnection`: para não-admins, verificar se já existe uma conexão antes de permitir criar outra (proteção extra no frontend)
 
-### Implementação
+### Lógica de controle
 
-1. Importar `useAuth` no `GoogleSheetsPageContent`
-2. Definir lista de e-mails admin: `["leomateus620@gmail.com", "contato@cwfinancas.com"]`
-3. Derivar `const isSheetAdmin = ADMIN_EMAILS.includes(user?.email ?? "")`
-4. Condicionar renderização dos botões/seções com `{isSheetAdmin && ...}`
-5. No estado `not_connected` para não-admins: mostrar card informativo sem botão de conexão
-6. No estado de lista vazia para não-admins: mostrar mensagem "Sua planilha ainda não foi configurada. Entre em contato com o administrador."
+```typescript
+const hasExistingConnection = (connections ?? []).length > 0;
+const canConnect = isSheetAdmin || !hasExistingConnection;
 
-### Segurança
+// Expiração: 30 dias após created_at
+const isExpired = (connection) => {
+  const created = new Date(connection.created_at);
+  const expiry = new Date(created.getTime() + 30 * 24 * 60 * 60 * 1000);
+  return new Date() > expiry;
+};
+```
 
-Esta é uma restrição de **UI apenas**, o que é suficiente para o caso de uso descrito (clientes não sabem que podem manipular a API diretamente). Para segurança completa no backend, seria necessário RLS adicional, mas para o cenário atual (impedir clientes de verem/acessarem planilhas de outros) o RLS existente por `user_id` já cobre isso.
+### UI por perfil atualizada
+
+| Elemento | Admin | Cliente (sem conexão) | Cliente (com conexão ativa) | Cliente (conexão expirada) |
+|---|---|---|---|---|
+| Botão "Conectar" | Sempre visível | Visível (1x) | Oculto | Visível (reconectar) |
+| Botão "Desconectar" | Visível | Oculto | Oculto | Oculto |
+| Botão "Deletar" | Visível | Oculto | Oculto | Oculto |
+| Botão "Sincronizar" | Visível | - | Visível | Desabilitado |
+| Info de expiração | Não exibe | - | "Válido até DD/MM/AAAA" | "Expirado em DD/MM/AAAA" |
+| Zona de Perigo | Visível | Oculto | Oculto | Oculto |
+
+### Arquivos modificados
+
+| Arquivo | Mudança |
+|---|---|
+| `src/pages/GoogleSheetsPage.tsx` | Permitir conexão única para não-admins, exibir validade de 30 dias, banner de expiração |
 
