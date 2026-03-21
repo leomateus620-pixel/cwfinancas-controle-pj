@@ -588,7 +588,7 @@ function GoogleSheetsPageContent() {
                             Todas as abas (transações mensais)
                           </p>
                         ) : null}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                        <div className="flex items-center flex-wrap gap-4 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <StatusIndicator status={statusInfo.indicator} size="sm" pulse={connection.sync_status === "syncing" || isJobRunning} />
                             <span className={statusInfo.color}>
@@ -598,7 +598,23 @@ function GoogleSheetsPageContent() {
                           <span>
                             Última sync: {formatDate(connection.last_sync_at)}
                           </span>
+                          {!isSheetAdmin && (
+                            <span className={cn("flex items-center gap-1", expired ? "text-destructive" : "text-success")}>
+                              <Clock className="w-3 h-3" />
+                              {expired
+                                ? `Expirado em ${formatExpiryDate(connection.created_at)}`
+                                : `Válido até ${formatExpiryDate(connection.created_at)}`}
+                            </span>
+                          )}
                         </div>
+                        {/* Expired banner for non-admins */}
+                        {expired && (
+                          <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+                            <p className="text-xs text-destructive font-medium">
+                              Sua conexão expirou. Entre em contato com o administrador para renovar o acesso.
+                            </p>
+                          </div>
+                        )}
                         {/* Job progress indicator */}
                         {isJobRunning && jobForConnection?.progress && (
                           <div className="mt-3 space-y-1.5">
