@@ -688,7 +688,7 @@ function GoogleSheetsPageContent() {
             );
           })}
         </div>
-      ) : isSheetAdmin ? (
+      ) : canConnect ? (
         <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
           <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
           <CardContent className="py-16 text-center relative z-10">
@@ -699,7 +699,9 @@ function GoogleSheetsPageContent() {
               Nenhuma Planilha Conectada
             </h3>
             <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-              Conecte suas planilhas do Google Sheets para importar transações, notas fiscais e outros dados financeiros automaticamente.
+              {isSheetAdmin
+                ? "Conecte suas planilhas do Google Sheets para importar transações, notas fiscais e outros dados financeiros automaticamente."
+                : "Conecte sua conta Google para selecionar a planilha com seus dados financeiros."}
             </p>
             <Button 
               onClick={handleConnect}
