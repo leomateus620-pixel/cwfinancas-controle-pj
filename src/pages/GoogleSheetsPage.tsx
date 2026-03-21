@@ -139,7 +139,9 @@ function GoogleSheetsPageContent() {
   const { toast } = useToast();
   const { user } = useAuth();
   const isSheetAdmin = SHEET_ADMIN_EMAILS.includes(user?.email ?? "");
-  
+  const hasExistingConnection = (connections ?? []).length > 0;
+  const hasExpiredConnection = hasExistingConnection && !isSheetAdmin && (connections ?? []).every(c => isConnectionExpired(c.created_at));
+  const canConnect = isSheetAdmin || (!hasExistingConnection || hasExpiredConnection);
   const {
     oauthStatus,
     isGoogleAuthorized,
