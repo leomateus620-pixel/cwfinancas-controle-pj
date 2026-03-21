@@ -53,6 +53,8 @@ import { Info } from "lucide-react";
 
 const SHEET_ADMIN_EMAILS = ["leomateus620@gmail.com", "contato@cwfinancas.com"];
 
+const CONNECTION_VALIDITY_DAYS = 30;
+
 const formatDate = (dateStr: string | null) => {
   if (!dateStr) return "Nunca";
   return new Date(dateStr).toLocaleString("pt-BR", {
@@ -62,6 +64,21 @@ const formatDate = (dateStr: string | null) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const getConnectionExpiry = (createdAt: string) => {
+  const created = new Date(createdAt);
+  const expiry = new Date(created.getTime() + CONNECTION_VALIDITY_DAYS * 24 * 60 * 60 * 1000);
+  return expiry;
+};
+
+const isConnectionExpired = (createdAt: string) => {
+  return new Date() > getConnectionExpiry(createdAt);
+};
+
+const formatExpiryDate = (createdAt: string) => {
+  const expiry = getConnectionExpiry(createdAt);
+  return expiry.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
 type PageState = "loading" | "not_connected" | "error" | "success";
@@ -143,6 +160,10 @@ function GoogleSheetsPageContent() {
     disconnectGoogle,
     resetSheetData,
   } = useGoogleSheets();
+
+  const hasExistingConnection = (connections ?? []).length > 0;
+  const hasExpiredConnection = hasExistingConnection && !isSheetAdmin && (connections ?? []).every(c => isConnectionExpired(c.created_at));
+  const canConnect = isSheetAdmin || (!hasExistingConnection || hasExpiredConnection);
 
   const [resetConfirmText, setResetConfirmText] = useState("");
   const [showResetDialog, setShowResetDialog] = useState(false);
@@ -376,7 +397,7 @@ function GoogleSheetsPageContent() {
           </div>
         </div>
 
-        {isSheetAdmin ? (
+        {canConnect ? (
           <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
             <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
             <CardContent className="py-16 text-center relative z-10">
@@ -387,8 +408,9 @@ function GoogleSheetsPageContent() {
                 Conecte sua Conta Google
               </h3>
               <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-                Para importar dados das suas planilhas, primeiro conecte sua conta Google. 
-                Isso permitirá listar e selecionar as planilhas que você deseja sincronizar.
+                {isSheetAdmin
+                  ? "Para importar dados das suas planilhas, primeiro conecte sua conta Google. Isso permitirá listar e selecionar as planilhas que você deseja sincronizar."
+                  : "Conecte sua conta Google para selecionar a planilha com seus dados financeiros. Você poderá realizar uma única conexão."}
               </p>
               <Button 
                 onClick={handleConnect}
@@ -526,7 +548,8 @@ function GoogleSheetsPageContent() {
             const isSyncing = (syncData.isPending && syncData.variables === connection.id) || (syncAllTabs.isPending && syncAllTabs.variables?.connectionId === connection.id);
             const jobForConnection = activeJob?.connection_id === connection.id ? activeJob : null;
             const isJobRunning = !!jobForConnection;
-            const syncDisabled = isSyncing || isJobRunning;
+            const expired = !isSheetAdmin && isConnectionExpired(connection.created_at);
+            const syncDisabled = isSyncing || isJobRunning || expired;
 
             return (
               <Card 
@@ -565,7 +588,7 @@ function GoogleSheetsPageContent() {
                             Todas as abas (transações mensais)
                           </p>
                         ) : null}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                        <div className="flex items-center flex-wrap gap-4 mt-2 text-xs text-muted-foreground">
                           <span className="flex items-center gap-1">
                             <StatusIndicator status={statusInfo.indicator} size="sm" pulse={connection.sync_status === "syncing" || isJobRunning} />
                             <span className={statusInfo.color}>
@@ -575,7 +598,23 @@ function GoogleSheetsPageContent() {
                           <span>
                             Última sync: {formatDate(connection.last_sync_at)}
                           </span>
+                          {!isSheetAdmin && (
+                            <span className={cn("flex items-center gap-1", expired ? "text-destructive" : "text-success")}>
+                              <Clock className="w-3 h-3" />
+                              {expired
+                                ? `Expirado em ${formatExpiryDate(connection.created_at)}`
+                                : `Válido até ${formatExpiryDate(connection.created_at)}`}
+                            </span>
+                          )}
                         </div>
+                        {/* Expired banner for non-admins */}
+                        {expired && (
+                          <div className="mt-3 p-2 rounded-lg bg-destructive/10 border border-destructive/20">
+                            <p className="text-xs text-destructive font-medium">
+                              Sua conexão expirou. Entre em contato com o administrador para renovar o acesso.
+                            </p>
+                          </div>
+                        )}
                         {/* Job progress indicator */}
                         {isJobRunning && jobForConnection?.progress && (
                           <div className="mt-3 space-y-1.5">
@@ -649,7 +688,7 @@ function GoogleSheetsPageContent() {
             );
           })}
         </div>
-      ) : isSheetAdmin ? (
+      ) : canConnect ? (
         <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
           <div className="absolute inset-0 gradient-mesh opacity-30 pointer-events-none" />
           <CardContent className="py-16 text-center relative z-10">
@@ -660,7 +699,9 @@ function GoogleSheetsPageContent() {
               Nenhuma Planilha Conectada
             </h3>
             <p className="text-muted-foreground text-sm max-w-md mx-auto mb-6">
-              Conecte suas planilhas do Google Sheets para importar transações, notas fiscais e outros dados financeiros automaticamente.
+              {isSheetAdmin
+                ? "Conecte suas planilhas do Google Sheets para importar transações, notas fiscais e outros dados financeiros automaticamente."
+                : "Conecte sua conta Google para selecionar a planilha com seus dados financeiros."}
             </p>
             <Button 
               onClick={handleConnect}
