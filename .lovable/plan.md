@@ -1,39 +1,23 @@
 
 
-## Plano: Restrição de Acesso à Gestão de Planilhas por Perfil
+## Plano: Conexão Única para Clientes com Validade de 30 Dias (IMPLEMENTADO)
 
 ### Objetivo
 
-Clientes comuns só podem **ver e sincronizar** a planilha já conectada. Apenas os admins (`leomateus620@gmail.com` e `contato@cwfinancas.com`) podem conectar, desconectar e gerenciar planilhas livremente.
+Clientes (não-admin) podem conectar sua conta Google e selecionar UMA planilha, uma única vez. A conexão tem validade de 30 dias, após a qual a sincronização é desabilitada.
 
-### Abordagem
+### Regras implementadas
 
-Criar um hook/constante que identifica se o usuário logado é admin (baseado no e-mail), e usar isso na `GoogleSheetsPage` para esconder/desabilitar botões restritos.
+| Elemento | Admin | Cliente (sem conexão) | Cliente (com conexão ativa) | Cliente (conexão expirada) |
+|---|---|---|---|---|
+| Botão "Conectar" | Sempre visível | Visível (1x) | Oculto | Oculto (contatar admin) |
+| Botão "Desconectar" | Visível | Oculto | Oculto | Oculto |
+| Botão "Deletar" | Visível | Oculto | Oculto | Oculto |
+| Botão "Sincronizar" | Visível | - | Visível | Desabilitado |
+| Info de expiração | Não exibe | - | "Válido até DD/MM/AAAA" | "Expirado em DD/MM/AAAA" |
+| Zona de Perigo | Visível | Oculto | Oculto | Oculto |
 
-### Arquivo: `src/pages/GoogleSheetsPage.tsx`
+### E-mails admin
 
-Alterações na UI baseadas no e-mail do usuário:
-
-| Elemento | Admin | Cliente |
-|---|---|---|
-| Botão "Conectar Planilha" | ✅ Visível | ❌ Oculto |
-| Botão "Desconectar Google" | ✅ Visível | ❌ Oculto |
-| Botão 🗑️ (deletar conexão) | ✅ Visível | ❌ Oculto |
-| Botão "Sincronizar" | ✅ Visível | ✅ Visível |
-| "Zona de Perigo" (reset) | ✅ Visível | ❌ Oculto |
-| Estado "not_connected" | Mostra botão conectar | Mostra mensagem "Entre em contato com o administrador" |
-| Estado "Nenhuma Planilha" (vazio) | Mostra botão conectar | Mostra mensagem informativa |
-
-### Implementação
-
-1. Importar `useAuth` no `GoogleSheetsPageContent`
-2. Definir lista de e-mails admin: `["leomateus620@gmail.com", "contato@cwfinancas.com"]`
-3. Derivar `const isSheetAdmin = ADMIN_EMAILS.includes(user?.email ?? "")`
-4. Condicionar renderização dos botões/seções com `{isSheetAdmin && ...}`
-5. No estado `not_connected` para não-admins: mostrar card informativo sem botão de conexão
-6. No estado de lista vazia para não-admins: mostrar mensagem "Sua planilha ainda não foi configurada. Entre em contato com o administrador."
-
-### Segurança
-
-Esta é uma restrição de **UI apenas**, o que é suficiente para o caso de uso descrito (clientes não sabem que podem manipular a API diretamente). Para segurança completa no backend, seria necessário RLS adicional, mas para o cenário atual (impedir clientes de verem/acessarem planilhas de outros) o RLS existente por `user_id` já cobre isso.
-
+- `leomateus620@gmail.com`
+- `contato@cwfinancas.com`
