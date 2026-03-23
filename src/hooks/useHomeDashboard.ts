@@ -70,6 +70,7 @@ export function useHomeDashboard(): HomeDashboardData {
   const { profile, isLoading: profileLoading } = useProfile();
   const { session } = useAuth();
   const { closingTotal: bankClosingTotal, isEmpty: bankEmpty, isLoading: bankLoading } = useBankBalances();
+  const { positionHistory: cashPositionHistory, accountNames: cashAccountNames, isLoading: cashPosLoading } = useCashPosition();
 
   const now = new Date();
   const currStart = format(startOfMonth(now), "yyyy-MM-dd");
