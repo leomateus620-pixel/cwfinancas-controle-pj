@@ -4,6 +4,7 @@ import { useTransactions } from "./useTransactions";
 import { useInvoices } from "./useInvoices";
 import { useSyncStatus } from "./useSyncStatus";
 import { useBankBalances } from "./useBankBalances";
+import { useCashPosition, type CashPositionPeriod } from "./useCashPosition";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
