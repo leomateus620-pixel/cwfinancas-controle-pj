@@ -4,6 +4,7 @@ import { useTransactions } from "./useTransactions";
 import { useInvoices } from "./useInvoices";
 import { useSyncStatus } from "./useSyncStatus";
 import { useBankBalances } from "./useBankBalances";
+import { useCashPosition, type CashPositionPeriod } from "./useCashPosition";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -51,6 +52,8 @@ export interface HomeDashboardData {
   topExpenseCategories: Array<{ name: string; value: number; percent: number }>;
   alerts: HomeDashboardAlert[];
   cashPositionTrend: Array<{ month: string; label: string; value: number }>;
+  cashPositionHistory: CashPositionPeriod[];
+  cashAccountNames: string[];
   healthScore: number;
   healthFactors: Array<{ label: string; score: number; weight: number }>;
   trendLabel: string;
@@ -67,6 +70,7 @@ export function useHomeDashboard(): HomeDashboardData {
   const { profile, isLoading: profileLoading } = useProfile();
   const { session } = useAuth();
   const { closingTotal: bankClosingTotal, isEmpty: bankEmpty, isLoading: bankLoading } = useBankBalances();
+  const { positionHistory: cashPositionHistory, accountNames: cashAccountNames, isLoading: cashPosLoading } = useCashPosition();
 
   const now = new Date();
   const currStart = format(startOfMonth(now), "yyyy-MM-dd");
@@ -131,59 +135,14 @@ export function useHomeDashboard(): HomeDashboardData {
   // Combine both queries for trend/runway calculations
   const allTx = useMemo(() => [...(currTx || []), ...(prevTx || [])], [currTx, prevTx]);
 
-  // Separate query for ALL transactions (no date filter) for cash position on 5th
-  const { data: allTxForCash } = useQuery({
-    queryKey: ["home-cash-position-all", session?.user?.id],
-    queryFn: async () => {
-      if (!session?.user?.id) return [];
-      const { data, error } = await supabase
-        .from("transactions")
-        .select("type, amount, date, movement_type")
-        .neq("movement_type", "TRANSFER")
-        .order("date", { ascending: true })
-        .limit(10000);
-      if (error) throw error;
-      return data as Array<{ type: string; amount: number; date: string; movement_type: string }>;
-    },
-    enabled: !!session?.user?.id,
-    staleTime: 120_000,
-  });
-
-  // Cash position on 5th of each month
+  // cashPositionTrend derived from bank_balances via useCashPosition (legacy compat)
   const cashPositionTrend = useMemo(() => {
-    if (!allTxForCash || allTxForCash.length === 0) return [];
-    
-    // Get all unique months from the data
-    const monthSet = new Set<string>();
-    allTxForCash.forEach(t => {
-      const m = t.date.substring(0, 7); // "yyyy-MM"
-      monthSet.add(m);
-    });
-    const months = Array.from(monthSet).sort();
-    
-    const MONTH_NAMES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-    
-    // For each month, cumulative balance of all transactions up to day 5
-    const points: Array<{ month: string; label: string; value: number }> = [];
-    
-    for (const month of months) {
-      const cutoffDate = `${month}-05`;
-      // Sum ALL transactions from beginning up to (and including) the 5th of this month
-      let cumBalance = 0;
-      for (const t of allTxForCash) {
-        if (t.date > cutoffDate) break;
-        cumBalance += t.type === "income" ? Number(t.amount) : -Number(t.amount);
-      }
-      
-      const [y, m] = month.split("-");
-      const monthIdx = parseInt(m) - 1;
-      const label = `${MONTH_NAMES[monthIdx]}/${y.slice(2)}`;
-      
-      points.push({ month, label, value: cumBalance });
-    }
-    
-    return points;
-  }, [allTxForCash]);
+    return cashPositionHistory.map(p => ({
+      month: p.period,
+      label: p.label,
+      value: p.totalBalance,
+    }));
+  }, [cashPositionHistory]);
 
   const computed = useMemo(() => {
     // Current month KPIs — transfers already excluded by useTransactions default
@@ -414,7 +373,7 @@ export function useHomeDashboard(): HomeDashboardData {
     });
   }, [computed, invoices, runwayDays]);
 
-  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading || bankLoading;
+  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading || bankLoading || cashPosLoading;
   const hasData = (currTx?.length ?? 0) > 0;
   const hasSyncConnection = (connections?.length ?? 0) > 0;
   const lastSyncAt = connections?.[0]?.last_sync_at ?? null;
@@ -435,6 +394,8 @@ export function useHomeDashboard(): HomeDashboardData {
     topExpenseCategories: computed.topExpenseCategories,
     alerts,
     cashPositionTrend,
+    cashPositionHistory,
+    cashAccountNames,
     healthScore,
     healthFactors,
     trendLabel,

@@ -23,39 +23,52 @@ import { formatCompactBR, formatCurrencyBR } from "@/lib/currency";
 export default function HomePage() {
   const data = useHomeDashboard();
 
+  // Generate insights from bank_balances history
   const insights = useMemo(() => {
     const list: string[] = [];
-    const trend = data.cashPositionTrend;
+    const history = data.cashPositionHistory;
 
-    if (trend.length >= 2) {
-      const last = trend[trend.length - 1];
-      const prev = trend[trend.length - 2];
-      if (prev.value !== 0) {
-        const pct = ((last.value - prev.value) / Math.abs(prev.value)) * 100;
+    if (history.length >= 2) {
+      const last = history[history.length - 1];
+      const prev = history[history.length - 2];
+      if (prev.totalBalance !== 0) {
+        const pct = ((last.totalBalance - prev.totalBalance) / Math.abs(prev.totalBalance)) * 100;
         const dir = pct >= 0 ? "avançou" : "recuou";
         list.push(`Caixa ${dir} ${Math.abs(pct).toFixed(1)}% entre ${prev.label} e ${last.label}.`);
       }
     }
 
-    if (trend.length >= 3) {
-      const last3 = trend.slice(-3);
-      const increasing = last3[1].value > last3[0].value && last3[2].value > last3[1].value;
-      const decreasing = last3[1].value < last3[0].value && last3[2].value < last3[1].value;
+    if (history.length >= 3) {
+      const last3 = history.slice(-3);
+      const increasing = last3[1].totalBalance > last3[0].totalBalance && last3[2].totalBalance > last3[1].totalBalance;
+      const decreasing = last3[1].totalBalance < last3[0].totalBalance && last3[2].totalBalance < last3[1].totalBalance;
       if (increasing) list.push("Tendência de crescimento nos últimos 3 meses consecutivos.");
       else if (decreasing) list.push("Atenção: caixa em queda nos últimos 3 meses consecutivos.");
     }
 
-    if (trend.length > 0) {
-      const last = trend[trend.length - 1];
-      list.push(`Posição em 05/${last.label}: ${formatCurrencyBR(last.value)}.`);
+    // Volatility detection (std dev > 20% of mean over available data)
+    if (history.length >= 4) {
+      const values = history.map(p => p.totalBalance);
+      const mean = values.reduce((s, v) => s + v, 0) / values.length;
+      if (mean > 0) {
+        const variance = values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / values.length;
+        const stdDev = Math.sqrt(variance);
+        const cv = (stdDev / mean) * 100;
+        if (cv > 30) list.push("Alta volatilidade detectada no saldo do caixa — revise movimentações atípicas.");
+      }
     }
 
-    if (list.length === 0) {
-      list.push("Importe seus dados para ver a evolução do caixa aqui.");
+    if (history.length > 0) {
+      const last = history[history.length - 1];
+      list.push(`Posição em ${last.label}: ${formatCurrencyBR(last.totalBalance)}.`);
+    }
+
+    if (history.length < 2) {
+      list.push("Importe mais meses de saldos bancários para análise de tendência.");
     }
 
     return list.slice(0, 3);
-  }, [data.cashPositionTrend]);
+  }, [data.cashPositionHistory]);
 
   if (data.isLoading) {
     return (
@@ -156,8 +169,10 @@ export default function HomePage() {
                 delay={300}
               />
               <CashEvolutionChart
-                data={data.cashPositionTrend}
+                data={data.cashPositionHistory}
+                accountNames={data.cashAccountNames}
                 insights={insights}
+                isEmpty={data.cashPositionHistory.length === 0 && !data.isLoading}
                 delay={360}
               />
             </div>
