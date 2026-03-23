@@ -52,6 +52,8 @@ export interface HomeDashboardData {
   topExpenseCategories: Array<{ name: string; value: number; percent: number }>;
   alerts: HomeDashboardAlert[];
   cashPositionTrend: Array<{ month: string; label: string; value: number }>;
+  cashPositionHistory: CashPositionPeriod[];
+  cashAccountNames: string[];
   healthScore: number;
   healthFactors: Array<{ label: string; score: number; weight: number }>;
   trendLabel: string;
