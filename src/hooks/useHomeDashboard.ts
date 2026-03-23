@@ -373,7 +373,7 @@ export function useHomeDashboard(): HomeDashboardData {
     });
   }, [computed, invoices, runwayDays]);
 
-  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading || bankLoading;
+  const isLoading = profileLoading || txLoading || prevTxLoading || invLoading || syncLoading || dreLoading || bankLoading || cashPosLoading;
   const hasData = (currTx?.length ?? 0) > 0;
   const hasSyncConnection = (connections?.length ?? 0) > 0;
   const lastSyncAt = connections?.[0]?.last_sync_at ?? null;
@@ -394,6 +394,8 @@ export function useHomeDashboard(): HomeDashboardData {
     topExpenseCategories: computed.topExpenseCategories,
     alerts,
     cashPositionTrend,
+    cashPositionHistory,
+    cashAccountNames,
     healthScore,
     healthFactors,
     trendLabel,
