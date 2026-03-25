@@ -443,6 +443,9 @@ const BANK_NAMES = [
 function looksLikeBankName(value: string): boolean {
   const v = safeStr(value).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
   if (!v) return false;
+  // If value starts with a revenue/expense prefix, it's a category, not a bank name
+  const categoryPrefixes = ["receita", "despesa", "custo", "taxa", "tarifa", "pagamento", "transferencia"];
+  if (categoryPrefixes.some(p => v.startsWith(p))) return false;
   return BANK_NAMES.some(b => v.includes(b) || v === b);
 }
 
