@@ -1,50 +1,79 @@
 
 
-## Plano: Corrigir erro de duplicação na sincronização DRE
+## Plano: Corrigir categorias de receitas e classificação de transferências
 
 ### Diagnóstico
 
-**Erro**: `duplicate key value violates unique constraint "dre_periods_unique_period_scenario"`
+Analisei os dados reais no banco e encontrei **dois bugs** no pipeline de importação (`sheets-sync-all-tabs`):
 
-**Causa raiz**: A limpeza antes do INSERT é fragmentada — cada parser (DEFAULT, SAH, GR, STARTSYNC, LCF_NUCLEO) limpa apenas períodos do seu próprio `template_type`. Quando a detecção de template muda entre sincronizações (ex: de DEFAULT para GR), os períodos antigos com `template_type` diferente mas mesma `period_key` permanecem no banco, causando violação da constraint única `(user_id, sheet_id, period_key, COALESCE(scenario, '__none__'))`.
+**Bug 1 — `looksLikeBankName` muito agressivo (424 receitas afetadas)**
+
+A função `looksLikeBankName` usa `v.includes(bankName)`. O valor "Receita Asaas" contém "asaas" → é incorretamente classificado como nome de banco → categoria vira "Sem categoria". Mas "Receita Asaas" é uma categoria legítima de receita de cobranças.
+
+Dados reais: 364 transações com `raw_data.Categoria = "Receita Asaas"` → importadas como "Sem categoria".
+
+**Bug 2 — Transfer detection roda DEPOIS da sanitização (123 transferências vazando)**
+
+A linha 2370-2371 substitui a categoria por "Sem categoria" ANTES de `detectMovementType()` na linha 2390. Quando a categoria original é "Transferência interna" e contém "asaas" → vira "Sem categoria" → `detectMovementType` não detecta mais como TRANSFER → transação vaza para os gráficos como INCOME/EXPENSE.
+
+Dados reais: 123 transações com `Categoria = "Transferência interna"` que não foram classificadas como TRANSFER.
 
 ### Solução
 
-Adicionar uma **limpeza global no início** da sincronização (antes de qualquer parsing), deletando TODOS os `dre_periods` e `dre_lines` do `user_id + sheet_id` (connection_id). Isso é seguro porque a sync sempre reimporta todos os dados de todas as abas DRE da planilha.
+**Arquivo: `supabase/functions/sheets-sync-all-tabs/index.ts`**
 
-### Mudança
+1. **Reordenar a lógica**: Mover `detectMovementType` para ANTES da sanitização de banco. Usar a categoria RAW da planilha para detectar transferências:
 
-**Arquivo: `supabase/functions/dre-sync/index.ts`**
+```
+// ANTES (bugado):
+let category = raw || "Geral";
+if (looksLikeBankName(category)) category = "Sem categoria";  // mata "Transferência interna"
+movementType = detectMovementType(category, ...);              // não detecta mais
 
-Após obter as abas candidatas (linha ~1877), antes do loop de parsing (linha ~1894), inserir:
+// DEPOIS (corrigido):
+let rawCategory = raw || "Geral";
+movementType = detectMovementType(rawCategory, ...);           // detecta com categoria original
+let category = rawCategory;
+if (looksLikeBankName(category)) category = "Sem categoria";
+```
+
+2. **Refinar `looksLikeBankName`**: A função deve verificar se o valor é PURAMENTE um nome de banco, não um composto como "Receita Asaas". Adicionar exceções para categorias que CONTÊM um banco mas têm prefixo de receita/despesa:
 
 ```typescript
-// Global cleanup: delete ALL existing DRE data for this connection
-// This prevents duplicate key errors when template_type changes between syncs
-const { data: allOldPeriods } = await supabase
-  .from("dre_periods")
-  .select("id")
-  .eq("user_id", userId)
-  .eq("sheet_id", connection_id);
-
-if (allOldPeriods && allOldPeriods.length > 0) {
-  const allOldIds = allOldPeriods.map((p: any) => p.id);
-  await supabase.from("dre_validation_issues").delete().in("period_id", allOldIds);
-  await supabase.from("dre_lines").delete().in("period_id", allOldIds);
-  await supabase.from("dre_periods").delete().in("id", allOldIds);
+function looksLikeBankName(value: string): boolean {
+  const v = normalize(value);
+  if (!v) return false;
+  // If value starts with revenue/expense prefix, it's a category, not a bank
+  const categoryPrefixes = ["receita", "despesa", "custo", "taxa", "tarifa", "pagamento"];
+  if (categoryPrefixes.some(p => v.startsWith(p))) return false;
+  return BANK_NAMES.some(b => v.includes(b) || v === b);
 }
 ```
 
-Em seguida, marcar todos os cleanups individuais dentro dos parsers para que sejam **ignorados** (já que a limpeza global já foi feita). A forma mais segura: cada parser interno já tem seu bloco de cleanup — como a limpeza global já rodou, esses blocos simplesmente não encontrarão nada para deletar, então **não precisam ser removidos**. Nenhum risco de dupla execução.
+3. **Mesma correção no `rebuild-categories/index.ts`**: Aplicar a mesma lógica de prefixos de categoria.
+
+**Arquivo: `supabase/functions/rebuild-categories/index.ts`**
+
+4. **Ampliar escopo de fix**: O `rebuild-categories` atualmente só corrige categorias que são "bank names" ou "Geral". Expandir para também corrigir "Sem categoria" quando o `raw_data` contém uma categoria válida. Mudar a condição de `currentIsBad`:
+
+```typescript
+const currentIsBad = looksLikeBankName(currentCategory) 
+  || currentCategory === "Geral" 
+  || currentCategory === "Sem categoria";
+```
+
+### Dados a corrigir
+
+Após deploy, chamar `rebuild-categories` para re-processar as 424+ transações com categorias erradas. Isso será feito automaticamente pela função já existente.
 
 ### Escopo restrito
 
-- **Apenas 1 arquivo modificado**: `supabase/functions/dre-sync/index.ts`
-- **Apenas inserção de ~12 linhas** no handler principal
-- **Zero alteração** nos parsers individuais, na lógica de detecção ou na UI
-- **Zero impacto** nos fluxos de transações, APR, bank_balances ou qualquer outro pipeline
+- **2 arquivos edge function** modificados
+- **Zero alteração** na UI, hooks ou componentes React
+- **Zero impacto** em DRE, APR, bank_balances ou forecast
+- Transferências internas já são excluídas pela UI (`useTransactions` exclui `TRANSFER` por padrão)
 
 ### Verificação
 
-Após a correção, invocar a edge function `dre-sync` para confirmar que a sincronização passa sem erro 500.
+Após deploy, invocar `rebuild-categories` e consultar a contagem de categorias para confirmar que "Sem categoria" e "Geral" diminuíram significativamente, e que transações com "Transferência interna" no raw_data passaram para `movement_type = TRANSFER`.
 
