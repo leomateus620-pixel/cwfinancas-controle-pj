@@ -91,10 +91,21 @@ Deno.serve(async (req) => {
     }
 
     // Process in pages
+    // Transfer detection keywords
+    const TRANSFER_KEYWORDS = ["transferencia interna", "transferência interna", "aplicacao", "aplicação", "resgate"];
+    function detectTransfer(cat: string): boolean {
+      const norm = (cat || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      return TRANSFER_KEYWORDS.some(kw => {
+        const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return norm.includes(kwNorm);
+      });
+    }
+
     let totalFixed = 0;
     let totalChecked = 0;
     let totalAlreadyOk = 0;
     let descriptionsFixed = 0;
+    let transfersFixed = 0;
     const pageSize = 500;
     let from = 0;
     let hasMore = true;
