@@ -69,15 +69,17 @@ Deno.serve(async (req) => {
 
     // Support service-role calls with explicit user_id
     let userId: string;
-    if (body.user_id && token === SUPABASE_SERVICE_ROLE_KEY) {
-      userId = body.user_id;
-    } else {
-      const { data: userData, error: userError } = await supabase.auth.getUser(token);
-      if (userError || !userData?.user) {
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !userData?.user) {
+      // If user auth failed, check if this is a service-role call with user_id
+      if (body.user_id) {
+        userId = body.user_id;
+      } else {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+    } else {
       userId = userData.user.id;
     }
 
