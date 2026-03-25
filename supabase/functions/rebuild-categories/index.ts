@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     // Fetch transactions with raw_data
     let query = supabase
       .from("transactions")
-      .select("id, category, description, raw_data, source_tab, source_sheet_id")
+      .select("id, category, description, raw_data, source_tab, source_sheet_id, movement_type")
       .eq("user_id", userId)
       .eq("source", "sheets")
       .neq("movement_type", "TRANSFER")
