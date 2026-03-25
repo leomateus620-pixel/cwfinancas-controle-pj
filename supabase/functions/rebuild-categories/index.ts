@@ -21,6 +21,9 @@ const BANK_NAMES = [
 function looksLikeBankName(value: string): boolean {
   const v = (value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
   if (!v) return false;
+  // If value starts with a revenue/expense prefix, it's a category, not a bank name
+  const categoryPrefixes = ["receita", "despesa", "custo", "taxa", "tarifa", "pagamento", "transferencia"];
+  if (categoryPrefixes.some(p => v.startsWith(p))) return false;
   return BANK_NAMES.some(b => v.includes(b) || v === b);
 }
 
@@ -61,23 +64,31 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const token = authHeader.replace("Bearer ", "");
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userId = userData.user.id;
     const body = await req.json();
     const { connection_id, fix_descriptions } = body;
+
+    // Support service-role calls with explicit user_id
+    let userId: string;
+    const { data: userData, error: userError } = await supabase.auth.getUser(token);
+    if (userError || !userData?.user) {
+      // If user auth failed, check if this is a service-role call with user_id
+      if (body.user_id) {
+        userId = body.user_id;
+      } else {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      userId = userData.user.id;
+    }
 
     console.log(`[rebuild-categories] User: ${userId}, Connection: ${connection_id || "ALL"}, fixDescriptions: ${!!fix_descriptions}`);
 
     // Fetch transactions with raw_data
     let query = supabase
       .from("transactions")
-      .select("id, category, description, raw_data, source_tab, source_sheet_id")
+      .select("id, category, description, raw_data, source_tab, source_sheet_id, movement_type")
       .eq("user_id", userId)
       .eq("source", "sheets")
       .neq("movement_type", "TRANSFER")
@@ -88,10 +99,21 @@ Deno.serve(async (req) => {
     }
 
     // Process in pages
+    // Transfer detection keywords
+    const TRANSFER_KEYWORDS = ["transferencia interna", "transferência interna", "aplicacao", "aplicação", "resgate"];
+    function detectTransfer(cat: string): boolean {
+      const norm = (cat || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      return TRANSFER_KEYWORDS.some(kw => {
+        const kwNorm = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return norm.includes(kwNorm);
+      });
+    }
+
     let totalFixed = 0;
     let totalChecked = 0;
     let totalAlreadyOk = 0;
     let descriptionsFixed = 0;
+    let transfersFixed = 0;
     const pageSize = 500;
     let from = 0;
     let hasMore = true;
@@ -173,11 +195,21 @@ Deno.serve(async (req) => {
         if (!newCategory) newCategory = "Sem categoria";
 
         const currentCategory = tx.category || "";
-        const currentIsBad = looksLikeBankName(currentCategory) || currentCategory === "Geral";
+        const currentIsBad = looksLikeBankName(currentCategory) || currentCategory === "Geral" || currentCategory === "Sem categoria";
         const newIsDifferent = newCategory !== currentCategory;
 
         if (currentIsBad && newIsDifferent) {
           updates.category = newCategory;
+        }
+
+        // === Fix movement_type for transfers ===
+        const effectiveCategory = (updates.category as string) || currentCategory;
+        const { categoryCol: catCol2 } = findCategoryColumn(rawData);
+        const rawCatForTransfer = catCol2 ? String(rawData[catCol2] || "").trim() : effectiveCategory;
+        const shouldBeTransfer = detectTransfer(rawCatForTransfer) || detectTransfer(effectiveCategory);
+        
+        if (shouldBeTransfer && tx.movement_type !== "TRANSFER") {
+          updates.movement_type = "TRANSFER";
         }
 
         // Apply updates if any
@@ -192,22 +224,24 @@ Deno.serve(async (req) => {
           } else {
             if (updates.category) totalFixed++;
             if (updates.description) descriptionsFixed++;
+            if (updates.movement_type) transfersFixed++;
           }
         } else {
           totalAlreadyOk++;
         }
       }
 
-      console.log(`[rebuild-categories] Progress: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, ok=${totalAlreadyOk}`);
+      console.log(`[rebuild-categories] Progress: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, transfers=${transfersFixed}, ok=${totalAlreadyOk}`);
     }
 
-    console.log(`[rebuild-categories] DONE: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, alreadyOk=${totalAlreadyOk}`);
+    console.log(`[rebuild-categories] DONE: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, transfers=${transfersFixed}, alreadyOk=${totalAlreadyOk}`);
 
     return new Response(JSON.stringify({
       success: true,
       total_checked: totalChecked,
       total_fixed: totalFixed,
       descriptions_fixed: descriptionsFixed,
+      transfers_fixed: transfersFixed,
       total_already_ok: totalAlreadyOk,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
