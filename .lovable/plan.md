@@ -1,73 +1,50 @@
 
 
-## Plano: Vídeo Marketing CW Finanças — Instagram Feed 1:1
+## Plano: Corrigir erro de duplicação na sincronização DRE
 
-### Formato
-- **1080x1080** (feed quadrado Instagram)
-- **15 segundos** (450 frames a 30fps) — ideal para atenção no feed
-- **Sem áudio** (muted autoplay no Instagram)
+### Diagnóstico
 
-### Direção Criativa
+**Erro**: `duplicate key value violates unique constraint "dre_periods_unique_period_scenario"`
 
-**Estética**: Liquid Glass Premium — superfícies translúcidas com blur, bordas luminosas, gradientes mesh azul/teal sobre fundo dark navy. Consistente com o design system existente do app.
+**Causa raiz**: A limpeza antes do INSERT é fragmentada — cada parser (DEFAULT, SAH, GR, STARTSYNC, LCF_NUCLEO) limpa apenas períodos do seu próprio `template_type`. Quando a detecção de template muda entre sincronizações (ex: de DEFAULT para GR), os períodos antigos com `template_type` diferente mas mesma `period_key` permanecem no banco, causando violação da constraint única `(user_id, sheet_id, period_key, COALESCE(scenario, '__none__'))`.
 
-**Paleta** (da brand):
-- Primary: `#3B82F6` (azul institucional)
-- Teal accent: `#14B8A6`
-- Navy BG: `hsl(222 47% 11%)`
-- Success: `#059669`
-- Destructive: `#DC2626`
-- White/glass: `rgba(255,255,255,0.08-0.15)`
+### Solução
 
-**Tipografia**: Inter (já usada no app)
+Adicionar uma **limpeza global no início** da sincronização (antes de qualquer parsing), deletando TODOS os `dre_periods` e `dre_lines` do `user_id + sheet_id` (connection_id). Isso é seguro porque a sync sempre reimporta todos os dados de todas as abas DRE da planilha.
 
-**Frase destaque**: "Seu Financeiro Controlado com um Clique"
+### Mudança
 
-### Estrutura de Cenas (5 cenas, ~15s total)
+**Arquivo: `supabase/functions/dre-sync/index.ts`**
 
-| Cena | Frames | Duração | Conteúdo |
-|------|--------|---------|----------|
-| 1 — Logo Reveal | 0-75 | 2.5s | Logo CW com efeito glass blur-in, tagline "Controle PJ" |
-| 2 — Features Grid | 75-180 | 3.5s | 6 ícones de features aparecendo em stagger (Receitas, Despesas, Fluxo de Caixa, DRE, Contas, Previsões) com glass cards |
-| 3 — KPI Showcase | 180-270 | 3s | KPIs animados (Receita +84.2k, Despesas -52.8k, Lucro +31.4k) com gráfico SVG crescendo |
-| 4 — Frase Destaque | 270-375 | 3.5s | "Seu Financeiro Controlado com um Clique" — tipografia cinematográfica com glow azul |
-| 5 — CTA Final | 375-450 | 2.5s | Logo + "cwfinancas.app" + glass orbs |
+Após obter as abas candidatas (linha ~1877), antes do loop de parsing (linha ~1894), inserir:
 
-### Efeitos Visuais
-- **Background persistente**: Mesh gradient navy animado com orbs flutuantes (azul/teal) em slow drift
-- **Glass cards**: `backdrop-filter` substituído por `background: rgba(255,255,255,0.08)` + border luminosa (sem `backdropFilter` por limitação do sandbox)
-- **Transições**: Wipe e fade entre cenas via `@remotion/transitions`
-- **Motion system**: Spring entrada (damping: 20, stiffness: 200), fade exit
+```typescript
+// Global cleanup: delete ALL existing DRE data for this connection
+// This prevents duplicate key errors when template_type changes between syncs
+const { data: allOldPeriods } = await supabase
+  .from("dre_periods")
+  .select("id")
+  .eq("user_id", userId)
+  .eq("sheet_id", connection_id);
 
-### Assets
-- Logo: `src/assets/logo-cw-pj.png` e `src/assets/logo-full.png` — copiar para `remotion/public/`
-- Ícones: Renderizados via SVG inline (Lucide-style)
-
-### Arquivos Remotion
-
-```
-remotion/
-  src/
-    index.ts
-    Root.tsx
-    MainVideo.tsx
-    scenes/
-      LogoReveal.tsx
-      FeaturesGrid.tsx
-      KPIShowcase.tsx
-      HeroPhrase.tsx
-      CTAFinal.tsx
-    components/
-      GlassBackground.tsx
-      GlassCard.tsx
-  public/
-    logo-cw-pj.png
-    logo-full.png
-  scripts/
-    render-remotion.mjs
+if (allOldPeriods && allOldPeriods.length > 0) {
+  const allOldIds = allOldPeriods.map((p: any) => p.id);
+  await supabase.from("dre_validation_issues").delete().in("period_id", allOldIds);
+  await supabase.from("dre_lines").delete().in("period_id", allOldIds);
+  await supabase.from("dre_periods").delete().in("id", allOldIds);
+}
 ```
 
-### Entrega
-- Renderizar via script programático para `/mnt/documents/cw-financas-marketing.mp4`
-- QA visual com `bunx remotion still` em frames-chave antes do render final
+Em seguida, marcar todos os cleanups individuais dentro dos parsers para que sejam **ignorados** (já que a limpeza global já foi feita). A forma mais segura: cada parser interno já tem seu bloco de cleanup — como a limpeza global já rodou, esses blocos simplesmente não encontrarão nada para deletar, então **não precisam ser removidos**. Nenhum risco de dupla execução.
+
+### Escopo restrito
+
+- **Apenas 1 arquivo modificado**: `supabase/functions/dre-sync/index.ts`
+- **Apenas inserção de ~12 linhas** no handler principal
+- **Zero alteração** nos parsers individuais, na lógica de detecção ou na UI
+- **Zero impacto** nos fluxos de transações, APR, bank_balances ou qualquer outro pipeline
+
+### Verificação
+
+Após a correção, invocar a edge function `dre-sync` para confirmar que a sincronização passa sem erro 500.
 
