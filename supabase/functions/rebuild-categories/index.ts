@@ -194,6 +194,16 @@ Deno.serve(async (req) => {
           updates.category = newCategory;
         }
 
+        // === Fix movement_type for transfers ===
+        const effectiveCategory = (updates.category as string) || currentCategory;
+        const { categoryCol: catCol2 } = findCategoryColumn(rawData);
+        const rawCatForTransfer = catCol2 ? String(rawData[catCol2] || "").trim() : effectiveCategory;
+        const shouldBeTransfer = detectTransfer(rawCatForTransfer) || detectTransfer(effectiveCategory);
+        
+        if (shouldBeTransfer && tx.movement_type !== "TRANSFER") {
+          updates.movement_type = "TRANSFER";
+        }
+
         // Apply updates if any
         if (Object.keys(updates).length > 0) {
           const { error: updateError } = await supabase
@@ -206,6 +216,7 @@ Deno.serve(async (req) => {
           } else {
             if (updates.category) totalFixed++;
             if (updates.description) descriptionsFixed++;
+            if (updates.movement_type) transfersFixed++;
           }
         } else {
           totalAlreadyOk++;
