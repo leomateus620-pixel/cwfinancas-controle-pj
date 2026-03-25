@@ -1890,6 +1890,22 @@ Deno.serve(async (req) => {
 
     console.log(`[dre-sync] Tab scores: ${tabData.map(t => `${t.tab}=${t.score}`).join(", ")}`);
 
+    // 5.5 Global cleanup: delete ALL existing DRE data for this connection
+    // This prevents duplicate key errors when template_type changes between syncs
+    const { data: allOldPeriods } = await supabase
+      .from("dre_periods")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("sheet_id", connection_id);
+
+    if (allOldPeriods && allOldPeriods.length > 0) {
+      const allOldIds = allOldPeriods.map((p: any) => p.id);
+      await supabase.from("dre_validation_issues").delete().in("period_id", allOldIds);
+      await supabase.from("dre_lines").delete().in("period_id", allOldIds);
+      await supabase.from("dre_periods").delete().in("id", allOldIds);
+      console.log(`[dre-sync] Global cleanup: removed ${allOldIds.length} old periods`);
+    }
+
     // 6. Try new models first (SAH, StartSync, GR)
     const allResults: any[] = [];
     const processedTabs = new Set<string>();
