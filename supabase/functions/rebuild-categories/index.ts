@@ -64,16 +64,22 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
     const token = authHeader.replace("Bearer ", "");
-    const { data: userData, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userId = userData.user.id;
     const body = await req.json();
     const { connection_id, fix_descriptions } = body;
+
+    // Support service-role calls with explicit user_id
+    let userId: string;
+    if (body.user_id && token === SUPABASE_SERVICE_ROLE_KEY) {
+      userId = body.user_id;
+    } else {
+      const { data: userData, error: userError } = await supabase.auth.getUser(token);
+      if (userError || !userData?.user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      userId = userData.user.id;
+    }
 
     console.log(`[rebuild-categories] User: ${userId}, Connection: ${connection_id || "ALL"}, fixDescriptions: ${!!fix_descriptions}`);
 
