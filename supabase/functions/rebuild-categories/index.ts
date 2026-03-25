@@ -223,16 +223,17 @@ Deno.serve(async (req) => {
         }
       }
 
-      console.log(`[rebuild-categories] Progress: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, ok=${totalAlreadyOk}`);
+      console.log(`[rebuild-categories] Progress: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, transfers=${transfersFixed}, ok=${totalAlreadyOk}`);
     }
 
-    console.log(`[rebuild-categories] DONE: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, alreadyOk=${totalAlreadyOk}`);
+    console.log(`[rebuild-categories] DONE: checked=${totalChecked}, fixed=${totalFixed}, descriptions=${descriptionsFixed}, transfers=${transfersFixed}, alreadyOk=${totalAlreadyOk}`);
 
     return new Response(JSON.stringify({
       success: true,
       total_checked: totalChecked,
       total_fixed: totalFixed,
       descriptions_fixed: descriptionsFixed,
+      transfers_fixed: transfersFixed,
       total_already_ok: totalAlreadyOk,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
