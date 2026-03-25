@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
         if (!newCategory) newCategory = "Sem categoria";
 
         const currentCategory = tx.category || "";
-        const currentIsBad = looksLikeBankName(currentCategory) || currentCategory === "Geral";
+        const currentIsBad = looksLikeBankName(currentCategory) || currentCategory === "Geral" || currentCategory === "Sem categoria";
         const newIsDifferent = newCategory !== currentCategory;
 
         if (currentIsBad && newIsDifferent) {

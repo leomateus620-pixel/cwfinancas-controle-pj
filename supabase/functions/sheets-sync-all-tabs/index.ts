@@ -2368,8 +2368,13 @@ Deno.serve(async (req) => {
 
           // Use tab's periodKey to infer date if not found
           const finalDate = date || (tab.periodKey ? `${tab.periodKey}-01` : new Date().toISOString().split("T")[0]);
-          let category = mapping.category ? safeStr(rowObj[mapping.category]).trim() || "Geral" : "Geral";
-          // Safety: if category looks like a bank name, replace with "Sem categoria"
+          const rawCategory = mapping.category ? safeStr(rowObj[mapping.category]).trim() || "Geral" : "Geral";
+          
+          // Detect movement type BEFORE sanitizing category (so "Transferência interna" is caught)
+          const movementType = detectMovementType(rawCategory, description, type);
+          
+          // Now sanitize category for storage
+          let category = rawCategory;
           if (category !== "Geral" && looksLikeBankName(category)) {
             category = "Sem categoria";
           }
@@ -2389,8 +2394,6 @@ Deno.serve(async (req) => {
 
           // ===== CONTENT HASH (content-based, for change detection) =====
           const contentHash = computeContentHash(finalDate, amount, description, category, clientVendor);
-
-          const movementType = detectMovementType(category, description, type);
 
           batch.push({
             user_id: userId,
