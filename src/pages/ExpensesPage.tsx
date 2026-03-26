@@ -376,12 +376,13 @@ export function ExpensesPage() {
                         innerRadius={70}
                         outerRadius={130}
                         paddingAngle={3}
-                        animationDuration={900}
+                        animationDuration={700}
                         animationEasing="ease-out"
-                        activeIndex={activeIndex ?? undefined}
+                        activeIndex={activeIndex !== null ? activeIndex : undefined}
                         activeShape={renderActiveShape}
                         onMouseEnter={(_, index) => setActiveIndex(index)}
                         onMouseLeave={() => setActiveIndex(null)}
+                        isAnimationActive={activeIndex === null}
                         label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, category }) => {
                           if (percent < 0.04) return null;
                           const RADIAN = Math.PI / 180;
