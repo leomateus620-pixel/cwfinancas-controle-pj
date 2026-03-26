@@ -403,8 +403,7 @@ export function ExpensesPage() {
                             fill={entry.color}
                             stroke="hsl(var(--background))"
                             strokeWidth={2}
-                            opacity={activeIndex === null || activeIndex === i ? 1 : 0.4}
-                            style={{ transition: 'opacity 200ms ease' }}
+                            opacity={activeIndex === null || activeIndex === i ? 1 : 0.45}
                           />
                         ))}
                       </Pie>
