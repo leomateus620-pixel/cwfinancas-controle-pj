@@ -105,15 +105,16 @@ export function ExpensesPage() {
     [validCategoryBreakdown]
   );
 
+  // Use totals.expense as the denominator so percentages match the KPI total
   const pieData = useMemo(() =>
     validCategoryBreakdown.map((item, i) => ({
       ...item,
       color: CHART_COLORS[i % CHART_COLORS.length],
-      percent: totalValidCategories > 0
-        ? ((item.amount / totalValidCategories) * 100).toFixed(1)
+      percent: totals.expense > 0
+        ? ((item.amount / totals.expense) * 100).toFixed(1)
         : "0",
     })),
-    [validCategoryBreakdown, totalValidCategories]
+    [validCategoryBreakdown, totals.expense]
   );
 
   // Count transactions per category
