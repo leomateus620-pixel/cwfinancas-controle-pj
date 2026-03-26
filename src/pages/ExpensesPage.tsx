@@ -344,7 +344,7 @@ export function ExpensesPage() {
             <div className="w-px h-8 bg-border/40" />
             <div className="text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-              <p className="text-base font-bold text-foreground">{formatCurrencyBR(totalValidCategories)}</p>
+              <p className="text-base font-bold text-foreground">{formatCurrencyBR(totals.expense)}</p>
             </div>
             {topCategoryData && (
               <>
