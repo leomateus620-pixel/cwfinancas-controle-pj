@@ -151,14 +151,12 @@ export function ExpensesPage() {
     return insights.slice(0, 3);
   }, [pieData, totals.expense]);
 
-  // Active shape renderer for donut
+  // Active shape renderer for donut — simplified to avoid render jank
   const renderActiveShape = useCallback((props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
     return (
-      <g>
-        <Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 6}
-          startAngle={startAngle} endAngle={endAngle} fill={fill} opacity={0.95} />
-      </g>
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius - 2} outerRadius={outerRadius + 4}
+        startAngle={startAngle} endAngle={endAngle} fill={fill} />
     );
   }, []);
 
