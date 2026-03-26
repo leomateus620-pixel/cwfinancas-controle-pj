@@ -105,15 +105,16 @@ export function ExpensesPage() {
     [validCategoryBreakdown]
   );
 
+  // Use totals.expense as the denominator so percentages match the KPI total
   const pieData = useMemo(() =>
     validCategoryBreakdown.map((item, i) => ({
       ...item,
       color: CHART_COLORS[i % CHART_COLORS.length],
-      percent: totalValidCategories > 0
-        ? ((item.amount / totalValidCategories) * 100).toFixed(1)
+      percent: totals.expense > 0
+        ? ((item.amount / totals.expense) * 100).toFixed(1)
         : "0",
     })),
-    [validCategoryBreakdown, totalValidCategories]
+    [validCategoryBreakdown, totals.expense]
   );
 
   // Count transactions per category
@@ -138,7 +139,7 @@ export function ExpensesPage() {
     // Top 3 concentration
     if (pieData.length >= 3) {
       const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
-      const top3Pct = totalValidCategories > 0 ? ((top3Sum / totalValidCategories) * 100).toFixed(0) : "0";
+      const top3Pct = totals.expense > 0 ? ((top3Sum / totals.expense) * 100).toFixed(0) : "0";
       insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
     }
     // Dispersion
@@ -148,16 +149,14 @@ export function ExpensesPage() {
       insights.push(`${pieData.length} categorias ativas no período`);
     }
     return insights.slice(0, 3);
-  }, [pieData, totalValidCategories]);
+  }, [pieData, totals.expense]);
 
-  // Active shape renderer for donut
+  // Active shape renderer for donut — simplified to avoid render jank
   const renderActiveShape = useCallback((props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
     return (
-      <g>
-        <Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 6}
-          startAngle={startAngle} endAngle={endAngle} fill={fill} opacity={0.95} />
-      </g>
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius - 2} outerRadius={outerRadius + 4}
+        startAngle={startAngle} endAngle={endAngle} fill={fill} />
     );
   }, []);
 
@@ -345,7 +344,7 @@ export function ExpensesPage() {
             <div className="w-px h-8 bg-border/40" />
             <div className="text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-              <p className="text-base font-bold text-foreground">{formatCurrencyBR(totalValidCategories)}</p>
+              <p className="text-base font-bold text-foreground">{formatCurrencyBR(totals.expense)}</p>
             </div>
             {topCategoryData && (
               <>
@@ -377,12 +376,13 @@ export function ExpensesPage() {
                         innerRadius={70}
                         outerRadius={130}
                         paddingAngle={3}
-                        animationDuration={900}
+                        animationDuration={700}
                         animationEasing="ease-out"
-                        activeIndex={activeIndex ?? undefined}
+                        activeIndex={activeIndex !== null ? activeIndex : undefined}
                         activeShape={renderActiveShape}
                         onMouseEnter={(_, index) => setActiveIndex(index)}
                         onMouseLeave={() => setActiveIndex(null)}
+                        isAnimationActive={activeIndex === null}
                         label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, category }) => {
                           if (percent < 0.04) return null;
                           const RADIAN = Math.PI / 180;
@@ -404,8 +404,7 @@ export function ExpensesPage() {
                             fill={entry.color}
                             stroke="hsl(var(--background))"
                             strokeWidth={2}
-                            opacity={activeIndex === null || activeIndex === i ? 1 : 0.4}
-                            style={{ transition: 'opacity 200ms ease' }}
+                            opacity={activeIndex === null || activeIndex === i ? 1 : 0.45}
                           />
                         ))}
                       </Pie>
