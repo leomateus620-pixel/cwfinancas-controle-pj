@@ -139,7 +139,7 @@ export function ExpensesPage() {
     // Top 3 concentration
     if (pieData.length >= 3) {
       const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
-      const top3Pct = totalValidCategories > 0 ? ((top3Sum / totalValidCategories) * 100).toFixed(0) : "0";
+      const top3Pct = totals.expense > 0 ? ((top3Sum / totals.expense) * 100).toFixed(0) : "0";
       insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
     }
     // Dispersion
@@ -149,7 +149,7 @@ export function ExpensesPage() {
       insights.push(`${pieData.length} categorias ativas no período`);
     }
     return insights.slice(0, 3);
-  }, [pieData, totalValidCategories]);
+  }, [pieData, totals.expense]);
 
   // Active shape renderer for donut
   const renderActiveShape = useCallback((props: any) => {
