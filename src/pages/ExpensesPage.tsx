@@ -55,6 +55,7 @@ export function ExpensesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
 
