@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   TrendingDown, Plus, Filter, Download, CreditCard, Building2,
   ArrowUpRight, Loader2, Receipt, Calculator, Lightbulb,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, BarChart3, Target, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import {
   Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, Line, PieChart, Pie, Cell,
+  ComposedChart, Line, PieChart, Pie, Cell, Sector,
 } from "recharts";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { cn } from "@/lib/utils";
