@@ -116,6 +116,51 @@ export function ExpensesPage() {
     [validCategoryBreakdown, totalValidCategories]
   );
 
+  // Count transactions per category
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    transactions.forEach(t => {
+      if (isValidCategory(t.category)) {
+        counts[t.category] = (counts[t.category] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [transactions]);
+
+  // Analytical insights
+  const categoryInsights = useMemo(() => {
+    if (pieData.length === 0) return [];
+    const insights: string[] = [];
+    // Top category
+    if (pieData[0]) {
+      insights.push(`"${pieData[0].category}" lidera com ${pieData[0].percent}% das despesas (${formatCurrencyBR(pieData[0].amount)})`);
+    }
+    // Top 3 concentration
+    if (pieData.length >= 3) {
+      const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
+      const top3Pct = totalValidCategories > 0 ? ((top3Sum / totalValidCategories) * 100).toFixed(0) : "0";
+      insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
+    }
+    // Dispersion
+    if (pieData.length >= 5) {
+      insights.push(`${pieData.length} categorias ativas — boa diversificação dos gastos`);
+    } else if (pieData.length >= 2) {
+      insights.push(`${pieData.length} categorias ativas no período`);
+    }
+    return insights.slice(0, 3);
+  }, [pieData, totalValidCategories]);
+
+  // Active shape renderer for donut
+  const renderActiveShape = useCallback((props: any) => {
+    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+    return (
+      <g>
+        <Sector cx={cx} cy={cy} innerRadius={innerRadius - 4} outerRadius={outerRadius + 6}
+          startAngle={startAngle} endAngle={endAngle} fill={fill} opacity={0.95} />
+      </g>
+    );
+  }, []);
+
   const topCategoryData = validCategoryBreakdown[0];
   const topPercent = topCategoryData && totals.expense > 0
     ? ((topCategoryData.amount / totals.expense) * 100).toFixed(0) : "0";
