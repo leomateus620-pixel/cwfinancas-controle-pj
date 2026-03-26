@@ -26,14 +26,21 @@ import { usePagination } from "@/hooks/usePerformance";
 import { TablePagination } from "@/components/ui/table-pagination";
 
 const CHART_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(221 75% 65%)",
-  "hsl(160 60% 50%)",
-  "hsl(38 80% 55%)",
+  "hsl(0 84% 60%)",       // red
+  "hsl(221 75% 65%)",     // blue
+  "hsl(142 60% 50%)",     // green
+  "hsl(38 92% 55%)",      // amber
+  "hsl(262 70% 60%)",     // purple
+  "hsl(190 80% 45%)",     // cyan
+  "hsl(328 70% 55%)",     // pink
+  "hsl(45 90% 50%)",      // yellow
+  "hsl(160 60% 45%)",     // teal
+  "hsl(15 80% 55%)",      // orange
+  "hsl(270 50% 50%)",     // indigo
+  "hsl(200 70% 55%)",     // sky
+  "hsl(100 55% 45%)",     // lime
+  "hsl(350 60% 45%)",     // rose
+  "hsl(180 50% 40%)",     // dark teal
 ];
 
 const formatDate = (dateStr: string) =>
