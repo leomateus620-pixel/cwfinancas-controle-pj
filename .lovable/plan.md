@@ -1,79 +1,69 @@
 
 
-## Plano: Corrigir categorias de receitas e classificação de transferências
+## Plano: Reestruturar Card "Categorias de Despesas" como Componente Analítico Principal
 
-### Diagnóstico
+### Layout Atual vs Novo
 
-Analisei os dados reais no banco e encontrei **dois bugs** no pipeline de importação (`sheets-sync-all-tabs`):
+```text
+ATUAL:
+┌─────────────────┬─────────────────┐
+│ Despesas Mensais│ Categorias (pie)│  ← 50/50
+└─────────────────┴─────────────────┘
+┌───────────────────────────────────┐
+│ Top 5 Maiores Gastos              │
+└───────────────────────────────────┘
 
-**Bug 1 — `looksLikeBankName` muito agressivo (424 receitas afetadas)**
-
-A função `looksLikeBankName` usa `v.includes(bankName)`. O valor "Receita Asaas" contém "asaas" → é incorretamente classificado como nome de banco → categoria vira "Sem categoria". Mas "Receita Asaas" é uma categoria legítima de receita de cobranças.
-
-Dados reais: 364 transações com `raw_data.Categoria = "Receita Asaas"` → importadas como "Sem categoria".
-
-**Bug 2 — Transfer detection roda DEPOIS da sanitização (123 transferências vazando)**
-
-A linha 2370-2371 substitui a categoria por "Sem categoria" ANTES de `detectMovementType()` na linha 2390. Quando a categoria original é "Transferência interna" e contém "asaas" → vira "Sem categoria" → `detectMovementType` não detecta mais como TRANSFER → transação vaza para os gráficos como INCOME/EXPENSE.
-
-Dados reais: 123 transações com `Categoria = "Transferência interna"` que não foram classificadas como TRANSFER.
-
-### Solução
-
-**Arquivo: `supabase/functions/sheets-sync-all-tabs/index.ts`**
-
-1. **Reordenar a lógica**: Mover `detectMovementType` para ANTES da sanitização de banco. Usar a categoria RAW da planilha para detectar transferências:
-
-```
-// ANTES (bugado):
-let category = raw || "Geral";
-if (looksLikeBankName(category)) category = "Sem categoria";  // mata "Transferência interna"
-movementType = detectMovementType(category, ...);              // não detecta mais
-
-// DEPOIS (corrigido):
-let rawCategory = raw || "Geral";
-movementType = detectMovementType(rawCategory, ...);           // detecta com categoria original
-let category = rawCategory;
-if (looksLikeBankName(category)) category = "Sem categoria";
+NOVO:
+┌───────────────────────────────────┐
+│ CATEGORIAS DE DESPESAS (dominante)│  ← full-width
+│ Header executivo + resumo         │
+│ Donut grande + Grid de categorias │
+│ Insights analíticos               │
+└───────────────────────────────────┘
+┌─────────────────┬─────────────────┐
+│ Despesas Mensais│ Top 5 Gastos    │  ← secundários
+└─────────────────┴─────────────────┘
 ```
 
-2. **Refinar `looksLikeBankName`**: A função deve verificar se o valor é PURAMENTE um nome de banco, não um composto como "Receita Asaas". Adicionar exceções para categorias que CONTÊM um banco mas têm prefixo de receita/despesa:
+### Mudanças
 
-```typescript
-function looksLikeBankName(value: string): boolean {
-  const v = normalize(value);
-  if (!v) return false;
-  // If value starts with revenue/expense prefix, it's a category, not a bank
-  const categoryPrefixes = ["receita", "despesa", "custo", "taxa", "tarifa", "pagamento"];
-  if (categoryPrefixes.some(p => v.startsWith(p))) return false;
-  return BANK_NAMES.some(b => v.includes(b) || v === b);
-}
-```
+**Arquivo: `src/pages/ExpensesPage.tsx`** — único arquivo modificado
 
-3. **Mesma correção no `rebuild-categories/index.ts`**: Aplicar a mesma lógica de prefixos de categoria.
+1. **Novo layout da seção de gráficos (linhas 272-401)**:
+   - Card "Categorias" sai do grid 50/50 e vira **full-width** acima
+   - Card "Despesas Mensais" desce para grid 50/50 com "Top 5 Maiores Gastos"
 
-**Arquivo: `supabase/functions/rebuild-categories/index.ts`**
+2. **Novo card "Categorias de Despesas" com**:
+   - **Header executivo**: título, subtítulo, mini-resumo (total categorias, total gasto, maior categoria)
+   - **Layout interno desktop**: donut à esquerda (maior, innerRadius=70, outerRadius=130, paddingAngle=3) + grid de categorias à direita em 2 colunas
+   - **Layout tablet**: donut acima, grid 2 colunas abaixo
+   - **Layout mobile**: donut acima, grid 1 coluna abaixo
+   - **Sem scroll interno**: grid usa altura natural
+   - **Paleta expandida**: 12+ cores com alta diferenciação
+   - **Estado `activeIndex`**: hover na lista destaca fatia (opacity), hover na fatia destaca item na lista — sincronização bidirecional via `onMouseEnter`/`onMouseLeave` + Recharts `activeIndex`
+   - **Tooltip premium**: nome, valor formatado, percentual, ranking (#1, #2...)
+   - **Labels no gráfico**: apenas categorias ≥4% mostram label direto na fatia
+   - **Grid de categorias**: cada item tem dot de cor, nome, %, valor, ranking discreto, count de transações (já disponível via `transactions.filter`)
+   - **Insights no rodapé** (max 3, useMemo): maior categoria + %, concentração top 3, dispersão
 
-4. **Ampliar escopo de fix**: O `rebuild-categories` atualmente só corrige categorias que são "bank names" ou "Geral". Expandir para também corrigir "Sem categoria" quando o `raw_data` contém uma categoria válida. Mudar a condição de `currentIsBad`:
+3. **Dados**: zero mudança — mesmos `pieData`, `validCategoryBreakdown`, `totalValidCategories` já existentes. Adicionar apenas:
+   - `useMemo` para count por categoria (do array `transactions` já carregado)
+   - `useMemo` para insights (derivado de `pieData`)
+   - `useState<number | null>` para `activeIndex`
 
-```typescript
-const currentIsBad = looksLikeBankName(currentCategory) 
-  || currentCategory === "Geral" 
-  || currentCategory === "Sem categoria";
-```
+4. **Top 5 Maiores Gastos**: mover para grid secundário ao lado de "Despesas Mensais", adaptado para caber em card glass compacto
 
-### Dados a corrigir
+### Responsividade
 
-Após deploy, chamar `rebuild-categories` para re-processar as 424+ transações com categorias erradas. Isso será feito automaticamente pela função já existente.
+| Viewport | Categorias | Despesas Mensais + Top 5 |
+|----------|-----------|-------------------------|
+| Desktop (lg+) | Donut esquerda + grid 2col direita | Grid 2 colunas abaixo |
+| Tablet (sm-lg) | Donut acima + grid 2col abaixo | Stack vertical |
+| Mobile (<sm) | Donut centralizado + grid 1col | Stack vertical |
 
 ### Escopo restrito
-
-- **2 arquivos edge function** modificados
-- **Zero alteração** na UI, hooks ou componentes React
-- **Zero impacto** em DRE, APR, bank_balances ou forecast
-- Transferências internas já são excluídas pela UI (`useTransactions` exclui `TRANSFER` por padrão)
-
-### Verificação
-
-Após deploy, invocar `rebuild-categories` e consultar a contagem de categorias para confirmar que "Sem categoria" e "Geral" diminuíram significativamente, e que transações com "Transferência interna" no raw_data passaram para `movement_type = TRANSFER`.
+- **1 arquivo**: `src/pages/ExpensesPage.tsx`
+- Zero novos hooks, queries, endpoints
+- Mesmos dados, mesma origem
+- Sem impacto em outros cards, filtros ou navegação
 
