@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   TrendingDown, Plus, Filter, Download, CreditCard, Building2,
   ArrowUpRight, Loader2, Receipt, Calculator, Lightbulb,
@@ -26,21 +26,21 @@ import { usePagination } from "@/hooks/usePerformance";
 import { TablePagination } from "@/components/ui/table-pagination";
 
 const CHART_COLORS = [
-  "hsl(0 84% 60%)",       // red
-  "hsl(221 75% 65%)",     // blue
-  "hsl(142 60% 50%)",     // green
-  "hsl(38 92% 55%)",      // amber
-  "hsl(262 70% 60%)",     // purple
-  "hsl(190 80% 45%)",     // cyan
-  "hsl(328 70% 55%)",     // pink
-  "hsl(45 90% 50%)",      // yellow
-  "hsl(160 60% 45%)",     // teal
-  "hsl(15 80% 55%)",      // orange
-  "hsl(270 50% 50%)",     // indigo
-  "hsl(200 70% 55%)",     // sky
-  "hsl(100 55% 45%)",     // lime
-  "hsl(350 60% 45%)",     // rose
-  "hsl(180 50% 40%)",     // dark teal
+  "hsl(0 84% 60%)",
+  "hsl(221 75% 65%)",
+  "hsl(142 60% 50%)",
+  "hsl(38 92% 55%)",
+  "hsl(262 70% 60%)",
+  "hsl(190 80% 45%)",
+  "hsl(328 70% 55%)",
+  "hsl(45 90% 50%)",
+  "hsl(160 60% 45%)",
+  "hsl(15 80% 55%)",
+  "hsl(270 50% 50%)",
+  "hsl(200 70% 55%)",
+  "hsl(100 55% 45%)",
+  "hsl(350 60% 45%)",
+  "hsl(180 50% 40%)",
 ];
 
 const formatDate = (dateStr: string) =>
@@ -49,109 +49,101 @@ const formatDate = (dateStr: string) =>
 const isValidCategory = (cat: string | null | undefined): cat is string =>
   !!cat && cat.trim() !== "" && cat.toLowerCase() !== "sem categoria";
 
-export function ExpensesPage() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  const [listOpen, setListOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+/* ── Memoized Tooltip ── */
+const DonutTooltipContent = React.memo(({ active, payload, pieData }: any) => {
+  if (!active || !payload || !payload.length) return null;
+  const d = payload[0].payload;
+  const rank = pieData.findIndex((p: any) => p.category === d.category) + 1;
+  return (
+    <div className="liquid-glass-tooltip min-w-[180px]">
+      <div className="flex items-center gap-2 mb-1.5">
+        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: d.color }} />
+        <span className="text-sm font-semibold text-foreground">{d.category}</span>
+        <span className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full text-muted-foreground ml-auto">
+          #{rank}
+        </span>
+      </div>
+      <p className="text-lg font-bold text-foreground">{formatCurrencyBR(d.amount)}</p>
+      <p className="text-xs text-muted-foreground">{d.percent}% do total</p>
+    </div>
+  );
+});
+DonutTooltipContent.displayName = "DonutTooltipContent";
 
-  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
+/* ── Memoized Category List Item ── */
+interface CategoryListItemProps {
+  entry: { category: string; amount: number; color: string; percent: string };
+  index: number;
+  isActive: boolean;
+  count: number;
+  onMouseEnter: (i: number) => void;
+  onMouseLeave: () => void;
+}
 
-  // Debounced search
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+const CategoryListItem = React.memo(({ entry, index, isActive, count, onMouseEnter, onMouseLeave }: CategoryListItemProps) => (
+  <div
+    className={cn(
+      "flex items-center gap-3 px-3 py-3 rounded-xl cursor-default",
+      "border border-transparent",
+      "transition-[background-color,border-color,box-shadow] duration-200 ease-out",
+      isActive
+        ? "bg-secondary/60 border-border/40 shadow-sm"
+        : "bg-card/30 hover:bg-secondary/30 hover:border-border/20"
+    )}
+    style={isActive ? { borderLeftColor: entry.color, borderLeftWidth: 3 } : undefined}
+    onMouseEnter={() => onMouseEnter(index)}
+    onMouseLeave={onMouseLeave}
+  >
+    {/* Rank badge */}
+    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-muted/40 shrink-0">
+      <span className="text-[10px] font-bold text-muted-foreground">{index + 1}</span>
+    </div>
+    {/* Color dot */}
+    <div
+      className="w-2.5 h-2.5 rounded-full shrink-0"
+      style={{ backgroundColor: entry.color, boxShadow: `0 0 6px ${entry.color}40` }}
+    />
+    {/* Name + count */}
+    <div className="min-w-0 flex-1">
+      <p className="text-[13px] font-medium text-foreground truncate leading-tight">{entry.category}</p>
+      {count > 0 && (
+        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+          {count} lançamento{count > 1 ? "s" : ""}
+        </p>
+      )}
+    </div>
+    {/* Value + percent */}
+    <div className="text-right shrink-0">
+      <p className="text-sm font-semibold text-foreground tabular-nums leading-tight">
+        {formatCurrencyBR(entry.amount)}
+      </p>
+      <p className="text-[10px] text-muted-foreground tabular-nums leading-tight mt-0.5">
+        {entry.percent}%
+      </p>
+    </div>
+  </div>
+));
+CategoryListItem.displayName = "CategoryListItem";
+
+/* ── Memoized Donut Chart ── */
+interface DonutChartProps {
+  pieData: Array<{ category: string; amount: number; color: string; percent: string }>;
+  activeIndex: number | null;
+  onPieEnter: (i: number) => void;
+  onPieLeave: () => void;
+}
+
+const CategoryDonutChart = React.memo(({ pieData, activeIndex, onPieEnter, onPieLeave }: DonutChartProps) => {
+  const hasAnimated = useRef(false);
+  const shouldAnimate = !hasAnimated.current;
+
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  const filteredData = useMemo(() => {
-    return transactions.filter((item) => {
-      const matchesSearch =
-        item.description.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-        (item.client_vendor?.toLowerCase().includes(debouncedSearch.toLowerCase()) ?? false);
-      const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
-      return matchesSearch && matchesCategory;
-    });
-  }, [transactions, debouncedSearch, categoryFilter]);
-
-  const {
-    paginatedItems, currentPage, totalPages, totalItems,
-    startIndex, endIndex, hasNextPage, hasPrevPage,
-    nextPage, prevPage, goToPage,
-  } = usePagination(filteredData, 50);
-
-  const categories = useMemo(() => {
-    return [...new Set(transactions.map(t => t.category))];
-  }, [transactions]);
-
-  const categoryBreakdown = useMemo(() => {
-    const grouped = transactions.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + Number(t.amount);
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.entries(grouped).map(([category, amount]) => ({ category, amount }));
-  }, [transactions]);
-
-  const validCategoryBreakdown = useMemo(() => {
-    return categoryBreakdown
-      .filter(item => isValidCategory(item.category))
-      .sort((a, b) => b.amount - a.amount);
-  }, [categoryBreakdown]);
-
-  const totalValidCategories = useMemo(() =>
-    validCategoryBreakdown.reduce((s, c) => s + c.amount, 0),
-    [validCategoryBreakdown]
-  );
-
-  // Use totals.expense as the denominator so percentages match the KPI total
-  const pieData = useMemo(() =>
-    validCategoryBreakdown.map((item, i) => ({
-      ...item,
-      color: CHART_COLORS[i % CHART_COLORS.length],
-      percent: totals.expense > 0
-        ? ((item.amount / totals.expense) * 100).toFixed(1)
-        : "0",
-    })),
-    [validCategoryBreakdown, totals.expense]
-  );
-
-  // Count transactions per category
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    transactions.forEach(t => {
-      if (isValidCategory(t.category)) {
-        counts[t.category] = (counts[t.category] || 0) + 1;
-      }
-    });
-    return counts;
-  }, [transactions]);
-
-  // Analytical insights
-  const categoryInsights = useMemo(() => {
-    if (pieData.length === 0) return [];
-    const insights: string[] = [];
-    // Top category
-    if (pieData[0]) {
-      insights.push(`"${pieData[0].category}" lidera com ${pieData[0].percent}% das despesas (${formatCurrencyBR(pieData[0].amount)})`);
+    if (!hasAnimated.current) {
+      const timer = setTimeout(() => { hasAnimated.current = true; }, 900);
+      return () => clearTimeout(timer);
     }
-    // Top 3 concentration
-    if (pieData.length >= 3) {
-      const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
-      const top3Pct = totals.expense > 0 ? ((top3Sum / totals.expense) * 100).toFixed(0) : "0";
-      insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
-    }
-    // Dispersion
-    if (pieData.length >= 5) {
-      insights.push(`${pieData.length} categorias ativas — boa diversificação dos gastos`);
-    } else if (pieData.length >= 2) {
-      insights.push(`${pieData.length} categorias ativas no período`);
-    }
-    return insights.slice(0, 3);
-  }, [pieData, totals.expense]);
+  }, []);
 
-  // Active shape renderer for donut — simplified to avoid render jank
   const renderActiveShape = useCallback((props: any) => {
     const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
     return (
@@ -159,6 +151,70 @@ export function ExpensesPage() {
         startAngle={startAngle} endAngle={endAngle} fill={fill} />
     );
   }, []);
+
+  const renderLabel = useCallback(({ cx, cy, midAngle, innerRadius, outerRadius, percent, category }: any) => {
+    if (percent < 0.04) return null;
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    return (
+      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
+        fontSize={11} fontWeight={600} style={{ textShadow: "0 1px 3px rgba(0,0,0,0.4)" }}>
+        {(percent * 100).toFixed(0)}%
+      </text>
+    );
+  }, []);
+
+  const handleEnter = useCallback((_: any, index: number) => onPieEnter(index), [onPieEnter]);
+  const handleLeave = useCallback(() => onPieLeave(), [onPieLeave]);
+
+  const tooltipContent = useCallback(
+    (props: any) => <DonutTooltipContent {...props} pieData={pieData} />,
+    [pieData]
+  );
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <PieChart>
+        <Pie
+          data={pieData}
+          dataKey="amount"
+          nameKey="category"
+          cx="50%"
+          cy="50%"
+          innerRadius={70}
+          outerRadius={130}
+          paddingAngle={3}
+          animationDuration={800}
+          animationEasing="ease-out"
+          isAnimationActive={shouldAnimate}
+          activeIndex={activeIndex !== null ? activeIndex : undefined}
+          activeShape={renderActiveShape}
+          onMouseEnter={handleEnter}
+          onMouseLeave={handleLeave}
+          label={renderLabel}
+          labelLine={false}
+        >
+          {pieData.map((entry, i) => (
+            <Cell
+              key={i}
+              fill={entry.color}
+              stroke="hsl(var(--background))"
+              strokeWidth={2}
+              style={{
+                opacity: activeIndex === null || activeIndex === i ? 1 : 0.4,
+                transition: "opacity 150ms ease",
+              }}
+            />
+          ))}
+        </Pie>
+        <Tooltip content={tooltipContent} />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+});
+CategoryDonutChart.displayName = "CategoryDonutChart";
 
   const topCategoryData = validCategoryBreakdown[0];
   const topPercent = topCategoryData && totals.expense > 0
