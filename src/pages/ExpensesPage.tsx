@@ -216,6 +216,104 @@ const CategoryDonutChart = React.memo(({ pieData, activeIndex, onPieEnter, onPie
 });
 CategoryDonutChart.displayName = "CategoryDonutChart";
 
+export function ExpensesPage() {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [listOpen, setListOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
+
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const filteredData = useMemo(() => {
+    return transactions.filter((item) => {
+      const matchesSearch =
+        item.description.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        (item.client_vendor?.toLowerCase().includes(debouncedSearch.toLowerCase()) ?? false);
+      const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [transactions, debouncedSearch, categoryFilter]);
+
+  const {
+    paginatedItems, currentPage, totalPages, totalItems,
+    startIndex, endIndex, hasNextPage, hasPrevPage,
+    nextPage, prevPage, goToPage,
+  } = usePagination(filteredData, 50);
+
+  const categories = useMemo(() => {
+    return [...new Set(transactions.map(t => t.category))];
+  }, [transactions]);
+
+  const categoryBreakdown = useMemo(() => {
+    const grouped = transactions.reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + Number(t.amount);
+      return acc;
+    }, {} as Record<string, number>);
+    return Object.entries(grouped).map(([category, amount]) => ({ category, amount }));
+  }, [transactions]);
+
+  const validCategoryBreakdown = useMemo(() => {
+    return categoryBreakdown
+      .filter(item => isValidCategory(item.category))
+      .sort((a, b) => b.amount - a.amount);
+  }, [categoryBreakdown]);
+
+  const totalValidCategories = useMemo(() =>
+    validCategoryBreakdown.reduce((s, c) => s + c.amount, 0),
+    [validCategoryBreakdown]
+  );
+
+  const pieData = useMemo(() =>
+    validCategoryBreakdown.map((item, i) => ({
+      ...item,
+      color: CHART_COLORS[i % CHART_COLORS.length],
+      percent: totals.expense > 0
+        ? ((item.amount / totals.expense) * 100).toFixed(1)
+        : "0",
+    })),
+    [validCategoryBreakdown, totals.expense]
+  );
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    transactions.forEach(t => {
+      if (isValidCategory(t.category)) {
+        counts[t.category] = (counts[t.category] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [transactions]);
+
+  const categoryInsights = useMemo(() => {
+    if (pieData.length === 0) return [];
+    const insights: string[] = [];
+    if (pieData[0]) {
+      insights.push(`"${pieData[0].category}" lidera com ${pieData[0].percent}% das despesas (${formatCurrencyBR(pieData[0].amount)})`);
+    }
+    if (pieData.length >= 3) {
+      const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
+      const top3Pct = totals.expense > 0 ? ((top3Sum / totals.expense) * 100).toFixed(0) : "0";
+      insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
+    }
+    if (pieData.length >= 5) {
+      insights.push(`${pieData.length} categorias ativas — boa diversificação dos gastos`);
+    } else if (pieData.length >= 2) {
+      insights.push(`${pieData.length} categorias ativas no período`);
+    }
+    return insights.slice(0, 3);
+  }, [pieData, totals.expense]);
+
+  const handlePieEnter = useCallback((i: number) => setActiveIndex(i), []);
+  const handlePieLeave = useCallback(() => setActiveIndex(null), []);
+
   const topCategoryData = validCategoryBreakdown[0];
   const topPercent = topCategoryData && totals.expense > 0
     ? ((topCategoryData.amount / totals.expense) * 100).toFixed(0) : "0";
