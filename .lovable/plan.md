@@ -1,69 +1,67 @@
 
 
-## Plano: Reestruturar Card "Categorias de Despesas" como Componente Analítico Principal
+## Plano: Refinar visual das categorias e corrigir bugs de re-render do gráfico
 
-### Layout Atual vs Novo
+### Problemas identificados
+
+**Re-render/animação**: 
+- `isAnimationActive={activeIndex === null}` faz a animação reiniciar toda vez que o hover sai (null→index→null toggling)
+- Tooltip inline cria nova função a cada render → causa re-render do Pie
+- `label` inline function recriada a cada render
+- `onMouseEnter`/`onMouseLeave` inline no Pie recriam refs
+
+**Visual da lista**: Layout funcional mas sem acabamento premium — linhas "soltas", hover genérico, sem separação visual elegante
+
+### Solução
+
+**Arquivo: `src/pages/ExpensesPage.tsx`** — único arquivo
+
+#### 1. Performance e estabilidade (eliminar re-renders)
+
+- Extrair componente `CategoryDonutChart` com `React.memo` — recebe `pieData` e `activeIndex`/`setActiveIndex` como props estáveis
+- Memoizar com `useCallback`: `onPieEnter`, `onPieLeave`, `renderLabel`, `renderActiveShape`
+- Memoizar Tooltip content como componente separado (`const DonutTooltip = React.memo(...)`)
+- Mudar `isAnimationActive` para um `useRef(true)` que vira `false` após a primeira renderização (animação roda só 1x na entrada, nunca mais reinicia)
+- Extrair componente `CategoryListItem` com `React.memo` para cada item do grid
+
+#### 2. Visual premium da lista de categorias
+
+Cada item vira um micro-card analítico:
 
 ```text
-ATUAL:
-┌─────────────────┬─────────────────┐
-│ Despesas Mensais│ Categorias (pie)│  ← 50/50
-└─────────────────┴─────────────────┘
-┌───────────────────────────────────┐
-│ Top 5 Maiores Gastos              │
-└───────────────────────────────────┘
-
-NOVO:
-┌───────────────────────────────────┐
-│ CATEGORIAS DE DESPESAS (dominante)│  ← full-width
-│ Header executivo + resumo         │
-│ Donut grande + Grid de categorias │
-│ Insights analíticos               │
-└───────────────────────────────────┘
-┌─────────────────┬─────────────────┐
-│ Despesas Mensais│ Top 5 Gastos    │  ← secundários
-└─────────────────┴─────────────────┘
+┌─────────────────────────────────────────┐
+│ #1  ● Impostos e Taxas                  │
+│        42 lançamentos    R$ 15.200  31%  │
+└─────────────────────────────────────────┘
 ```
 
-### Mudanças
+- Fundo `bg-card/40 backdrop-blur-sm` com `border border-border/20` no estado normal
+- Hover: `bg-secondary/60 border-border/40 shadow-sm` com `transition-all duration-200`
+- Active (sincronizado): borda com cor da categoria (`border-l-2` + cor) + fundo mais visível
+- Rank em badge discreto (`bg-muted/40 rounded-md w-5 h-5 text-[10px] font-bold`)
+- Dot de cor maior (`w-2.5 h-2.5`) com sutil box-shadow matching
+- Nome com `font-medium text-[13px]`
+- Count como `text-[10px] text-muted-foreground`
+- Valor e % alinhados à direita com hierarquia clara (valor `font-semibold text-sm`, % `text-[10px] text-muted-foreground`)
+- Gap vertical `gap-y-2` (de 1.5 para 2) para mais respiro
 
-**Arquivo: `src/pages/ExpensesPage.tsx`** — único arquivo modificado
+#### 3. Animações suaves
 
-1. **Novo layout da seção de gráficos (linhas 272-401)**:
-   - Card "Categorias" sai do grid 50/50 e vira **full-width** acima
-   - Card "Despesas Mensais" desce para grid 50/50 com "Top 5 Maiores Gastos"
+- Entrada do gráfico: 1x only via ref, 800ms ease-out
+- Hover nos itens: `transition-all duration-200 ease-out` (sem scale, apenas cor/borda/sombra)
+- Fatia ativa: opacity transition via CSS `transition: opacity 150ms ease` no Cell
+- Sem bounce, sem reinício, sem jank
 
-2. **Novo card "Categorias de Despesas" com**:
-   - **Header executivo**: título, subtítulo, mini-resumo (total categorias, total gasto, maior categoria)
-   - **Layout interno desktop**: donut à esquerda (maior, innerRadius=70, outerRadius=130, paddingAngle=3) + grid de categorias à direita em 2 colunas
-   - **Layout tablet**: donut acima, grid 2 colunas abaixo
-   - **Layout mobile**: donut acima, grid 1 coluna abaixo
-   - **Sem scroll interno**: grid usa altura natural
-   - **Paleta expandida**: 12+ cores com alta diferenciação
-   - **Estado `activeIndex`**: hover na lista destaca fatia (opacity), hover na fatia destaca item na lista — sincronização bidirecional via `onMouseEnter`/`onMouseLeave` + Recharts `activeIndex`
-   - **Tooltip premium**: nome, valor formatado, percentual, ranking (#1, #2...)
-   - **Labels no gráfico**: apenas categorias ≥4% mostram label direto na fatia
-   - **Grid de categorias**: cada item tem dot de cor, nome, %, valor, ranking discreto, count de transações (já disponível via `transactions.filter`)
-   - **Insights no rodapé** (max 3, useMemo): maior categoria + %, concentração top 3, dispersão
+#### 4. Sincronização refinada
 
-3. **Dados**: zero mudança — mesmos `pieData`, `validCategoryBreakdown`, `totalValidCategories` já existentes. Adicionar apenas:
-   - `useMemo` para count por categoria (do array `transactions` já carregado)
-   - `useMemo` para insights (derivado de `pieData`)
-   - `useState<number | null>` para `activeIndex`
+- `activeIndex` state permanece no componente pai
+- `CategoryDonutChart` recebe via props (memo-safe)
+- `CategoryListItem` recebe `isActive` boolean (memo-safe)
+- Hover na lista → `setActiveIndex(i)` → Pie recebe novo activeIndex sem re-mount
+- Hover no Pie → `setActiveIndex(i)` → List items re-check `isActive` boolean
 
-4. **Top 5 Maiores Gastos**: mover para grid secundário ao lado de "Despesas Mensais", adaptado para caber em card glass compacto
-
-### Responsividade
-
-| Viewport | Categorias | Despesas Mensais + Top 5 |
-|----------|-----------|-------------------------|
-| Desktop (lg+) | Donut esquerda + grid 2col direita | Grid 2 colunas abaixo |
-| Tablet (sm-lg) | Donut acima + grid 2col abaixo | Stack vertical |
-| Mobile (<sm) | Donut centralizado + grid 1col | Stack vertical |
-
-### Escopo restrito
+### Escopo
 - **1 arquivo**: `src/pages/ExpensesPage.tsx`
-- Zero novos hooks, queries, endpoints
-- Mesmos dados, mesma origem
-- Sem impacto em outros cards, filtros ou navegação
+- Zero novos hooks, queries ou endpoints
+- Zero impacto em outros cards/páginas
 
