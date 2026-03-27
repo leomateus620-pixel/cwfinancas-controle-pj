@@ -418,120 +418,31 @@ CategoryDonutChart.displayName = "CategoryDonutChart";
           <>
             {/* Donut + Grid */}
             <div className="flex flex-col lg:flex-row gap-8 items-start">
-              {/* Donut chart - larger */}
+              {/* Donut chart */}
               <div className="w-full lg:w-[340px] shrink-0 flex justify-center">
                 <div className="w-full max-w-[300px] h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        dataKey="amount"
-                        nameKey="category"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={70}
-                        outerRadius={130}
-                        paddingAngle={3}
-                        animationDuration={700}
-                        animationEasing="ease-out"
-                        activeIndex={activeIndex !== null ? activeIndex : undefined}
-                        activeShape={renderActiveShape}
-                        onMouseEnter={(_, index) => setActiveIndex(index)}
-                        onMouseLeave={() => setActiveIndex(null)}
-                        isAnimationActive={activeIndex === null}
-                        label={({ cx, cy, midAngle, innerRadius, outerRadius, percent, category }) => {
-                          if (percent < 0.04) return null;
-                          const RADIAN = Math.PI / 180;
-                          const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-                          const x = cx + radius * Math.cos(-midAngle * RADIAN);
-                          const y = cy + radius * Math.sin(-midAngle * RADIAN);
-                          return (
-                            <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
-                              fontSize={11} fontWeight={600} style={{ textShadow: '0 1px 3px rgba(0,0,0,0.4)' }}>
-                              {(percent * 100).toFixed(0)}%
-                            </text>
-                          );
-                        }}
-                        labelLine={false}
-                      >
-                        {pieData.map((entry, i) => (
-                          <Cell
-                            key={i}
-                            fill={entry.color}
-                            stroke="hsl(var(--background))"
-                            strokeWidth={2}
-                            opacity={activeIndex === null || activeIndex === i ? 1 : 0.45}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        content={({ active, payload }) => {
-                          if (active && payload && payload.length) {
-                            const d = payload[0].payload;
-                            const rank = pieData.findIndex(p => p.category === d.category) + 1;
-                            return (
-                              <div className="liquid-glass-tooltip min-w-[180px]">
-                                <div className="flex items-center gap-2 mb-1.5">
-                                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: d.color }} />
-                                  <span className="text-sm font-semibold text-foreground">{d.category}</span>
-                                  <span className="text-[10px] bg-muted/50 px-1.5 py-0.5 rounded-full text-muted-foreground ml-auto">
-                                    #{rank}
-                                  </span>
-                                </div>
-                                <p className="text-lg font-bold text-foreground">{formatCurrencyBR(d.amount)}</p>
-                                <p className="text-xs text-muted-foreground">{d.percent}% do total</p>
-                              </div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <CategoryDonutChart
+                    pieData={pieData}
+                    activeIndex={activeIndex}
+                    onPieEnter={handlePieEnter}
+                    onPieLeave={handlePieLeave}
+                  />
                 </div>
               </div>
 
-              {/* Category grid - no scroll */}
+              {/* Category grid - premium micro-cards */}
               <div className="flex-1 w-full">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2">
                   {pieData.map((entry, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-default",
-                        activeIndex === i
-                          ? "bg-secondary/50 shadow-sm scale-[1.02]"
-                          : "hover:bg-secondary/30"
-                      )}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onMouseLeave={() => setActiveIndex(null)}
-                    >
-                      {/* Rank + color */}
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-bold text-muted-foreground w-4 text-right">
-                          {i + 1}
-                        </span>
-                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
-                      </div>
-                      {/* Name + count */}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{entry.category}</p>
-                        {categoryCounts[entry.category] && (
-                          <p className="text-[10px] text-muted-foreground">
-                            {categoryCounts[entry.category]} lançamento{categoryCounts[entry.category] > 1 ? 's' : ''}
-                          </p>
-                        )}
-                      </div>
-                      {/* Percent + value */}
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold text-foreground tabular-nums">
-                          {formatCurrencyBR(entry.amount)}
-                        </p>
-                        <p className="text-[10px] font-medium text-muted-foreground tabular-nums">
-                          {entry.percent}%
-                        </p>
-                      </div>
-                    </div>
+                    <CategoryListItem
+                      key={entry.category}
+                      entry={entry}
+                      index={i}
+                      isActive={activeIndex === i}
+                      count={categoryCounts[entry.category] || 0}
+                      onMouseEnter={handlePieEnter}
+                      onMouseLeave={handlePieLeave}
+                    />
                   ))}
                 </div>
               </div>
