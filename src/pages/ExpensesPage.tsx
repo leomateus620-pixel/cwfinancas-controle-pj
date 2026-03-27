@@ -152,16 +152,17 @@ const CategoryDonutChart = React.memo(({ pieData, activeIndex, onPieEnter, onPie
     );
   }, []);
 
-  const renderLabel = useCallback(({ cx, cy, midAngle, innerRadius, outerRadius, percent, category }: any) => {
-    if (percent < 0.04) return null;
+  const renderLabel = useCallback(({ cx, cy, midAngle, innerRadius, outerRadius, percent: fractionPercent, payload }: any) => {
+    if (fractionPercent < 0.04) return null;
     const RADIAN = Math.PI / 180;
     const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    const displayPercent = payload?.percent ?? (fractionPercent * 100).toFixed(1);
     return (
       <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central"
         fontSize={11} fontWeight={600} style={{ textShadow: "0 1px 3px rgba(0,0,0,0.4)" }}>
-        {(percent * 100).toFixed(0)}%
+        {displayPercent}%
       </text>
     );
   }, []);
