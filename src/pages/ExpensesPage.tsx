@@ -83,25 +83,29 @@ interface CategoryListItemProps {
 const CategoryListItem = React.memo(({ entry, index, isActive, count, onMouseEnter, onMouseLeave }: CategoryListItemProps) => (
   <div
     className={cn(
-      "flex items-center gap-3 px-3 py-3 rounded-xl cursor-default",
-      "border border-transparent",
-      "transition-[background-color,border-color,box-shadow] duration-200 ease-out",
+      "flex items-center gap-3 px-3.5 py-3 rounded-2xl cursor-default",
+      "border backdrop-blur-sm",
+      "transition-all duration-200 ease-out",
       isActive
-        ? "bg-secondary/60 border-border/40 shadow-sm"
-        : "bg-card/30 hover:bg-secondary/30 hover:border-border/20"
+        ? "bg-white/[0.10] dark:bg-white/[0.08] border-white/[0.15] dark:border-white/[0.12] shadow-[0_2px_16px_rgba(0,0,0,0.06)]"
+        : "bg-white/[0.04] dark:bg-white/[0.03] border-white/[0.06] dark:border-white/[0.05] hover:bg-white/[0.07] dark:hover:bg-white/[0.06] hover:border-white/[0.10] dark:hover:border-white/[0.08] hover:shadow-[0_2px_12px_rgba(0,0,0,0.04)]"
     )}
-    style={isActive ? { borderLeftColor: entry.color, borderLeftWidth: 3 } : undefined}
+    style={isActive ? {
+      borderLeftColor: entry.color,
+      borderLeftWidth: 3,
+      boxShadow: `0 0 16px ${entry.color}15, 0 2px 12px rgba(0,0,0,0.06)`,
+    } : undefined}
     onMouseEnter={() => onMouseEnter(index)}
     onMouseLeave={onMouseLeave}
   >
     {/* Rank badge */}
-    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-muted/40 shrink-0">
+    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-white/[0.06] dark:bg-white/[0.05] border border-white/[0.08] dark:border-white/[0.06] shrink-0">
       <span className="text-[10px] font-bold text-muted-foreground">{index + 1}</span>
     </div>
     {/* Color dot */}
     <div
       className="w-2.5 h-2.5 rounded-full shrink-0"
-      style={{ backgroundColor: entry.color, boxShadow: `0 0 6px ${entry.color}40` }}
+      style={{ backgroundColor: entry.color, boxShadow: `0 0 8px ${entry.color}50` }}
     />
     {/* Name + count */}
     <div className="min-w-0 flex-1">
