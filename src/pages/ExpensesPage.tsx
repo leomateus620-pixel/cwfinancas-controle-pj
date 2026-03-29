@@ -83,25 +83,29 @@ interface CategoryListItemProps {
 const CategoryListItem = React.memo(({ entry, index, isActive, count, onMouseEnter, onMouseLeave }: CategoryListItemProps) => (
   <div
     className={cn(
-      "flex items-center gap-3 px-3 py-3 rounded-xl cursor-default",
-      "border border-transparent",
-      "transition-[background-color,border-color,box-shadow] duration-200 ease-out",
+      "flex items-center gap-3 px-3.5 py-3 rounded-2xl cursor-default",
+      "border backdrop-blur-sm",
+      "transition-all duration-200 ease-out",
       isActive
-        ? "bg-secondary/60 border-border/40 shadow-sm"
-        : "bg-card/30 hover:bg-secondary/30 hover:border-border/20"
+        ? "bg-white/[0.10] dark:bg-white/[0.08] border-white/[0.15] dark:border-white/[0.12] shadow-[0_2px_16px_rgba(0,0,0,0.06)]"
+        : "bg-white/[0.04] dark:bg-white/[0.03] border-white/[0.06] dark:border-white/[0.05] hover:bg-white/[0.07] dark:hover:bg-white/[0.06] hover:border-white/[0.10] dark:hover:border-white/[0.08] hover:shadow-[0_2px_12px_rgba(0,0,0,0.04)]"
     )}
-    style={isActive ? { borderLeftColor: entry.color, borderLeftWidth: 3 } : undefined}
+    style={isActive ? {
+      borderLeftColor: entry.color,
+      borderLeftWidth: 3,
+      boxShadow: `0 0 16px ${entry.color}15, 0 2px 12px rgba(0,0,0,0.06)`,
+    } : undefined}
     onMouseEnter={() => onMouseEnter(index)}
     onMouseLeave={onMouseLeave}
   >
     {/* Rank badge */}
-    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-muted/40 shrink-0">
+    <div className="flex items-center justify-center w-5 h-5 rounded-md bg-white/[0.06] dark:bg-white/[0.05] border border-white/[0.08] dark:border-white/[0.06] shrink-0">
       <span className="text-[10px] font-bold text-muted-foreground">{index + 1}</span>
     </div>
     {/* Color dot */}
     <div
       className="w-2.5 h-2.5 rounded-full shrink-0"
-      style={{ backgroundColor: entry.color, boxShadow: `0 0 6px ${entry.color}40` }}
+      style={{ backgroundColor: entry.color, boxShadow: `0 0 8px ${entry.color}50` }}
     />
     {/* Name + count */}
     <div className="min-w-0 flex-1">
@@ -224,6 +228,7 @@ export function ExpensesPage() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState<string>("10");
 
   const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
 
@@ -272,7 +277,7 @@ export function ExpensesPage() {
     [validCategoryBreakdown]
   );
 
-  const pieData = useMemo(() =>
+  const allPieData = useMemo(() =>
     validCategoryBreakdown.map((item, i) => ({
       ...item,
       color: CHART_COLORS[i % CHART_COLORS.length],
@@ -282,6 +287,11 @@ export function ExpensesPage() {
     })),
     [validCategoryBreakdown, totals.expense]
   );
+
+  const pieData = useMemo(() => {
+    if (visibleCount === "all") return allPieData;
+    return allPieData.slice(0, Number(visibleCount));
+  }, [allPieData, visibleCount]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -294,23 +304,23 @@ export function ExpensesPage() {
   }, [transactions]);
 
   const categoryInsights = useMemo(() => {
-    if (pieData.length === 0) return [];
+    if (allPieData.length === 0) return [];
     const insights: string[] = [];
-    if (pieData[0]) {
-      insights.push(`"${pieData[0].category}" lidera com ${pieData[0].percent}% das despesas (${formatCurrencyBR(pieData[0].amount)})`);
+    if (allPieData[0]) {
+      insights.push(`"${allPieData[0].category}" lidera com ${allPieData[0].percent}% das despesas (${formatCurrencyBR(allPieData[0].amount)})`);
     }
-    if (pieData.length >= 3) {
-      const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
+    if (allPieData.length >= 3) {
+      const top3Sum = allPieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
       const top3Pct = totals.expense > 0 ? ((top3Sum / totals.expense) * 100).toFixed(0) : "0";
       insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
     }
-    if (pieData.length >= 5) {
-      insights.push(`${pieData.length} categorias ativas — boa diversificação dos gastos`);
-    } else if (pieData.length >= 2) {
-      insights.push(`${pieData.length} categorias ativas no período`);
+    if (allPieData.length >= 5) {
+      insights.push(`${allPieData.length} categorias ativas — boa diversificação dos gastos`);
+    } else if (allPieData.length >= 2) {
+      insights.push(`${allPieData.length} categorias ativas no período`);
     }
     return insights.slice(0, 3);
-  }, [pieData, totals.expense]);
+  }, [allPieData, totals.expense]);
 
   const handlePieEnter = useCallback((i: number) => setActiveIndex(i), []);
   const handlePieLeave = useCallback(() => setActiveIndex(null), []);
@@ -494,7 +504,7 @@ export function ExpensesPage() {
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Categorias</p>
-              <p className="text-base font-bold text-foreground">{pieData.length}</p>
+              <p className="text-base font-bold text-foreground">{pieData.length}<span className="text-xs font-normal text-muted-foreground">/{allPieData.length}</span></p>
             </div>
             <div className="w-px h-8 bg-border/40" />
             <div className="text-center">
@@ -510,6 +520,21 @@ export function ExpensesPage() {
                 </div>
               </>
             )}
+            <div className="w-px h-8 bg-border/40" />
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Exibir</p>
+              <Select value={visibleCount} onValueChange={(v) => { setVisibleCount(v); setActiveIndex(null); }}>
+                <SelectTrigger className="h-7 w-[90px] text-xs rounded-lg bg-white/[0.06] border-white/[0.08] backdrop-blur-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Top 10</SelectItem>
+                  <SelectItem value="20">Top 20</SelectItem>
+                  <SelectItem value="30">Top 30</SelectItem>
+                  <SelectItem value="all">Todas ({allPieData.length})</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
