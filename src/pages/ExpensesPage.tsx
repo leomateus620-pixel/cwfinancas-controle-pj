@@ -277,7 +277,7 @@ export function ExpensesPage() {
     [validCategoryBreakdown]
   );
 
-  const pieData = useMemo(() =>
+  const allPieData = useMemo(() =>
     validCategoryBreakdown.map((item, i) => ({
       ...item,
       color: CHART_COLORS[i % CHART_COLORS.length],
@@ -287,6 +287,11 @@ export function ExpensesPage() {
     })),
     [validCategoryBreakdown, totals.expense]
   );
+
+  const pieData = useMemo(() => {
+    if (visibleCount === "all") return allPieData;
+    return allPieData.slice(0, Number(visibleCount));
+  }, [allPieData, visibleCount]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
