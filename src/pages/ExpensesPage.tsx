@@ -304,23 +304,23 @@ export function ExpensesPage() {
   }, [transactions]);
 
   const categoryInsights = useMemo(() => {
-    if (pieData.length === 0) return [];
+    if (allPieData.length === 0) return [];
     const insights: string[] = [];
-    if (pieData[0]) {
-      insights.push(`"${pieData[0].category}" lidera com ${pieData[0].percent}% das despesas (${formatCurrencyBR(pieData[0].amount)})`);
+    if (allPieData[0]) {
+      insights.push(`"${allPieData[0].category}" lidera com ${allPieData[0].percent}% das despesas (${formatCurrencyBR(allPieData[0].amount)})`);
     }
-    if (pieData.length >= 3) {
-      const top3Sum = pieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
+    if (allPieData.length >= 3) {
+      const top3Sum = allPieData.slice(0, 3).reduce((s, c) => s + c.amount, 0);
       const top3Pct = totals.expense > 0 ? ((top3Sum / totals.expense) * 100).toFixed(0) : "0";
       insights.push(`As 3 maiores categorias concentram ${top3Pct}% do total de despesas`);
     }
-    if (pieData.length >= 5) {
-      insights.push(`${pieData.length} categorias ativas — boa diversificação dos gastos`);
-    } else if (pieData.length >= 2) {
-      insights.push(`${pieData.length} categorias ativas no período`);
+    if (allPieData.length >= 5) {
+      insights.push(`${allPieData.length} categorias ativas — boa diversificação dos gastos`);
+    } else if (allPieData.length >= 2) {
+      insights.push(`${allPieData.length} categorias ativas no período`);
     }
     return insights.slice(0, 3);
-  }, [pieData, totals.expense]);
+  }, [allPieData, totals.expense]);
 
   const handlePieEnter = useCallback((i: number) => setActiveIndex(i), []);
   const handlePieLeave = useCallback(() => setActiveIndex(null), []);
