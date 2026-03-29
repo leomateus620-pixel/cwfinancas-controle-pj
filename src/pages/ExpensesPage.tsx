@@ -228,6 +228,7 @@ export function ExpensesPage() {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [listOpen, setListOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [visibleCount, setVisibleCount] = useState<string>("10");
 
   const { transactions, isLoading, totals, createTransaction, updateTransaction } = useTransactions({ type: "expense" });
 
