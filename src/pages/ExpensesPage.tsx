@@ -504,7 +504,7 @@ export function ExpensesPage() {
           <div className="flex items-center gap-4 sm:gap-6">
             <div className="text-center">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Categorias</p>
-              <p className="text-base font-bold text-foreground">{pieData.length}</p>
+              <p className="text-base font-bold text-foreground">{pieData.length}<span className="text-xs font-normal text-muted-foreground">/{allPieData.length}</span></p>
             </div>
             <div className="w-px h-8 bg-border/40" />
             <div className="text-center">
@@ -520,6 +520,22 @@ export function ExpensesPage() {
                 </div>
               </>
             )}
+            <div className="w-px h-8 bg-border/40" />
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Exibir</p>
+              <Select value={visibleCount} onValueChange={(v) => { setVisibleCount(v); setActiveIndex(null); }}>
+                <SelectTrigger className="h-7 w-[90px] text-xs rounded-lg bg-white/[0.06] border-white/[0.08] backdrop-blur-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">Top 10</SelectItem>
+                  <SelectItem value="20">Top 20</SelectItem>
+                  <SelectItem value="30">Top 30</SelectItem>
+                  <SelectItem value="all">Todas ({allPieData.length})</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           </div>
         </div>
 
