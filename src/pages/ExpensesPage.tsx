@@ -536,7 +536,6 @@ export function ExpensesPage() {
               </Select>
             </div>
           </div>
-          </div>
         </div>
 
         {pieData.length > 0 ? (
