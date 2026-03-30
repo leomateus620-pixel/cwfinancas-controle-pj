@@ -11,7 +11,8 @@ import {
   Sparkles,
   LineChart,
   FileSpreadsheet,
-  ClipboardList
+  ClipboardList,
+  Building2
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
