@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { Building2, Save, Sparkles, Target, TrendingUp, BarChart3, Users, MapPin, Calendar, FileText, Loader2 } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Building2, Save, Sparkles, Target, TrendingUp, BarChart3, Users, MapPin, Calendar, FileText, Loader2, Wand2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,9 @@ import { useCompanyProfile, type CompanyProfileInput } from "@/hooks/useCompanyP
 import { useCompanyBenchmarks } from "@/hooks/useCompanyBenchmarks";
 import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
 import { formatCurrencyBR } from "@/lib/currency";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 const SETORES = [
   "Comércio", "Serviços", "Indústria", "Tecnologia", "Alimentação",
@@ -23,12 +26,64 @@ const ESTADOS = [
 ];
 
 export default function CompanyPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const { company, isLoading: loadingProfile, upsertCompany } = useCompanyProfile();
   const { data: benchmarkResult, isLoading: loadingBenchmarks, fetchBenchmarks } = useCompanyBenchmarks();
   const metrics = usePeriodMetrics();
 
   const [form, setForm] = useState<Partial<CompanyProfileInput>>({});
   const [dirty, setDirty] = useState(false);
+  const [spreadsheetName, setSpreadsheetName] = useState<string | null>(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+
+  // Fetch connected spreadsheet name
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from("google_sheet_connections")
+      .select("spreadsheet_name")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data?.[0]?.spreadsheet_name) {
+          setSpreadsheetName(data[0].spreadsheet_name);
+        }
+      });
+  }, [user?.id]);
+
+  const handleAutoFill = useCallback(async () => {
+    if (!spreadsheetName) return;
+    setIsLookingUp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("company-lookup", {
+        body: { companyName: spreadsheetName },
+      });
+      if (error) throw error;
+      if (data && !data.error) {
+        const newForm: Partial<CompanyProfileInput> = { ...form };
+        // Only fill empty fields
+        if (!form.razao_social && data.razao_social) newForm.razao_social = data.razao_social;
+        if (!form.nome_fantasia && data.nome_fantasia) newForm.nome_fantasia = data.nome_fantasia;
+        if (!form.cnpj && data.cnpj) newForm.cnpj = data.cnpj;
+        if (!form.setor && data.setor) newForm.setor = data.setor;
+        if (!form.porte && data.porte) newForm.porte = data.porte;
+        if (!form.regime_tributario && data.regime_tributario) newForm.regime_tributario = data.regime_tributario;
+        if (!form.cidade && data.cidade) newForm.cidade = data.cidade;
+        if (!form.estado && data.estado) newForm.estado = data.estado;
+        if (!form.ano_fundacao && data.ano_fundacao) newForm.ano_fundacao = data.ano_fundacao;
+        setForm(newForm);
+        setDirty(true);
+        toast({ title: "Dados preenchidos", description: `Dados inferidos a partir de "${spreadsheetName}". Revise e salve.` });
+      }
+    } catch (e: any) {
+      console.error("Lookup error:", e);
+      toast({ variant: "destructive", title: "Erro ao buscar dados", description: "Não foi possível buscar os dados da empresa." });
+    } finally {
+      setIsLookingUp(false);
+    }
+  }, [spreadsheetName, form, toast]);
 
   // Sync form with loaded company
   useEffect(() => {
@@ -127,9 +182,17 @@ export default function CompanyPage() {
           {/* Company Info */}
           <GlassCard>
             <div className="p-5 space-y-5">
-              <div className="flex items-center gap-2 mb-1">
-                <FileText className="w-4 h-4 text-primary" />
-                <h2 className="text-base font-semibold text-foreground">Dados Cadastrais</h2>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  <h2 className="text-base font-semibold text-foreground">Dados Cadastrais</h2>
+                </div>
+                {spreadsheetName && !company?.razao_social && (
+                  <Button size="sm" variant="outline" onClick={handleAutoFill} disabled={isLookingUp} className="gap-1.5 text-xs">
+                    {isLookingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                    Preencher com "{spreadsheetName.length > 20 ? spreadsheetName.slice(0, 20) + '…' : spreadsheetName}"
+                  </Button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
