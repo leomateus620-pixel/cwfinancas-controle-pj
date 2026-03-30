@@ -26,12 +26,64 @@ const ESTADOS = [
 ];
 
 export default function CompanyPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
   const { company, isLoading: loadingProfile, upsertCompany } = useCompanyProfile();
   const { data: benchmarkResult, isLoading: loadingBenchmarks, fetchBenchmarks } = useCompanyBenchmarks();
   const metrics = usePeriodMetrics();
 
   const [form, setForm] = useState<Partial<CompanyProfileInput>>({});
   const [dirty, setDirty] = useState(false);
+  const [spreadsheetName, setSpreadsheetName] = useState<string | null>(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
+
+  // Fetch connected spreadsheet name
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from("google_sheet_connections")
+      .select("spreadsheet_name")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        if (data?.[0]?.spreadsheet_name) {
+          setSpreadsheetName(data[0].spreadsheet_name);
+        }
+      });
+  }, [user?.id]);
+
+  const handleAutoFill = useCallback(async () => {
+    if (!spreadsheetName) return;
+    setIsLookingUp(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("company-lookup", {
+        body: { companyName: spreadsheetName },
+      });
+      if (error) throw error;
+      if (data && !data.error) {
+        const newForm: Partial<CompanyProfileInput> = { ...form };
+        // Only fill empty fields
+        if (!form.razao_social && data.razao_social) newForm.razao_social = data.razao_social;
+        if (!form.nome_fantasia && data.nome_fantasia) newForm.nome_fantasia = data.nome_fantasia;
+        if (!form.cnpj && data.cnpj) newForm.cnpj = data.cnpj;
+        if (!form.setor && data.setor) newForm.setor = data.setor;
+        if (!form.porte && data.porte) newForm.porte = data.porte;
+        if (!form.regime_tributario && data.regime_tributario) newForm.regime_tributario = data.regime_tributario;
+        if (!form.cidade && data.cidade) newForm.cidade = data.cidade;
+        if (!form.estado && data.estado) newForm.estado = data.estado;
+        if (!form.ano_fundacao && data.ano_fundacao) newForm.ano_fundacao = data.ano_fundacao;
+        setForm(newForm);
+        setDirty(true);
+        toast({ title: "Dados preenchidos", description: `Dados inferidos a partir de "${spreadsheetName}". Revise e salve.` });
+      }
+    } catch (e: any) {
+      console.error("Lookup error:", e);
+      toast({ variant: "destructive", title: "Erro ao buscar dados", description: "Não foi possível buscar os dados da empresa." });
+    } finally {
+      setIsLookingUp(false);
+    }
+  }, [spreadsheetName, form, toast]);
 
   // Sync form with loaded company
   useEffect(() => {
