@@ -11,7 +11,8 @@ import {
   Sparkles,
   LineChart,
   FileSpreadsheet,
-  ClipboardList
+  ClipboardList,
+  Building2
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
@@ -35,6 +36,7 @@ import {
 const mainNavItems = [
   { title: "Home", url: "/dashboard", icon: Home },
   { title: "Dashboard", url: "/overview", icon: LayoutDashboard },
+  { title: "Minha Empresa", url: "/company", icon: Building2 },
   { title: "Receitas", url: "/income", icon: TrendingUp },
   { title: "Despesas", url: "/expenses", icon: TrendingDown },
   { title: "Fluxo de Caixa", url: "/cash-flow", icon: ArrowLeftRight },

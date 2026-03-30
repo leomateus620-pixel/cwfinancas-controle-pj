@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.forecast-insights]
 verify_jwt = false
+
+[functions.company-benchmarks]
+verify_jwt = false
