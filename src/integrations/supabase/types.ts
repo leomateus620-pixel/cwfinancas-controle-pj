@@ -289,6 +289,69 @@ export type Database = {
           },
         ]
       }
+      company_profiles: {
+        Row: {
+          ano_fundacao: number | null
+          cidade: string | null
+          cnpj: string | null
+          created_at: string | null
+          estado: string | null
+          faturamento_anual: number | null
+          id: string
+          meta_despesa_mensal: number | null
+          meta_lucro_mensal: number | null
+          meta_receita_mensal: number | null
+          nome_fantasia: string | null
+          num_funcionarios: number | null
+          porte: string | null
+          razao_social: string | null
+          regime_tributario: string | null
+          setor: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          ano_fundacao?: number | null
+          cidade?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          estado?: string | null
+          faturamento_anual?: number | null
+          id?: string
+          meta_despesa_mensal?: number | null
+          meta_lucro_mensal?: number | null
+          meta_receita_mensal?: number | null
+          nome_fantasia?: string | null
+          num_funcionarios?: number | null
+          porte?: string | null
+          razao_social?: string | null
+          regime_tributario?: string | null
+          setor?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          ano_fundacao?: number | null
+          cidade?: string | null
+          cnpj?: string | null
+          created_at?: string | null
+          estado?: string | null
+          faturamento_anual?: number | null
+          id?: string
+          meta_despesa_mensal?: number | null
+          meta_lucro_mensal?: number | null
+          meta_receita_mensal?: number | null
+          nome_fantasia?: string | null
+          num_funcionarios?: number | null
+          porte?: string | null
+          razao_social?: string | null
+          regime_tributario?: string | null
+          setor?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       dre_lines: {
         Row: {
           created_at: string | null
