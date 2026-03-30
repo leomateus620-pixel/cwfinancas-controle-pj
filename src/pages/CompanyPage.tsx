@@ -249,7 +249,7 @@ export default function CompanyPage() {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Receita</span>
-                        <span className="font-medium">{formatBRL(metrics.currentIncome)} / {formatBRL(goalProgress.metaReceita)}</span>
+                        <span className="font-medium">{formatCurrencyBR(metrics.currentIncome)} / {formatCurrencyBR(goalProgress.metaReceita)}</span>
                       </div>
                       <Progress value={Math.min(goalProgress.receita, 100)} className="h-2.5" />
                       <span className={`text-xs ${goalProgress.receita >= 100 ? "text-emerald-500" : "text-muted-foreground"}`}>
@@ -261,7 +261,7 @@ export default function CompanyPage() {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Despesa</span>
-                        <span className="font-medium">{formatBRL(metrics.currentExpense)} / {formatBRL(goalProgress.metaDespesa)}</span>
+                        <span className="font-medium">{formatCurrencyBR(metrics.currentExpense)} / {formatCurrencyBR(goalProgress.metaDespesa)}</span>
                       </div>
                       <Progress value={Math.min(goalProgress.despesa, 100)} className="h-2.5" />
                       <span className={`text-xs ${goalProgress.despesa > 100 ? "text-red-500" : "text-emerald-500"}`}>
@@ -273,7 +273,7 @@ export default function CompanyPage() {
                     <div className="space-y-1.5">
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Lucro</span>
-                        <span className="font-medium">{formatBRL(metrics.currentBalance)} / {formatBRL(goalProgress.metaLucro)}</span>
+                        <span className="font-medium">{formatCurrencyBR(metrics.currentBalance)} / {formatCurrencyBR(goalProgress.metaLucro)}</span>
                       </div>
                       <Progress value={Math.min(goalProgress.lucro, 100)} className="h-2.5" />
                       <span className={`text-xs ${goalProgress.lucro >= 100 ? "text-emerald-500" : "text-muted-foreground"}`}>
