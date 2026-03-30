@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { Building2, Save, Sparkles, Target, TrendingUp, BarChart3, Users, MapPin, Calendar, FileText, Loader2 } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Building2, Save, Sparkles, Target, TrendingUp, BarChart3, Users, MapPin, Calendar, FileText, Loader2, Wand2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,9 @@ import { useCompanyProfile, type CompanyProfileInput } from "@/hooks/useCompanyP
 import { useCompanyBenchmarks } from "@/hooks/useCompanyBenchmarks";
 import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
 import { formatCurrencyBR } from "@/lib/currency";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 const SETORES = [
   "Comércio", "Serviços", "Indústria", "Tecnologia", "Alimentação",
