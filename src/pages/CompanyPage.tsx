@@ -182,9 +182,17 @@ export default function CompanyPage() {
           {/* Company Info */}
           <GlassCard>
             <div className="p-5 space-y-5">
-              <div className="flex items-center gap-2 mb-1">
-                <FileText className="w-4 h-4 text-primary" />
-                <h2 className="text-base font-semibold text-foreground">Dados Cadastrais</h2>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  <h2 className="text-base font-semibold text-foreground">Dados Cadastrais</h2>
+                </div>
+                {spreadsheetName && !company?.razao_social && (
+                  <Button size="sm" variant="outline" onClick={handleAutoFill} disabled={isLookingUp} className="gap-1.5 text-xs">
+                    {isLookingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                    Preencher com "{spreadsheetName.length > 20 ? spreadsheetName.slice(0, 20) + '…' : spreadsheetName}"
+                  </Button>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
