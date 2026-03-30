@@ -9,7 +9,7 @@ import { GlassCard } from "@/components/home/GlassCard";
 import { useCompanyProfile, type CompanyProfileInput } from "@/hooks/useCompanyProfile";
 import { useCompanyBenchmarks } from "@/hooks/useCompanyBenchmarks";
 import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
-import { formatBRL } from "@/lib/currency";
+import { formatCurrencyBR } from "@/lib/currency";
 
 const SETORES = [
   "Comércio", "Serviços", "Indústria", "Tecnologia", "Alimentação",
