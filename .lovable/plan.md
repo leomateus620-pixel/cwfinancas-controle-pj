@@ -1,126 +1,101 @@
 
 
-## Plano: Menu "Minha Empresa" com Perfil Completo e Benchmarks de Mercado
+## Plano: Reestruturação Completa do Menu "Minha Empresa"
 
-### Visão Geral
+### Escopo
 
-Novo menu na sidebar com página dedicada ao perfil da empresa do usuário, incluindo cadastro completo de dados empresariais, metas financeiras e comparações com benchmarks setoriais gerados por IA + referências estáticas.
+Reescrever `CompanyPage.tsx` como painel empresarial premium, corrigir a edge function `company-lookup` (URL errada da API), e melhorar a lógica de identificação por nome de planilha.
 
-### Arquitetura
+### Mudanças
+
+#### 1. Fix `company-lookup` Edge Function
+- Corrigir URL da API: `https://api.lovable.dev/v1/chat/completions` → `https://ai.gateway.lovable.dev/v1/chat/completions`
+- Melhorar o prompt para extrair nome da empresa antes do primeiro hífen (ex: "Tarifa Zero - Controle Financeiro 2026" → buscar "Tarifa Zero")
+
+#### 2. Lógica de identificação pela planilha
+- Na `CompanyPage`, extrair o texto **antes do primeiro hífen** do `spreadsheet_name` como identificador
+- Enviar apenas essa parte para o `company-lookup`
+- Preencher campos vazios sem sobrescrever dados existentes
+
+#### 3. Remover card "Insights IA"
+- Remover o `GlassCard` de "Insights IA" (linhas 404-423)
+- Manter a edge function `company-benchmarks` intacta (ainda retorna `aiInsights`, mas não exibido aqui)
+
+#### 4. Novo layout da página (CompanyPage.tsx completo)
 
 ```text
-┌─────────────────────────────────────────────────┐
-│  MINHA EMPRESA                                   │
-├──────────────┬──────────────────────────────────┤
-│  Perfil      │  Benchmarks de Mercado            │
-│  Empresarial │                                   │
-│              │  ┌────────────────────────────┐   │
-│  CNPJ        │  │ Seus KPIs vs Média Setor   │   │
-│  Razão Social│  │ (barras comparativas)      │   │
-│  Setor       │  │ Margem, Crescimento, etc.  │   │
-│  Porte       │  └────────────────────────────┘   │
-│  Regime Trib.│                                   │
-│  Funcionários│  ┌────────────────────────────┐   │
-│  Faturamento │  │ Insights IA (gerados sob   │   │
-│  Cidade/UF   │  │ demanda com Lovable AI)    │   │
-│  Fundação    │  └────────────────────────────┘   │
-│              │                                   │
-│  METAS       │  ┌────────────────────────────┐   │
-│  Receita alvo│  │ Progresso vs Metas         │   │
-│  Despesa max │  │ (barras de progresso)      │   │
-│  Lucro alvo  │  └────────────────────────────┘   │
-└──────────────┴──────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  Header: Minha Empresa + nome fantasia + botão Salvar   │
+└─────────────────────────────────────────────────────────┘
+
+LINHA 1 (2 colunas desktop):
+┌──────────────────────────┬──────────────────────────────┐
+│  DADOS CADASTRAIS        │  MERCADO & BENCHMARK         │
+│  liquid-glass-card       │  liquid-glass-card            │
+│  • Auto-fill inteligente │  • Status geral (badge)       │
+│  • Badge: auto/manual    │  • 3 barras comparativas      │
+│  • Formulário completo   │  • Fonte + competência        │
+│  • Setor, CNAE, Porte    │  • Nível confiança            │
+│  • Cidade/UF             │  • Microcopy executivo        │
+└──────────────────────────┴──────────────────────────────┘
+
+LINHA 2 (full-width):
+┌─────────────────────────────────────────────────────────┐
+│  METAS FINANCEIRAS MENSAIS  (liquid-glass-card-hero)    │
+│                                                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │ META RECEITA │  │ META DESPESA│  │ META LUCRO  │     │
+│  │ Ring/gauge   │  │ Ring/gauge   │  │ Ring/gauge   │     │
+│  │ Real vs Meta │  │ Real vs Meta │  │ Real vs Meta │     │
+│  │ % + delta    │  │ % + delta    │  │ % + delta    │     │
+│  │ Microcopy    │  │ Microcopy    │  │ Microcopy    │     │
+│  └─────────────┘  └─────────────┘  └─────────────┘     │
+│  Inputs editáveis das metas (colapsável)                 │
+└─────────────────────────────────────────────────────────┘
+
+LINHA 3 (full-width, se houver dados):
+┌─────────────────────────────────────────────────────────┐
+│  RESUMO FINANCEIRO DO MÊS                               │
+│  3 mini-cards: Receita | Despesa | Resultado             │
+│  + Margem estimada + variação vs mês anterior            │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### Etapas
+#### 5. Card Metas — Gauges visuais com SVG
+- Ring/gauge SVG circular para cada meta (receita, despesa, lucro)
+- Cor dinâmica: verde (atingido/dentro), amarelo (próximo), vermelho (acima do limite)
+- Valores reais de `usePeriodMetrics` vs metas salvas
+- Microcopy: "Você atingiu 78% da meta de receita" / "Despesas consumiram 64% do limite"
+- Inputs de meta em seção colapsável (não poluir visual principal)
 
-#### 1. Migração — Tabela `company_profiles`
+#### 6. Card Benchmark — Mais robusto
+- Mostrar fonte: "Referência: SEBRAE/IBGE — {setor} — {porte}"
+- Badge de status geral: "Acima da média" / "Dentro da faixa" / "Abaixo da média"
+- Manter as 3 barras comparativas existentes (Margem, Crescimento, Despesas/Receita)
+- Adicionar microcopy interpretativo por métrica
 
-Nova tabela para armazenar dados da empresa e metas:
+#### 7. Visual premium
+- Usar classes CSS existentes: `liquid-glass-card`, `liquid-glass-card-hero`, `liquid-glass-kpi`
+- Microanimações via `transition-all duration-300`
+- Hover sutil nos cards
+- Skeleton loading com shimmer para estados de carregamento
+- Fallbacks elegantes para dados ausentes
 
-```sql
-CREATE TABLE public.company_profiles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL UNIQUE,
-  cnpj text,
-  razao_social text,
-  nome_fantasia text,
-  setor text,
-  porte text DEFAULT 'ME',
-  regime_tributario text,
-  num_funcionarios integer,
-  faturamento_anual numeric,
-  cidade text,
-  estado text,
-  ano_fundacao integer,
-  meta_receita_mensal numeric,
-  meta_despesa_mensal numeric,
-  meta_lucro_mensal numeric,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
-ALTER TABLE public.company_profiles ENABLE ROW LEVEL SECURITY;
--- RLS: usuário vê/edita apenas seus dados
-CREATE POLICY "Users manage own company" ON public.company_profiles
-  FOR ALL TO authenticated USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
-
-CREATE TRIGGER update_company_profiles_updated_at
-  BEFORE UPDATE ON public.company_profiles
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-```
-
-#### 2. Edge Function — `company-benchmarks`
-
-Edge function que recebe setor, porte e KPIs reais do usuário. Combina:
-- **Tabela estática** (hardcoded na function): médias setoriais de margem líquida, crescimento receita, % despesas sobre faturamento por setor/porte (referências SEBRAE/IBGE)
-- **Lovable AI** (`google/gemini-3-flash-preview`): gera insights personalizados comparando os dados reais do usuário com as médias do setor
-
-Retorna JSON com benchmarks estáticos + insights textuais da IA.
-
-#### 3. Hook — `useCompanyProfile`
-
-CRUD do perfil da empresa + query de benchmarks via `supabase.functions.invoke('company-benchmarks')`.
-
-#### 4. Hook — `useCompanyBenchmarks`
-
-Busca os KPIs reais do usuário (via `usePeriodMetrics`) e envia para a edge function para comparação.
-
-#### 5. Página — `src/pages/CompanyPage.tsx`
-
-Layout em duas colunas (desktop) / stack (mobile):
-
-**Coluna esquerda — Perfil:**
-- Formulário editável com todos os campos (CNPJ, razão social, setor, porte, regime tributário, funcionários, faturamento anual, cidade/UF, ano fundação)
-- Seção de metas financeiras mensais (receita, despesa, lucro)
-- Botão salvar com feedback
-
-**Coluna direita — Benchmarks e Comparações:**
-- Card "Seus KPIs vs Mercado" com barras horizontais comparativas (seu valor vs média setor)
-- Card "Progresso vs Metas" com barras de progresso circulares ou lineares
-- Card "Insights IA" com análise textual gerada sob demanda (botão "Gerar análise")
-- Visual liquid glass premium consistente com o resto do sistema
-
-#### 6. Sidebar + Rota
-
-- Adicionar item "Minha Empresa" na sidebar (ícone `Building2`, url `/company`)
-- Adicionar rota protegida em `App.tsx`
+#### 8. Resumo financeiro do mês (novo bloco)
+- 3 mini-cards com receita, despesa e resultado do período
+- Variação % vs período anterior (já disponível em `usePeriodMetrics`)
+- Margem estimada
 
 ### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Criar | `src/pages/CompanyPage.tsx` |
-| Criar | `src/hooks/useCompanyProfile.ts` |
-| Criar | `src/hooks/useCompanyBenchmarks.ts` |
-| Criar | `supabase/functions/company-benchmarks/index.ts` |
-| Editar | `src/components/layout/AppSidebar.tsx` (add nav item) |
-| Editar | `src/App.tsx` (add route) |
-| Migração | Tabela `company_profiles` |
+| Reescrever | `src/pages/CompanyPage.tsx` |
+| Editar | `supabase/functions/company-lookup/index.ts` (fix URL + lógica hífen) |
 
 ### Escopo restrito
-- Zero impacto em hooks, queries, filtros ou páginas existentes
-- Dados de KPIs lidos via hooks existentes (`usePeriodMetrics`), sem duplicação
-- IA chamada sob demanda (botão), não automática
+- Zero novos hooks, queries ou tabelas
+- Mesmos dados de `useCompanyProfile`, `useCompanyBenchmarks`, `usePeriodMetrics`
+- Zero impacto em sidebar, rotas, outros menus
+- Edge function `company-benchmarks` inalterada
 
