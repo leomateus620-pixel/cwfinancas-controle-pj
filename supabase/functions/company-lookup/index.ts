@@ -44,7 +44,7 @@ Retorne APENAS um JSON válido com esta estrutura (use null para campos que não
 
 IMPORTANTE: Retorne SOMENTE o JSON, sem markdown, sem explicações.`;
 
-    const response = await fetch("https://api.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
