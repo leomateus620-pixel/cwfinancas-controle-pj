@@ -289,15 +289,63 @@ export type Database = {
           },
         ]
       }
+      company_annual_goals: {
+        Row: {
+          connection_id: string | null
+          created_at: string | null
+          id: string
+          meta_despesa_anual: number | null
+          meta_lucro_anual: number | null
+          meta_receita_anual: number | null
+          updated_at: string | null
+          user_id: string
+          year: number
+        }
+        Insert: {
+          connection_id?: string | null
+          created_at?: string | null
+          id?: string
+          meta_despesa_anual?: number | null
+          meta_lucro_anual?: number | null
+          meta_receita_anual?: number | null
+          updated_at?: string | null
+          user_id: string
+          year: number
+        }
+        Update: {
+          connection_id?: string | null
+          created_at?: string | null
+          id?: string
+          meta_despesa_anual?: number | null
+          meta_lucro_anual?: number | null
+          meta_receita_anual?: number | null
+          updated_at?: string | null
+          user_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_annual_goals_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_profiles: {
         Row: {
           ano_fundacao: number | null
           cidade: string | null
           cnpj: string | null
+          cnpj_lookup_at: string | null
+          cnpj_lookup_source: string | null
+          connection_id: string | null
           created_at: string | null
           estado: string | null
           faturamento_anual: number | null
           id: string
+          locally_edited_fields: string[] | null
           meta_despesa_mensal: number | null
           meta_lucro_mensal: number | null
           meta_receita_mensal: number | null
@@ -314,10 +362,14 @@ export type Database = {
           ano_fundacao?: number | null
           cidade?: string | null
           cnpj?: string | null
+          cnpj_lookup_at?: string | null
+          cnpj_lookup_source?: string | null
+          connection_id?: string | null
           created_at?: string | null
           estado?: string | null
           faturamento_anual?: number | null
           id?: string
+          locally_edited_fields?: string[] | null
           meta_despesa_mensal?: number | null
           meta_lucro_mensal?: number | null
           meta_receita_mensal?: number | null
@@ -334,10 +386,14 @@ export type Database = {
           ano_fundacao?: number | null
           cidade?: string | null
           cnpj?: string | null
+          cnpj_lookup_at?: string | null
+          cnpj_lookup_source?: string | null
+          connection_id?: string | null
           created_at?: string | null
           estado?: string | null
           faturamento_anual?: number | null
           id?: string
+          locally_edited_fields?: string[] | null
           meta_despesa_mensal?: number | null
           meta_lucro_mensal?: number | null
           meta_receita_mensal?: number | null
@@ -350,7 +406,15 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "company_profiles_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       dre_lines: {
         Row: {
