@@ -50,3 +50,9 @@ verify_jwt = false
 
 [functions.company-benchmarks]
 verify_jwt = false
+
+[functions.cnpj-lookup]
+verify_jwt = false
+
+[functions.company-lookup]
+verify_jwt = false
