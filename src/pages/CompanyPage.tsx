@@ -3,15 +3,20 @@ import {
   Building2, Save, Target, TrendingUp, TrendingDown, BarChart3, Users, MapPin,
   Calendar, FileText, Loader2, Wand2, DollarSign, ArrowUpRight, ArrowDownRight,
   ChevronDown, ChevronUp, Activity, Percent, AlertTriangle, CheckCircle2, MinusCircle,
+  Search, Eye, X, Shield, Clock, CalendarRange, Goal,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { useCompanyProfile, type CompanyProfileInput } from "@/hooks/useCompanyProfile";
 import { useCompanyBenchmarks } from "@/hooks/useCompanyBenchmarks";
 import { usePeriodMetrics } from "@/hooks/usePeriodMetrics";
+import { useActiveConnection } from "@/hooks/useActiveConnection";
+import { useCompanyCnpjLookup, formatCNPJ, type CnpjLookupResult } from "@/hooks/useCompanyCnpjLookup";
+import { useAnnualGoals } from "@/hooks/useAnnualGoals";
 import { formatCurrencyBR } from "@/lib/currency";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,7 +41,6 @@ function GaugeRing({ percent, color, size = 120, strokeWidth = 10 }: {
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(percent, 150));
   const offset = circumference - (clamped / 100) * circumference;
-
   return (
     <svg width={size} height={size} className="transform -rotate-90">
       <circle cx={size / 2} cy={size / 2} r={r} fill="none"
@@ -60,7 +64,6 @@ function BenchmarkBar({ label, userValue, marketValue, suffix, higherIsBetter, m
   const userBetter = higherIsBetter ? userValue >= marketValue : userValue <= marketValue;
   const diff = userValue - marketValue;
   const diffStr = diff > 0 ? `+${Math.abs(diff).toFixed(1)}${suffix}` : `${diff.toFixed(1)}${suffix}`;
-
   return (
     <div className="space-y-2 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
       <div className="flex justify-between items-center text-xs">
@@ -133,34 +136,93 @@ function MiniKPI({ icon: Icon, label, value, change, changeLabel, color }: {
   );
 }
 
+/* ── CNPJ Preview Modal ── */
+function CnpjPreviewModal({ preview, open, onClose, onConfirm, isConfirming }: {
+  preview: CnpjLookupResult | null;
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  isConfirming: boolean;
+}) {
+  if (!preview) return null;
+  const fields: { label: string; value: string | null }[] = [
+    { label: "Razão Social", value: preview.razao_social },
+    { label: "Nome Fantasia", value: preview.nome_fantasia },
+    { label: "CNPJ", value: preview.cnpj },
+    { label: "Situação", value: preview.situacao_cadastral },
+    { label: "Natureza Jurídica", value: preview.natureza_juridica },
+    { label: "Data de Abertura", value: preview.data_abertura },
+    { label: "CNAE Principal", value: preview.cnae_principal },
+    { label: "Porte", value: preview.porte },
+    { label: "Setor Inferido", value: preview.setor },
+    { label: "Regime Tributário", value: preview.regime_tributario },
+    { label: "Endereço", value: preview.endereco },
+    { label: "Cidade", value: preview.cidade },
+    { label: "Estado", value: preview.estado },
+    { label: "CEP", value: preview.cep },
+    { label: "Telefone", value: preview.telefone },
+    { label: "E-mail", value: preview.email },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-primary" />
+            Dados encontrados — {preview.source}
+          </DialogTitle>
+          <DialogDescription>
+            Revise os dados antes de confirmar o preenchimento.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {fields.map(f => f.value && (
+            <div key={f.label} className="flex justify-between items-start py-1.5 border-b border-white/[0.06] last:border-0">
+              <span className="text-xs text-muted-foreground w-32 shrink-0">{f.label}</span>
+              <span className="text-sm text-foreground text-right">{f.value}</span>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="gap-2 mt-4">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={onConfirm} disabled={isConfirming} className="gap-2">
+            {isConfirming ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            Confirmar e preencher
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ═══════════════════════════════════════════════════ */
 export default function CompanyPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const { company, isLoading: loadingProfile, upsertCompany } = useCompanyProfile();
+  const { connectionId, spreadsheetName, isLoading: loadingConnection } = useActiveConnection();
+  const { company, isLoading: loadingProfile, upsertCompany } = useCompanyProfile(connectionId);
   const { data: benchmarkResult, isLoading: loadingBenchmarks, fetchBenchmarks } = useCompanyBenchmarks();
   const metrics = usePeriodMetrics();
+  const cnpjLookup = useCompanyCnpjLookup();
+  const { currentYearGoal, upsertGoal, isLoading: loadingGoals } = useAnnualGoals(connectionId);
+
+  const currentYear = new Date().getFullYear();
 
   const [form, setForm] = useState<Partial<CompanyProfileInput>>({});
   const [dirty, setDirty] = useState(false);
-  const [spreadsheetName, setSpreadsheetName] = useState<string | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
+  const [annualGoalsOpen, setAnnualGoalsOpen] = useState(false);
+  const [showCnpjPreview, setShowCnpjPreview] = useState(false);
+  const [cnpjInput, setCnpjInput] = useState("");
 
-  // Fetch connected spreadsheet name
-  useEffect(() => {
-    if (!user?.id) return;
-    supabase
-      .from("google_sheet_connections")
-      .select("spreadsheet_name")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .then(({ data }) => {
-        if (data?.[0]?.spreadsheet_name) {
-          setSpreadsheetName(data[0].spreadsheet_name);
-        }
-      });
-  }, [user?.id]);
+  // Annual goals form
+  const [annualForm, setAnnualForm] = useState<{
+    meta_receita_anual: number | null;
+    meta_despesa_anual: number | null;
+    meta_lucro_anual: number | null;
+  }>({ meta_receita_anual: null, meta_despesa_anual: null, meta_lucro_anual: null });
 
   // Extract company name before first hyphen
   const extractedCompanyName = useMemo(() => {
@@ -193,12 +255,44 @@ export default function CompanyPage() {
         toast({ title: "Dados preenchidos", description: `Dados inferidos a partir de "${extractedCompanyName}". Revise e salve.` });
       }
     } catch (e: any) {
-      console.error("Lookup error:", e);
       toast({ variant: "destructive", title: "Erro ao buscar dados", description: "Não foi possível buscar os dados da empresa." });
     } finally {
       setIsLookingUp(false);
     }
   }, [extractedCompanyName, form, toast]);
+
+  // CNPJ lookup flow
+  const handleCnpjLookup = useCallback(() => {
+    const digits = cnpjInput.replace(/\D/g, "");
+    if (digits.length === 14) {
+      cnpjLookup.lookup(digits);
+    }
+  }, [cnpjInput, cnpjLookup]);
+
+  // Show modal when preview arrives
+  useEffect(() => {
+    if (cnpjLookup.preview) setShowCnpjPreview(true);
+  }, [cnpjLookup.preview]);
+
+  const handleConfirmCnpj = useCallback(() => {
+    const p = cnpjLookup.preview;
+    if (!p) return;
+    const newForm: Partial<CompanyProfileInput> = { ...form };
+    if (p.razao_social) newForm.razao_social = p.razao_social;
+    if (p.nome_fantasia) newForm.nome_fantasia = p.nome_fantasia;
+    if (p.cnpj) newForm.cnpj = p.cnpj;
+    if (p.setor) newForm.setor = p.setor;
+    if (p.porte) newForm.porte = p.porte;
+    if (p.regime_tributario) newForm.regime_tributario = p.regime_tributario;
+    if (p.cidade) newForm.cidade = p.cidade;
+    if (p.estado) newForm.estado = p.estado;
+    if (p.ano_fundacao) newForm.ano_fundacao = p.ano_fundacao;
+    setForm(newForm);
+    setDirty(true);
+    setShowCnpjPreview(false);
+    cnpjLookup.clearPreview();
+    toast({ title: "Dados importados", description: `Fonte: ${p.source}. Revise e salve.` });
+  }, [cnpjLookup, form, toast]);
 
   // Sync form with loaded company
   useEffect(() => {
@@ -211,15 +305,42 @@ export default function CompanyPage() {
         meta_receita_mensal: company.meta_receita_mensal, meta_despesa_mensal: company.meta_despesa_mensal,
         meta_lucro_mensal: company.meta_lucro_mensal,
       });
+      if (company.cnpj) setCnpjInput(formatCNPJ(company.cnpj));
     }
   }, [company]);
+
+  // Sync annual goals form
+  useEffect(() => {
+    if (currentYearGoal) {
+      setAnnualForm({
+        meta_receita_anual: currentYearGoal.meta_receita_anual,
+        meta_despesa_anual: currentYearGoal.meta_despesa_anual,
+        meta_lucro_anual: currentYearGoal.meta_lucro_anual,
+      });
+    }
+  }, [currentYearGoal]);
 
   const updateField = (field: string, value: string | number | null) => {
     setForm(prev => ({ ...prev, [field]: value }));
     setDirty(true);
   };
 
-  const handleSave = () => { upsertCompany.mutate(form); setDirty(false); };
+  const handleSave = () => {
+    const saveData: any = { ...form };
+    if (cnpjLookup.preview) {
+      saveData.cnpj_lookup_source = cnpjLookup.preview.source;
+      saveData.cnpj_lookup_at = new Date().toISOString();
+    }
+    upsertCompany.mutate(saveData);
+    setDirty(false);
+  };
+
+  const handleSaveAnnualGoals = () => {
+    upsertGoal.mutate({
+      year: currentYear,
+      ...annualForm,
+    });
+  };
 
   const kpis = useMemo(() => ({
     margem: metrics.margin,
@@ -242,15 +363,39 @@ export default function CompanyPage() {
       despesa: metaDespesa > 0 ? (metrics.currentExpense / metaDespesa) * 100 : 0,
       lucro: metaLucro > 0 ? (metrics.currentBalance / metaLucro) * 100 : 0,
       metaReceita, metaDespesa, metaLucro,
-      deltaReceita: metaReceita > 0 ? metrics.currentIncome - metaReceita : 0,
-      deltaDespesa: metaDespesa > 0 ? metrics.currentExpense - metaDespesa : 0,
-      deltaLucro: metaLucro > 0 ? metrics.currentBalance - metaLucro : 0,
     };
   }, [form, metrics]);
 
+  // Annual progress
+  const annualProgress = useMemo(() => {
+    const metaR = annualForm.meta_receita_anual ?? 0;
+    const metaD = annualForm.meta_despesa_anual ?? 0;
+    const metaL = annualForm.meta_lucro_anual ?? 0;
+
+    // Sum monthly breakdown for current year
+    const yearMonths = metrics.monthlyBreakdown.filter(m => m.monthKey.startsWith(String(currentYear)));
+    const accIncome = yearMonths.reduce((s, m) => s + m.income, 0);
+    const accExpense = yearMonths.reduce((s, m) => s + m.expense, 0);
+    const accBalance = accIncome - accExpense;
+
+    const avgMonthly = yearMonths.length > 0 ? accIncome / yearMonths.length : 0;
+    const bestMonth = yearMonths.length > 0 ? Math.max(...yearMonths.map(m => m.income)) : 0;
+    const projection = yearMonths.length > 0 ? avgMonthly * 12 : 0;
+
+    return {
+      accIncome, accExpense, accBalance,
+      pctReceita: metaR > 0 ? (accIncome / metaR) * 100 : 0,
+      pctDespesa: metaD > 0 ? (accExpense / metaD) * 100 : 0,
+      pctLucro: metaL > 0 ? (accBalance / metaL) * 100 : 0,
+      metaR, metaD, metaL,
+      avgMonthly, bestMonth, projection,
+      monthCount: yearMonths.length,
+      gap: metaR > 0 ? metaR - accIncome : 0,
+    };
+  }, [annualForm, metrics.monthlyBreakdown, currentYear]);
+
   const benchmark = benchmarkResult?.benchmark;
 
-  // Overall benchmark status
   const overallStatus = useMemo(() => {
     if (!benchmark) return null;
     let score = 0;
@@ -263,8 +408,8 @@ export default function CompanyPage() {
   }, [benchmark, kpis]);
 
   const hasGoals = goalProgress.metaReceita > 0 || goalProgress.metaDespesa > 0 || goalProgress.metaLucro > 0;
+  const hasAnnualGoals = annualProgress.metaR > 0 || annualProgress.metaD > 0 || annualProgress.metaL > 0;
 
-  // Gauge helpers
   const getGaugeColor = (percent: number, isExpense = false) => {
     if (isExpense) {
       if (percent > 100) return "#ef4444";
@@ -293,7 +438,25 @@ export default function CompanyPage() {
     return `Atenção — ${p}% da meta de lucro`;
   };
 
-  if (loadingProfile) {
+  const cnpjValid = cnpjLookup.isValid(cnpjInput);
+  const cnpjDigits = cnpjInput.replace(/\D/g, "");
+
+  // No connection state
+  if (!loadingConnection && !connectionId) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="liquid-glass-card rounded-2xl p-10 text-center max-w-md space-y-4">
+          <Building2 className="w-16 h-16 mx-auto text-muted-foreground/30" />
+          <h2 className="text-xl font-bold text-foreground">Nenhuma planilha conectada</h2>
+          <p className="text-sm text-muted-foreground">
+            Conecte uma planilha financeira para acessar o painel da empresa. Cada planilha terá seu contexto isolado.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadingProfile || loadingConnection) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="space-y-4 w-full max-w-2xl px-6">
@@ -324,7 +487,9 @@ export default function CompanyPage() {
               {form.nome_fantasia || "Minha Empresa"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {form.setor ? `${form.setor} • ${form.porte || ""}` : "Painel empresarial e benchmarks de mercado"}
+              {spreadsheetName ? `📊 ${spreadsheetName}` : "Painel empresarial"}
+              {form.setor ? ` • ${form.setor}` : ""}
+              {form.porte ? ` • ${form.porte}` : ""}
             </p>
           </div>
         </div>
@@ -340,25 +505,58 @@ export default function CompanyPage() {
 
         {/* ── LEFT: Dados Cadastrais ── */}
         <div className="liquid-glass-card rounded-2xl p-6 space-y-5 transition-all duration-300 hover:shadow-xl hover:shadow-primary/5">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4 text-primary" />
               <h2 className="text-base font-semibold text-foreground">Dados Cadastrais</h2>
             </div>
-            {extractedCompanyName && !company?.razao_social && (
-              <Button size="sm" variant="outline" onClick={handleAutoFill} disabled={isLookingUp}
-                className="gap-1.5 text-xs rounded-xl border-primary/20 hover:bg-primary/5">
-                {isLookingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                Preencher com "{extractedCompanyName.length > 18 ? extractedCompanyName.slice(0, 18) + '…' : extractedCompanyName}"
+            <div className="flex items-center gap-2">
+              {company?.cnpj_lookup_source && (
+                <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
+                  <Shield className="w-3 h-3" /> {company.cnpj_lookup_source}
+                </span>
+              )}
+              {extractedCompanyName && !company?.razao_social && (
+                <Button size="sm" variant="outline" onClick={handleAutoFill} disabled={isLookingUp}
+                  className="gap-1.5 text-xs rounded-xl border-primary/20 hover:bg-primary/5">
+                  {isLookingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  Auto-preencher
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* CNPJ Lookup Section */}
+          <div className="space-y-2 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+            <Label className="text-xs text-muted-foreground flex items-center gap-1">
+              <Search className="w-3 h-3" /> Consultar por CNPJ
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="00.000.000/0000-00"
+                value={cnpjInput}
+                onChange={e => {
+                  setCnpjInput(formatCNPJ(e.target.value));
+                  updateField("cnpj", e.target.value.replace(/\D/g, ""));
+                }}
+                className={`bg-white/[0.04] border-white/[0.08] flex-1 ${
+                  cnpjDigits.length === 14 ? (cnpjValid ? "border-emerald-500/30" : "border-red-500/30") : ""
+                }`}
+              />
+              <Button size="sm" variant="outline" onClick={handleCnpjLookup}
+                disabled={cnpjLookup.isLoading || !cnpjValid || cnpjDigits.length !== 14}
+                className="gap-1.5 text-xs rounded-xl border-primary/20 hover:bg-primary/5 shrink-0">
+                {cnpjLookup.isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                Consultar
               </Button>
+            </div>
+            {cnpjDigits.length === 14 && !cnpjValid && (
+              <p className="text-[10px] text-red-400">CNPJ inválido — verifique os dígitos</p>
             )}
+            {cnpjLookup.error && <p className="text-[10px] text-red-400">{cnpjLookup.error}</p>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">CNPJ</Label>
-              <Input placeholder="00.000.000/0000-00" value={form.cnpj ?? ""} onChange={e => updateField("cnpj", e.target.value)} className="bg-white/[0.04] border-white/[0.08]" />
-            </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Razão Social</Label>
               <Input placeholder="Razão Social" value={form.razao_social ?? ""} onChange={e => updateField("razao_social", e.target.value)} className="bg-white/[0.04] border-white/[0.08]" />
@@ -388,6 +586,10 @@ export default function CompanyPage() {
                 <SelectContent>{REGIMES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent>
               </Select>
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="w-3 h-3" />Ano de Fundação</Label>
+              <Input type="number" placeholder="2020" value={form.ano_fundacao ?? ""} onChange={e => updateField("ano_fundacao", e.target.value ? Number(e.target.value) : null)} className="bg-white/[0.04] border-white/[0.08]" />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -400,16 +602,12 @@ export default function CompanyPage() {
               <Input type="number" placeholder="0" value={form.faturamento_anual ?? ""} onChange={e => updateField("faturamento_anual", e.target.value ? Number(e.target.value) : null)} className="bg-white/[0.04] border-white/[0.08]" />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1"><Calendar className="w-3 h-3" />Ano de Fundação</Label>
-              <Input type="number" placeholder="2020" value={form.ano_fundacao ?? ""} onChange={e => updateField("ano_fundacao", e.target.value ? Number(e.target.value) : null)} className="bg-white/[0.04] border-white/[0.08]" />
+              <Label className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3" />Cidade</Label>
+              <Input placeholder="Cidade" value={form.cidade ?? ""} onChange={e => updateField("cidade", e.target.value)} className="bg-white/[0.04] border-white/[0.08]" />
             </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1"><MapPin className="w-3 h-3" />Cidade</Label>
-              <Input placeholder="Cidade" value={form.cidade ?? ""} onChange={e => updateField("cidade", e.target.value)} className="bg-white/[0.04] border-white/[0.08]" />
-            </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Estado</Label>
               <Select value={form.estado ?? ""} onValueChange={v => updateField("estado", v)}>
@@ -436,29 +634,24 @@ export default function CompanyPage() {
 
           {benchmark ? (
             <div className="space-y-4">
-              {/* Status badge + source */}
               <div className="flex items-center justify-between flex-wrap gap-2">
                 {overallStatus && <StatusBadge status={overallStatus} />}
                 <p className="text-[10px] text-muted-foreground/60">
                   Ref: SEBRAE/IBGE — {benchmarkResult?.setor} — {benchmarkResult?.porte}
                 </p>
               </div>
-
               <BenchmarkBar label="Margem Líquida" userValue={kpis.margem} marketValue={benchmark.margem_liquida}
                 suffix="%" higherIsBetter microcopy={kpis.margem >= benchmark.margem_liquida
                   ? `Margem ${(kpis.margem - benchmark.margem_liquida).toFixed(1)}pp acima da referência do setor`
                   : `Margem ${(benchmark.margem_liquida - kpis.margem).toFixed(1)}pp abaixo da referência do setor`} />
-
               <BenchmarkBar label="Crescimento Receita" userValue={kpis.crescimentoReceita} marketValue={benchmark.crescimento_anual}
                 suffix="%" higherIsBetter microcopy={kpis.crescimentoReceita >= benchmark.crescimento_anual
                   ? "Crescimento acima da média setorial"
                   : "Crescimento abaixo da média setorial"} />
-
               <BenchmarkBar label="Despesas / Receita" userValue={kpis.despesaSobreReceita} marketValue={benchmark.despesas_sobre_faturamento}
                 suffix="%" higherIsBetter={false} microcopy={kpis.despesaSobreReceita <= benchmark.despesas_sobre_faturamento
                   ? "Eficiência operacional dentro da faixa saudável"
                   : "Despesa operacional acima da faixa recomendada"} />
-
               {benchmark.descricao && (
                 <p className="text-xs text-muted-foreground/70 border-t border-white/[0.06] pt-3 leading-relaxed">
                   {benchmark.descricao}
@@ -475,7 +668,7 @@ export default function CompanyPage() {
         </div>
       </div>
 
-      {/* ═══ ROW 2: Metas Financeiras ═══ */}
+      {/* ═══ ROW 2: Metas Mensais ═══ */}
       <div className="liquid-glass-card-hero rounded-2xl p-6 space-y-5 transition-all duration-300">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -492,7 +685,6 @@ export default function CompanyPage() {
           </Collapsible>
         </div>
 
-        {/* Gauges */}
         {hasGoals ? (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
             {goalProgress.metaReceita > 0 && (
@@ -511,7 +703,6 @@ export default function CompanyPage() {
                 </div>
               </div>
             )}
-
             {goalProgress.metaDespesa > 0 && (
               <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                 <div className="relative">
@@ -528,7 +719,6 @@ export default function CompanyPage() {
                 </div>
               </div>
             )}
-
             {goalProgress.metaLucro > 0 && (
               <div className="flex flex-col items-center gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                 <div className="relative">
@@ -549,12 +739,11 @@ export default function CompanyPage() {
         ) : (
           <div className="text-center py-10 text-sm text-muted-foreground">
             <Target className="w-12 h-12 mx-auto mb-4 opacity-20" />
-            <p className="font-medium mb-1">Nenhuma meta definida</p>
-            <p className="text-xs text-muted-foreground/60">Clique em "Editar metas" para configurar suas metas mensais</p>
+            <p className="font-medium mb-1">Nenhuma meta mensal definida</p>
+            <p className="text-xs text-muted-foreground/60">Clique em "Editar metas" para configurar</p>
           </div>
         )}
 
-        {/* Collapsible goal inputs */}
         <Collapsible open={goalsOpen} onOpenChange={setGoalsOpen}>
           <CollapsibleContent>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-white/[0.06]">
@@ -575,7 +764,127 @@ export default function CompanyPage() {
         </Collapsible>
       </div>
 
-      {/* ═══ ROW 3: Resumo Financeiro ═══ */}
+      {/* ═══ ROW 3: Metas Anuais ═══ */}
+      <div className="liquid-glass-card rounded-2xl p-6 space-y-5 transition-all duration-300 hover:shadow-xl hover:shadow-primary/5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CalendarRange className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Planejamento Anual — {currentYear}</h2>
+          </div>
+          <Collapsible open={annualGoalsOpen} onOpenChange={setAnnualGoalsOpen}>
+            <CollapsibleTrigger asChild>
+              <Button size="sm" variant="ghost" className="gap-1 text-xs text-muted-foreground">
+                {annualGoalsOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                Editar metas anuais
+              </Button>
+            </CollapsibleTrigger>
+          </Collapsible>
+        </div>
+
+        {hasAnnualGoals ? (
+          <>
+            {/* Annual KPI cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="liquid-glass-kpi p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] text-muted-foreground">Receita Acumulada</span>
+                <p className="text-lg font-bold text-foreground">{formatCurrencyBR(annualProgress.accIncome)}</p>
+                <p className="text-[10px] text-muted-foreground">{annualProgress.pctReceita.toFixed(1)}% da meta</p>
+              </div>
+              <div className="liquid-glass-kpi p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] text-muted-foreground">Gap Restante</span>
+                <p className={`text-lg font-bold ${annualProgress.gap <= 0 ? "text-emerald-400" : "text-foreground"}`}>
+                  {formatCurrencyBR(Math.abs(annualProgress.gap))}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{annualProgress.gap <= 0 ? "Meta atingida" : "Para atingir meta"}</p>
+              </div>
+              <div className="liquid-glass-kpi p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] text-muted-foreground">Projeção 12 meses</span>
+                <p className="text-lg font-bold text-foreground">{formatCurrencyBR(annualProgress.projection)}</p>
+                <p className="text-[10px] text-muted-foreground">Baseado em {annualProgress.monthCount} meses</p>
+              </div>
+              <div className="liquid-glass-kpi p-4 rounded-2xl space-y-1">
+                <span className="text-[10px] text-muted-foreground">Média Mensal</span>
+                <p className="text-lg font-bold text-foreground">{formatCurrencyBR(annualProgress.avgMonthly)}</p>
+                <p className="text-[10px] text-muted-foreground">Melhor mês: {formatCurrencyBR(annualProgress.bestMonth)}</p>
+              </div>
+            </div>
+
+            {/* Annual progress bar */}
+            {annualProgress.metaR > 0 && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Progresso anual de receita</span>
+                  <span className="font-semibold">{annualProgress.pctReceita.toFixed(1)}%</span>
+                </div>
+                <div className="h-3 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-primary/60 to-primary transition-all duration-1000 ease-out"
+                    style={{ width: `${Math.min(annualProgress.pctReceita, 100)}%` }} />
+                </div>
+              </div>
+            )}
+
+            {/* Monthly contributions */}
+            {metrics.monthlyBreakdown.filter(m => m.monthKey.startsWith(String(currentYear))).length > 1 && (
+              <div className="space-y-2">
+                <span className="text-xs text-muted-foreground">Contribuição mensal</span>
+                <div className="flex items-end gap-1 h-16">
+                  {metrics.monthlyBreakdown
+                    .filter(m => m.monthKey.startsWith(String(currentYear)))
+                    .map(m => {
+                      const maxIncome = Math.max(...metrics.monthlyBreakdown.filter(x => x.monthKey.startsWith(String(currentYear))).map(x => x.income), 1);
+                      const h = (m.income / maxIncome) * 100;
+                      return (
+                        <div key={m.monthKey} className="flex-1 flex flex-col items-center gap-0.5">
+                          <div className="w-full rounded-t bg-primary/40 transition-all duration-500" style={{ height: `${h}%` }} />
+                          <span className="text-[8px] text-muted-foreground">{m.monthKey.slice(5)}</span>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-10 text-sm text-muted-foreground">
+            <CalendarRange className="w-12 h-12 mx-auto mb-4 opacity-20" />
+            <p className="font-medium mb-1">Nenhuma meta anual definida</p>
+            <p className="text-xs text-muted-foreground/60">Clique em "Editar metas anuais" para configurar o planejamento de {currentYear}</p>
+          </div>
+        )}
+
+        <Collapsible open={annualGoalsOpen} onOpenChange={setAnnualGoalsOpen}>
+          <CollapsibleContent>
+            <div className="space-y-4 pt-4 border-t border-white/[0.06]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Meta Receita Anual (R$)</Label>
+                  <Input type="number" placeholder="0" value={annualForm.meta_receita_anual ?? ""}
+                    onChange={e => setAnnualForm(p => ({ ...p, meta_receita_anual: e.target.value ? Number(e.target.value) : null }))}
+                    className="bg-white/[0.04] border-white/[0.08]" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Limite Despesa Anual (R$)</Label>
+                  <Input type="number" placeholder="0" value={annualForm.meta_despesa_anual ?? ""}
+                    onChange={e => setAnnualForm(p => ({ ...p, meta_despesa_anual: e.target.value ? Number(e.target.value) : null }))}
+                    className="bg-white/[0.04] border-white/[0.08]" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Meta Lucro Anual (R$)</Label>
+                  <Input type="number" placeholder="0" value={annualForm.meta_lucro_anual ?? ""}
+                    onChange={e => setAnnualForm(p => ({ ...p, meta_lucro_anual: e.target.value ? Number(e.target.value) : null }))}
+                    className="bg-white/[0.04] border-white/[0.08]" />
+                </div>
+              </div>
+              <Button size="sm" onClick={handleSaveAnnualGoals} disabled={upsertGoal.isPending} className="gap-2">
+                {upsertGoal.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar metas anuais
+              </Button>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+
+      {/* ═══ ROW 4: Resumo Financeiro ═══ */}
       {!metrics.isLoading && metrics.transactionCount > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <MiniKPI icon={ArrowUpRight} label="Receita do Período" value={formatCurrencyBR(metrics.currentIncome)}
@@ -607,6 +916,15 @@ export default function CompanyPage() {
           </div>
         </div>
       )}
+
+      {/* CNPJ Preview Modal */}
+      <CnpjPreviewModal
+        preview={cnpjLookup.preview}
+        open={showCnpjPreview}
+        onClose={() => { setShowCnpjPreview(false); cnpjLookup.clearPreview(); }}
+        onConfirm={handleConfirmCnpj}
+        isConfirming={false}
+      />
     </div>
   );
 }
