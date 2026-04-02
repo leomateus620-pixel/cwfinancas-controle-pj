@@ -12,7 +12,8 @@ import {
   LineChart,
   FileSpreadsheet,
   ClipboardList,
-  Building2
+  Building2,
+  CreditCard
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
@@ -42,6 +43,7 @@ const mainNavItems = [
   { title: "Fluxo de Caixa", url: "/cash-flow", icon: ArrowLeftRight },
   { title: "DRE", url: "/dre", icon: BarChart3 },
   { title: "Contas a Pagar/Receber", url: "/accounts", icon: ClipboardList },
+  { title: "Cartão de Crédito", url: "/credit-cards", icon: CreditCard },
   { title: "Previsões", url: "/forecasts", icon: LineChart },
 ];
 

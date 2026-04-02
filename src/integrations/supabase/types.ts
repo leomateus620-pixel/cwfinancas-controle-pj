@@ -416,6 +416,230 @@ export type Database = {
           },
         ]
       }
+      credit_card_cycles: {
+        Row: {
+          card_label: string | null
+          connection_id: string | null
+          created_at: string
+          cycle_end_row: number | null
+          cycle_start_row: number | null
+          detection_confidence: number | null
+          due_date: string
+          gross_amount: number | null
+          id: string
+          import_batch_id: string | null
+          net_amount: number | null
+          period_key: string
+          raw_block_hash: string | null
+          reimbursement_amount: number | null
+          source_sheet_id: string | null
+          source_tab: string | null
+          status: string
+          transaction_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          card_label?: string | null
+          connection_id?: string | null
+          created_at?: string
+          cycle_end_row?: number | null
+          cycle_start_row?: number | null
+          detection_confidence?: number | null
+          due_date: string
+          gross_amount?: number | null
+          id?: string
+          import_batch_id?: string | null
+          net_amount?: number | null
+          period_key: string
+          raw_block_hash?: string | null
+          reimbursement_amount?: number | null
+          source_sheet_id?: string | null
+          source_tab?: string | null
+          status?: string
+          transaction_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          card_label?: string | null
+          connection_id?: string | null
+          created_at?: string
+          cycle_end_row?: number | null
+          cycle_start_row?: number | null
+          detection_confidence?: number | null
+          due_date?: string
+          gross_amount?: number | null
+          id?: string
+          import_batch_id?: string | null
+          net_amount?: number | null
+          period_key?: string
+          raw_block_hash?: string | null
+          reimbursement_amount?: number | null
+          source_sheet_id?: string | null
+          source_tab?: string | null
+          status?: string
+          transaction_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_cycles_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_card_cycles_source_sheet_id_fkey"
+            columns: ["source_sheet_id"]
+            isOneToOne: false
+            referencedRelation: "google_sheet_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_card_review_queue: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          final_decision: string | null
+          id: string
+          raw_snapshot: Json | null
+          reason_flag: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          row_hash: string | null
+          source_row_number: number | null
+          source_tab: string | null
+          suggested_action: string | null
+          transaction_id: string | null
+          user_id: string
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          final_decision?: string | null
+          id?: string
+          raw_snapshot?: Json | null
+          reason_flag?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          row_hash?: string | null
+          source_row_number?: number | null
+          source_tab?: string | null
+          suggested_action?: string | null
+          transaction_id?: string | null
+          user_id: string
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          final_decision?: string | null
+          id?: string
+          raw_snapshot?: Json | null
+          reason_flag?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          row_hash?: string | null
+          source_row_number?: number | null
+          source_tab?: string | null
+          suggested_action?: string | null
+          transaction_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_review_queue_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_card_transactions: {
+        Row: {
+          amount: number
+          category_normalized: string | null
+          category_original: string | null
+          created_at: string
+          cycle_id: string | null
+          detection_confidence: number | null
+          detection_flags: Json | null
+          due_date: string | null
+          id: string
+          is_manually_overridden: boolean | null
+          original_description: string | null
+          override_reason: string | null
+          row_hash: string | null
+          source_account: string | null
+          source_row_number: number | null
+          transaction_id: string | null
+          transaction_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          category_normalized?: string | null
+          category_original?: string | null
+          created_at?: string
+          cycle_id?: string | null
+          detection_confidence?: number | null
+          detection_flags?: Json | null
+          due_date?: string | null
+          id?: string
+          is_manually_overridden?: boolean | null
+          original_description?: string | null
+          override_reason?: string | null
+          row_hash?: string | null
+          source_account?: string | null
+          source_row_number?: number | null
+          transaction_id?: string | null
+          transaction_type?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          category_normalized?: string | null
+          category_original?: string | null
+          created_at?: string
+          cycle_id?: string | null
+          detection_confidence?: number | null
+          detection_flags?: Json | null
+          due_date?: string | null
+          id?: string
+          is_manually_overridden?: boolean | null
+          original_description?: string | null
+          override_reason?: string | null
+          row_hash?: string | null
+          source_account?: string | null
+          source_row_number?: number | null
+          transaction_id?: string | null
+          transaction_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_card_transactions_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "credit_card_cycles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_card_transactions_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dre_lines: {
         Row: {
           created_at: string | null

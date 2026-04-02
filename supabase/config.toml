@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.company-lookup]
 verify_jwt = false
+
+[functions.detect-credit-cards]
+verify_jwt = false
