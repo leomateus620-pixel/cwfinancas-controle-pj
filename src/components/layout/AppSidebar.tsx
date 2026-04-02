@@ -12,7 +12,8 @@ import {
   LineChart,
   FileSpreadsheet,
   ClipboardList,
-  Building2
+  Building2,
+  CreditCard
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
