@@ -96,6 +96,7 @@ const App = () => {
                   <Route path="/insights" element={<InsightsPage />} />
                   <Route path="/google-sheets" element={<GoogleSheetsPage />} />
                   <Route path="/accounts" element={<AccountsPage />} />
+                  <Route path="/credit-cards" element={<CreditCardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                 </Route>
                 
