@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CreditCard, RefreshCw, Search, CheckCircle2, XCircle, AlertTriangle, Receipt, ArrowDownRight, ArrowUpRight, Loader2 } from "lucide-react";
 import { useCreditCardDashboard } from "@/hooks/useCreditCardDashboard";
-import { formatBRL } from "@/lib/currency";
+import { formatCurrencyBR as formatBRL } from "@/lib/currency";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
