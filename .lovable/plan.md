@@ -1,163 +1,170 @@
 
 
-## Plano: Isolamento por Planilha, CNPJ Lookup e Upgrade de Metas
+## Plano: Feature "Cartão de Crédito" — Detecção, Persistência e Dashboard Premium
 
-### Diagnóstico do Estado Atual
+### Análise dos Padrões nas Planilhas
 
-**Problema crítico**: `company_profiles` usa `user_id UNIQUE` — só permite 1 empresa por usuário. Ao trocar de planilha, os dados da empresa anterior são reutilizados. Não há isolamento.
+Com base nas 3 imagens, os blocos de cartão de crédito seguem padrões claros:
 
-**Metas**: Apenas 3 campos numéricos na tabela `company_profiles`. Sem metas anuais, sem histórico.
+1. **Coluna de conta/banco**: Contém "Fatura CC Sicr...", "Fatura CC Nuba", ou nome do banco emissor (UNICRED, CRESOL)
+2. **Data repetida**: Todas as linhas do bloco compartilham a mesma data (vencimento da fatura)
+3. **Valores negativos**: Despesas em formato negativo ou com parênteses
+4. **Descrições pulverizadas**: Fornecedores variados (postos, restaurantes, apps, software)
+5. **Categorias preenchidas**: Software, Alimentação, Deslocamentos, Gasolina, etc.
+6. **Contiguidade**: Linhas consecutivas formando blocos de 8-40+ linhas
 
-**CNPJ lookup**: Usa IA para inferir dados por nome — não consulta fontes públicas reais.
-
----
-
-### Fase 1 — Migração de Banco (Schema)
-
-**1a. Adicionar `connection_id` à tabela `company_profiles`**
-
-```sql
--- Remover constraint UNIQUE(user_id), adicionar connection_id
-ALTER TABLE public.company_profiles 
-  ADD COLUMN connection_id uuid REFERENCES google_sheet_connections(id) ON DELETE SET NULL;
-
--- Novo índice único: 1 perfil por user+connection
-CREATE UNIQUE INDEX company_profiles_user_connection 
-  ON public.company_profiles(user_id, connection_id);
-
--- Drop old unique constraint on user_id alone
-ALTER TABLE public.company_profiles DROP CONSTRAINT IF EXISTS company_profiles_user_id_key;
-
--- Adicionar campo de metadados CNPJ lookup
-ALTER TABLE public.company_profiles 
-  ADD COLUMN cnpj_lookup_source text,
-  ADD COLUMN cnpj_lookup_at timestamptz,
-  ADD COLUMN locally_edited_fields text[] DEFAULT '{}';
-```
-
-**1b. Tabela `company_annual_goals`**
-
-```sql
-CREATE TABLE public.company_annual_goals (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  connection_id uuid REFERENCES google_sheet_connections(id) ON DELETE SET NULL,
-  year integer NOT NULL,
-  meta_receita_anual numeric,
-  meta_despesa_anual numeric,
-  meta_lucro_anual numeric,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now(),
-  UNIQUE(user_id, connection_id, year)
-);
-
-ALTER TABLE public.company_annual_goals ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users manage own annual goals" ON public.company_annual_goals
-  FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
-CREATE TRIGGER update_annual_goals_updated_at
-  BEFORE UPDATE ON public.company_annual_goals
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-```
-
-**1c. Atualizar RLS de `company_profiles`** — manter a policy existente (já filtra por `user_id`).
-
----
-
-### Fase 2 — Edge Function `cnpj-lookup`
-
-Nova edge function que consulta APIs públicas reais de CNPJ, com fallback:
+### Arquitetura
 
 ```text
-Fonte 1: brasilapi.com.br/api/cnpj/v1/{cnpj}  (gratuita, dados da Receita)
-Fonte 2: receitaws.com.br/v1/cnpj/{cnpj}       (fallback)
-Fonte 3: AI inference via Lovable AI           (último recurso)
+┌─────────────────────────────────────────────────────┐
+│              PIPELINE DE DETECÇÃO                    │
+│                                                      │
+│  sheets-sync-all-tabs (existente, NÃO alterado)      │
+│           ↓ (transactions já persistidas)             │
+│  detect-credit-cards (nova edge function)            │
+│           ↓                                          │
+│  credit_card_cycles + credit_card_transactions       │
+│           ↓                                          │
+│  credit_card_review_queue (baixa confiança)          │
+└─────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────┐
+│              FRONTEND                                │
+│                                                      │
+│  useCreditCardDashboard() hook                       │
+│           ↓                                          │
+│  CreditCardPage.tsx (menu premium)                   │
+│  - KPIs: líquido, bruto, reembolsos, lançamentos    │
+│  - Faturas por ciclo                                 │
+│  - Categorias (donut + grid)                         │
+│  - Tabela de lançamentos                             │
+│  - Fila de revisão                                   │
+└─────────────────────────────────────────────────────┘
 ```
 
-- Validação de CNPJ (dígitos verificadores) no backend antes de chamar
-- Normaliza resposta para schema unificado
-- Retorna: razao_social, nome_fantasia, cnpj, situacao_cadastral, natureza_juridica, data_abertura, cnae_principal, cnaes_secundarios, porte, endereco, cidade, estado, cep, telefone, email, quadro_societario
-- Salva `source` e `lookup_at` nos metadados
+### Abordagem de Detecção — PÓS-IMPORTAÇÃO
 
----
+A detecção NÃO altera o pipeline de sync existente. Em vez disso, uma **nova edge function** (`detect-credit-cards`) analisa as transações já importadas na tabela `transactions` para identificar blocos de cartão. Isso garante zero regressão.
 
-### Fase 3 — Hooks Refatorados
+**Sinais de detecção (por prioridade):**
+1. Campo `client_vendor` ou `source_tab` contendo "Fatura CC", "cartão", "cartao"
+2. Campo `notes` ou `raw_data` com referências a emissores de cartão
+3. Repetição de `date` em linhas contíguas do mesmo `source_tab` + `source_sheet_id`
+4. Valores predominantemente negativos (despesa)
+5. Descrições pulverizadas típicas de cartão (fornecedores diversos, apps, postos)
+6. Contiguidade de `source_row_number`
 
-**`useActiveConnection()`** — novo hook que retorna o `connection_id` da planilha ativa (mais recente do user).
+**Score de confiança:**
+- "Fatura CC" no client_vendor → 0.95
+- Nome de banco emissor + data repetida + contiguidade → 0.85
+- Apenas contiguidade + data repetida + negativos → 0.70
+- Abaixo de 0.70 → `needs_review`
 
-**`useCompanyProfile(connectionId)`** — refatorar:
-- Query key: `["company-profile", user_id, connectionId]`
-- Filtro: `.eq("user_id", user.id).eq("connection_id", connectionId)`
-- Upsert: inclui `connection_id`
+### Fase 1 — Migração de Banco
 
-**`useCompanyCnpjLookup()`** — novo hook:
-- Valida CNPJ no client (dígitos verificadores)
-- Chama `cnpj-lookup` edge function
-- Retorna preview dos dados
-- Método `confirmAndSave(connectionId)` persiste
+**Tabela `credit_card_cycles`:**
+- id, user_id, connection_id, card_label, period_key, due_date
+- source_sheet_id, source_tab
+- cycle_start_row, cycle_end_row
+- detection_confidence, gross_amount, reimbursement_amount, net_amount
+- transaction_count, status (draft|validated|needs_review)
+- raw_block_hash, import_batch_id
+- created_at, updated_at
+- RLS: user_id = auth.uid()
 
-**`useAnnualGoals(connectionId)`** — novo hook:
-- CRUD na tabela `company_annual_goals`
-- Query key com `connectionId`
+**Tabela `credit_card_transactions`:**
+- id, cycle_id, user_id, transaction_id (FK → transactions)
+- due_date, transaction_type (expense|reimbursement)
+- original_description, amount, category_original, category_normalized
+- source_account, source_row_number, row_hash
+- detection_confidence, detection_flags (jsonb)
+- is_manually_overridden, override_reason
+- created_at, updated_at
+- RLS: user_id = auth.uid()
 
----
+**Tabela `credit_card_review_queue`:**
+- id, user_id, transaction_id, source_tab, source_row_number
+- row_hash, raw_snapshot (jsonb), reason_flag, suggested_action
+- confidence, reviewed_by, reviewed_at, final_decision
+- created_at
+- RLS: user_id = auth.uid()
 
-### Fase 4 — CompanyPage.tsx Reescrita
+### Fase 2 — Edge Function `detect-credit-cards`
 
-**Seção 1: Header** — exibe nome fantasia + planilha vinculada
+Recebe `{ connectionId }`, lê transações dessa connection, agrupa por `source_tab` + `date` + contiguidade de `source_row_number`, calcula scores, persiste ciclos e transações de cartão. Deduplicação por `row_hash`.
 
-**Seção 2: Dados Cadastrais** (coluna esquerda)
-- Input de CNPJ com máscara `00.000.000/0000-00`
-- Validação visual em tempo real (dígitos verificadores)
-- Botão "Consultar CNPJ" → chama edge function → exibe preview modal → confirma
-- Badge discreto: "Fonte: BrasilAPI" / "Editado localmente"
-- Auto-fill por nome da planilha (existente, mantido)
+Lógica principal:
+1. Buscar transações com `source_sheet_id` da connection
+2. Agrupar por `source_tab`
+3. Ordenar por `source_row_number`
+4. Detectar blocos contíguos (mesma data, linhas consecutivas, padrão "Fatura CC")
+5. Calcular score por bloco
+6. Classificar cada linha: expense / reimbursement / needs_review
+7. Upsert em `credit_card_cycles` e `credit_card_transactions`
+8. Enviar baixa confiança para `credit_card_review_queue`
 
-**Seção 3: Benchmark** (coluna direita) — mantido como está
+### Fase 3 — Hooks
 
-**Seção 4: Metas Mensais** — upgrade visual:
-- Gauges SVG maiores com melhor hierarquia
-- Cards com status semântico (em dia / atenção / atrasada / concluída)
-- Microcopy executivo
-- Forecast: "mantendo esse ritmo, meta concluída em X dias"
-- Inputs colapsáveis mantidos
+**`useCreditCardDashboard(connectionId)`:**
+- Query de ciclos com agregados
+- Query de transações com filtros (período, cartão, categoria, tipo)
+- Query de review queue
+- Mutation para reprocessar
+- Mutation para override manual (aprovar/rejeitar review item)
 
-**Seção 5: Metas Anuais** (nova seção):
-- Card principal: meta anual total, acumulado, gap, % realizado
-- 3 indicadores: projeção de fechamento, melhor mês, média mensal
-- Barra de progresso anual com contribuição por mês (dados de `usePeriodMetrics.monthlyBreakdown`)
-- Inputs editáveis para receita/despesa/lucro anuais
-- Empty state elegante
+### Fase 4 — `CreditCardPage.tsx`
 
-**Seção 6: Resumo Financeiro** — mantido como está
+Layout premium liquid glass:
 
----
+```text
+┌─────────────────────────────────────────────────────┐
+│  CARTÃO DE CRÉDITO          [Detectar] [Filtros]    │
+└─────────────────────────────────────────────────────┘
 
-### Fase 5 — Tratamento de Troca de Planilha
+ROW 1: KPIs (4 cards)
+┌──────────┬──────────┬──────────┬──────────┐
+│ Fatura   │ Despesas │ Reembol- │ Lança-   │
+│ Líquida  │ Brutas   │ sos      │ mentos   │
+└──────────┴──────────┴──────────┴──────────┘
 
-- `useActiveConnection` retorna `connectionId` reativo
-- Ao mudar, React Query invalida automaticamente (key inclui connectionId)
-- Sem flash de dados antigos: skeleton loading enquanto carrega novo contexto
-- Se `connectionId` for null (sem planilha), exibir empty state orientativo
+ROW 2: 2 colunas
+┌────────────────────┬───────────────────────┐
+│ FATURAS POR CICLO  │ CATEGORIAS (donut)    │
+│ cards por vencim.  │ + grid lateral        │
+└────────────────────┴───────────────────────┘
 
----
+ROW 3: Tabela de lançamentos (full-width)
+┌─────────────────────────────────────────────────────┐
+│ Busca | Vencimento | Descrição | Categoria | Valor  │
+│       | Tipo | Origem | Confiança                    │
+└─────────────────────────────────────────────────────┘
+
+ROW 4: Revisão (se houver itens)
+┌─────────────────────────────────────────────────────┐
+│ Itens com baixa confiança + ações de override       │
+└─────────────────────────────────────────────────────┘
+```
+
+### Fase 5 — Sidebar + Rota
+
+- Adicionar "Cartão de Crédito" na sidebar (ícone `CreditCard`)
+- Rota protegida `/credit-cards` em App.tsx
 
 ### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Migração | Schema: `connection_id` em `company_profiles` + tabela `company_annual_goals` |
-| Criar | `supabase/functions/cnpj-lookup/index.ts` |
-| Criar | `src/hooks/useActiveConnection.ts` |
-| Criar | `src/hooks/useCompanyCnpjLookup.ts` |
-| Criar | `src/hooks/useAnnualGoals.ts` |
-| Reescrever | `src/hooks/useCompanyProfile.ts` (adicionar connectionId) |
-| Reescrever | `src/pages/CompanyPage.tsx` (layout completo) |
-| Não tocar | `useCompanyBenchmarks`, `usePeriodMetrics`, sidebar, rotas, edge functions existentes |
+| Migração | 3 tabelas + índices + RLS |
+| Criar | `supabase/functions/detect-credit-cards/index.ts` |
+| Criar | `src/hooks/useCreditCardDashboard.ts` |
+| Criar | `src/pages/CreditCardPage.tsx` |
+| Editar | `src/components/layout/AppSidebar.tsx` (add nav) |
+| Editar | `src/App.tsx` (add route) |
 
 ### Escopo restrito
-- Zero impacto em dashboard, DRE, forecast, transações, sync
-- Dados existentes em `company_profiles` recebem `connection_id = NULL` (retrocompatível)
-- Edge function `company-benchmarks` inalterada
+- Zero alteração no pipeline de sync existente (`sheets-sync-all-tabs`)
+- Zero alteração nas tabelas `transactions`, `dre_*`, `forecast_*`
+- Detecção opera sobre dados já importados (pós-sync)
+- Zero impacto em dashboards, DRE, caixa, receitas, despesas
+- Dados de cartão em tabelas dedicadas e isoladas
 
