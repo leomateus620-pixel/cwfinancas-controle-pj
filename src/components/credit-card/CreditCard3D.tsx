@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import { CardBrand, GENERIC_BRAND } from "@/lib/cardCatalog";
-import { formatCurrency } from "@/lib/currency";
+import { formatCurrencyBR } from "@/lib/currency";
 
 interface CreditCard3DProps {
   brand: CardBrand;
