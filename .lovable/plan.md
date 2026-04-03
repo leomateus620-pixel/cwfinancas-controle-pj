@@ -1,170 +1,144 @@
 
 
-## Plano: Feature "Cartão de Crédito" — Detecção, Persistência e Dashboard Premium
+## Plano: Redesign Premium do Menu "Cartão de Crédito" + Cartão 3D Dinâmico
 
-### Análise dos Padrões nas Planilhas
+### Diagnóstico
 
-Com base nas 3 imagens, os blocos de cartão de crédito seguem padrões claros:
+**Edge Function**: Deployada e funcional. O erro "Failed to send a request" provavelmente ocorre com CORS headers incompletos. O header atual é `authorization, x-client-info, apikey, content-type` mas falta `x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version`. A detecção em si funciona.
 
-1. **Coluna de conta/banco**: Contém "Fatura CC Sicr...", "Fatura CC Nuba", ou nome do banco emissor (UNICRED, CRESOL)
-2. **Data repetida**: Todas as linhas do bloco compartilham a mesma data (vencimento da fatura)
-3. **Valores negativos**: Despesas em formato negativo ou com parênteses
-4. **Descrições pulverizadas**: Fornecedores variados (postos, restaurantes, apps, software)
-5. **Categorias preenchidas**: Software, Alimentação, Deslocamentos, Gasolina, etc.
-6. **Contiguidade**: Linhas consecutivas formando blocos de 8-40+ linhas
+**Detecção**: A lógica atual é sólida --- agrupa por tab, detecta blocos contíguos com "Fatura CC"/banco + mesma data + 3+ linhas. Score por bloco (0.6-0.95). Funcional, sem bugs críticos.
 
-### Arquitetura
+**UI**: Funcional mas visualmente básica --- sem cartão 3D, sem identificação de banco, sem animações, sem hero section, sem premium.
 
-```text
-┌─────────────────────────────────────────────────────┐
-│              PIPELINE DE DETECÇÃO                    │
-│                                                      │
-│  sheets-sync-all-tabs (existente, NÃO alterado)      │
-│           ↓ (transactions já persistidas)             │
-│  detect-credit-cards (nova edge function)            │
-│           ↓                                          │
-│  credit_card_cycles + credit_card_transactions       │
-│           ↓                                          │
-│  credit_card_review_queue (baixa confiança)          │
-└─────────────────────────────────────────────────────┘
+**Hook**: Funciona, mas `transactionsQuery` depende de `cyclesQuery.data` sem query key incluindo os cycle IDs, causando possível stale data.
 
-┌─────────────────────────────────────────────────────┐
-│              FRONTEND                                │
-│                                                      │
-│  useCreditCardDashboard() hook                       │
-│           ↓                                          │
-│  CreditCardPage.tsx (menu premium)                   │
-│  - KPIs: líquido, bruto, reembolsos, lançamentos    │
-│  - Faturas por ciclo                                 │
-│  - Categorias (donut + grid)                         │
-│  - Tabela de lançamentos                             │
-│  - Fila de revisão                                   │
-└─────────────────────────────────────────────────────┘
-```
+### Mudanças
 
-### Abordagem de Detecção — PÓS-IMPORTAÇÃO
+#### 1. Fix CORS na Edge Function
 
-A detecção NÃO altera o pipeline de sync existente. Em vez disso, uma **nova edge function** (`detect-credit-cards`) analisa as transações já importadas na tabela `transactions` para identificar blocos de cartão. Isso garante zero regressão.
+Atualizar `corsHeaders` para incluir todos os headers do Supabase client e importar de `@supabase/supabase-js/cors` quando possível.
 
-**Sinais de detecção (por prioridade):**
-1. Campo `client_vendor` ou `source_tab` contendo "Fatura CC", "cartão", "cartao"
-2. Campo `notes` ou `raw_data` com referências a emissores de cartão
-3. Repetição de `date` em linhas contíguas do mesmo `source_tab` + `source_sheet_id`
-4. Valores predominantemente negativos (despesa)
-5. Descrições pulverizadas típicas de cartão (fornecedores diversos, apps, postos)
-6. Contiguidade de `source_row_number`
+#### 2. Copiar imagens dos cartões para assets
 
-**Score de confiança:**
-- "Fatura CC" no client_vendor → 0.95
-- Nome de banco emissor + data repetida + contiguidade → 0.85
-- Apenas contiguidade + data repetida + negativos → 0.70
-- Abaixo de 0.70 → `needs_review`
+Copiar as 4 imagens (Banrisul, Nubank, Sicredi, Unicred) para `src/assets/cards/` e criar um cartão genérico via CSS gradient.
 
-### Fase 1 — Migração de Banco
+#### 3. Catálogo de cartões + detecção de banco
 
-**Tabela `credit_card_cycles`:**
-- id, user_id, connection_id, card_label, period_key, due_date
-- source_sheet_id, source_tab
-- cycle_start_row, cycle_end_row
-- detection_confidence, gross_amount, reimbursement_amount, net_amount
-- transaction_count, status (draft|validated|needs_review)
-- raw_block_hash, import_batch_id
-- created_at, updated_at
-- RLS: user_id = auth.uid()
-
-**Tabela `credit_card_transactions`:**
-- id, cycle_id, user_id, transaction_id (FK → transactions)
-- due_date, transaction_type (expense|reimbursement)
-- original_description, amount, category_original, category_normalized
-- source_account, source_row_number, row_hash
-- detection_confidence, detection_flags (jsonb)
-- is_manually_overridden, override_reason
-- created_at, updated_at
-- RLS: user_id = auth.uid()
-
-**Tabela `credit_card_review_queue`:**
-- id, user_id, transaction_id, source_tab, source_row_number
-- row_hash, raw_snapshot (jsonb), reason_flag, suggested_action
-- confidence, reviewed_by, reviewed_at, final_decision
-- created_at
-- RLS: user_id = auth.uid()
-
-### Fase 2 — Edge Function `detect-credit-cards`
-
-Recebe `{ connectionId }`, lê transações dessa connection, agrupa por `source_tab` + `date` + contiguidade de `source_row_number`, calcula scores, persiste ciclos e transações de cartão. Deduplicação por `row_hash`.
-
-Lógica principal:
-1. Buscar transações com `source_sheet_id` da connection
-2. Agrupar por `source_tab`
-3. Ordenar por `source_row_number`
-4. Detectar blocos contíguos (mesma data, linhas consecutivas, padrão "Fatura CC")
-5. Calcular score por bloco
-6. Classificar cada linha: expense / reimbursement / needs_review
-7. Upsert em `credit_card_cycles` e `credit_card_transactions`
-8. Enviar baixa confiança para `credit_card_review_queue`
-
-### Fase 3 — Hooks
-
-**`useCreditCardDashboard(connectionId)`:**
-- Query de ciclos com agregados
-- Query de transações com filtros (período, cartão, categoria, tipo)
-- Query de review queue
-- Mutation para reprocessar
-- Mutation para override manual (aprovar/rejeitar review item)
-
-### Fase 4 — `CreditCardPage.tsx`
-
-Layout premium liquid glass:
+Criar `src/lib/cardCatalog.ts`:
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│  CARTÃO DE CRÉDITO          [Detectar] [Filtros]    │
-└─────────────────────────────────────────────────────┘
-
-ROW 1: KPIs (4 cards)
-┌──────────┬──────────┬──────────┬──────────┐
-│ Fatura   │ Despesas │ Reembol- │ Lança-   │
-│ Líquida  │ Brutas   │ sos      │ mentos   │
-└──────────┴──────────┴──────────┴──────────┘
-
-ROW 2: 2 colunas
-┌────────────────────┬───────────────────────┐
-│ FATURAS POR CICLO  │ CATEGORIAS (donut)    │
-│ cards por vencim.  │ + grid lateral        │
-└────────────────────┴───────────────────────┘
-
-ROW 3: Tabela de lançamentos (full-width)
-┌─────────────────────────────────────────────────────┐
-│ Busca | Vencimento | Descrição | Categoria | Valor  │
-│       | Tipo | Origem | Confiança                    │
-└─────────────────────────────────────────────────────┘
-
-ROW 4: Revisão (se houver itens)
-┌─────────────────────────────────────────────────────┐
-│ Itens com baixa confiança + ações de override       │
-└─────────────────────────────────────────────────────┘
+- Interface CardBrand { id, name, aliases[], asset, gradientFallback, textColor }
+- Catálogo: nubank, sicredi, unicred, banrisul, generic
+- detectCardBrand(label: string): CardBrand — match por aliases
 ```
 
-### Fase 5 — Sidebar + Rota
+Aliases:
+- nubank: "nu", "nuba", "nubank"
+- sicredi: "sicr", "sicredi"
+- unicred: "unicred"
+- banrisul: "banrisul", "banri"
+- generic: fallback
 
-- Adicionar "Cartão de Crédito" na sidebar (ícone `CreditCard`)
-- Rota protegida `/credit-cards` em App.tsx
+#### 4. Componente CreditCard3D
+
+Criar `src/components/credit-card/CreditCard3D.tsx`:
+
+- CSS 3D transforms com `perspective`, `rotateX/Y`
+- Parallax leve via mouse move (throttled)
+- Imagem do cartão como background
+- Glow/reflexo via pseudo-elements
+- Dados sobrepostos: nome do cartão, vencimento, total líquido
+- Animação de entrada com `@keyframes`
+- `prefers-reduced-motion` respeitado
+- Fallback gradient para cartão genérico
+
+#### 5. Reescrita completa do CreditCardPage.tsx
+
+Layout premium com liquid glass:
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│  HERO SECTION                                            │
+│  ┌─────────────────┐  ┌───────────────────────────────┐  │
+│  │  CreditCard3D   │  │  Título + Subtítulo           │  │
+│  │  (parallax/tilt)│  │  Resumo: líquido, vencimento  │  │
+│  │                 │  │  CTA: Detectar Lançamentos    │  │
+│  └─────────────────┘  │  Status da última detecção    │  │
+│                        └───────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────┬──────────┬──────────┬──────────┬──────────────┐
+│ Fatura   │ Despesas │ Reembol- │ Lança-   │ Faturas      │
+│ Líquida  │ Brutas   │ sos      │ mentos   │ Detectadas   │
+└──────────┴──────────┴──────────┴──────────┴──────────────┘
+
+┌────────────────────────┬─────────────────────────────────┐
+│ FATURAS POR CICLO      │ CATEGORIAS (donut + lista)      │
+│ cards com card_label   │                                  │
+│ + badge banco          │                                  │
+└────────────────────────┴─────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ TABELA DE LANÇAMENTOS (busca + filtros)                   │
+└──────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────┐
+│ REVISÃO PENDENTE (se houver)                             │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Hero Section**:
+- Fundo `liquid-glass-card-hero`
+- Cartão 3D à esquerda com parallax
+- Info resumo à direita
+- O cartão mostrado é o do ciclo mais recente (ou genérico se vazio)
+
+**KPIs**:
+- 5 cards `liquid-glass-kpi`
+- Ícones com cápsulas translúcidas
+- Valores grandes e legíveis
+
+**Empty State Premium**:
+- Cartão 3D genérico com glow
+- Texto orientado à ação
+- CTA "Detectar Lançamentos" destacado
+- Subtexto explicando o pipeline
+
+**Loading State**:
+- Skeleton premium com shimmer
+- Feedback por etapa (se detecção em andamento)
+
+**Faturas por Ciclo**:
+- Badge visual do banco detectado (mini-ícone)
+- Status com cores semânticas
+
+#### 6. Hook refinado
+
+- Corrigir `transactionsQuery` para usar `queryKey` com `cycleIds`
+- Adicionar `cardBrand` derivado do ciclo mais recente
+
+#### 7. Animações CSS
+
+Adicionar ao `index.css`:
+- `@keyframes card-float` (leve flutuação)
+- `@keyframes card-enter` (entrada suave)
+- `.credit-card-3d` com perspective e transitions
 
 ### Arquivos
 
-| Ação | Arquivo |
+| Acao | Arquivo |
 |------|---------|
-| Migração | 3 tabelas + índices + RLS |
-| Criar | `supabase/functions/detect-credit-cards/index.ts` |
-| Criar | `src/hooks/useCreditCardDashboard.ts` |
-| Criar | `src/pages/CreditCardPage.tsx` |
-| Editar | `src/components/layout/AppSidebar.tsx` (add nav) |
-| Editar | `src/App.tsx` (add route) |
+| Copiar | `user-uploads://Cartao_*.png` → `src/assets/cards/` |
+| Criar | `src/lib/cardCatalog.ts` |
+| Criar | `src/components/credit-card/CreditCard3D.tsx` |
+| Reescrever | `src/pages/CreditCardPage.tsx` |
+| Editar | `src/hooks/useCreditCardDashboard.ts` (fix query dep + add cardBrand) |
+| Editar | `supabase/functions/detect-credit-cards/index.ts` (fix CORS) |
+| Editar | `src/index.css` (add card animations) |
 
 ### Escopo restrito
-- Zero alteração no pipeline de sync existente (`sheets-sync-all-tabs`)
-- Zero alteração nas tabelas `transactions`, `dre_*`, `forecast_*`
-- Detecção opera sobre dados já importados (pós-sync)
-- Zero impacto em dashboards, DRE, caixa, receitas, despesas
-- Dados de cartão em tabelas dedicadas e isoladas
+- Zero alteração na detecção/lógica do pipeline (já funcional)
+- Zero novas tabelas ou migrações
+- Zero impacto em outros menus/páginas
+- Edge function: apenas fix CORS headers
 
