@@ -97,7 +97,7 @@ export function CreditCard3D({
               {totalNet !== undefined && (
                 <div>
                   <p className="text-[10px] uppercase tracking-wider opacity-60">Total Líquido</p>
-                  <p className="text-xl font-bold tabular-nums">{formatCurrency(totalNet)}</p>
+                  <p className="text-xl font-bold tabular-nums">{formatCurrencyBR(totalNet)}</p>
                 </div>
               )}
               {dueDate && (
