@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useActiveConnection } from "@/hooks/useActiveConnection";
 import { toast } from "sonner";
+import { detectCardBrand, type CardBrand } from "@/lib/cardCatalog";
+import { useMemo } from "react";
 
 export function useCreditCardDashboard() {
   const { user } = useAuth();
@@ -26,12 +28,13 @@ export function useCreditCardDashboard() {
     enabled: !!userId && !!connectionId,
   });
 
+  const cycles = cyclesQuery.data || [];
+  const cycleIds = useMemo(() => cycles.map((c: any) => c.id), [cycles]);
+
   const transactionsQuery = useQuery({
-    queryKey: ["cc-transactions", userId, connectionId],
+    queryKey: ["cc-transactions", userId, connectionId, cycleIds],
     queryFn: async () => {
-      if (!userId || !connectionId) return [];
-      const cycleIds = (cyclesQuery.data || []).map((c: any) => c.id);
-      if (cycleIds.length === 0) return [];
+      if (!userId || !connectionId || cycleIds.length === 0) return [];
       const { data, error } = await supabase
         .from("credit_card_transactions")
         .select("*")
@@ -41,7 +44,7 @@ export function useCreditCardDashboard() {
       if (error) throw error;
       return data || [];
     },
-    enabled: !!userId && !!connectionId && !!cyclesQuery.data,
+    enabled: !!userId && !!connectionId && cycleIds.length > 0,
   });
 
   const reviewQuery = useQuery({
@@ -100,32 +103,40 @@ export function useCreditCardDashboard() {
     },
   });
 
-  // Computed aggregates
-  const cycles = cyclesQuery.data || [];
   const transactions = transactionsQuery.data || [];
   const reviewItems = reviewQuery.data || [];
 
-  const kpis = {
+  const kpis = useMemo(() => ({
     grossAmount: cycles.reduce((s: number, c: any) => s + Number(c.gross_amount || 0), 0),
     reimbursementAmount: cycles.reduce((s: number, c: any) => s + Number(c.reimbursement_amount || 0), 0),
     netAmount: cycles.reduce((s: number, c: any) => s + Number(c.net_amount || 0), 0),
     transactionCount: transactions.length,
     cycleCount: cycles.length,
     reviewCount: reviewItems.length,
-  };
+  }), [cycles, transactions.length, reviewItems.length]);
 
-  // Category breakdown
-  const categoryMap = new Map<string, { total: number; count: number }>();
-  for (const t of transactions) {
-    const cat = (t as any).category_original || "Sem categoria";
-    const existing = categoryMap.get(cat) || { total: 0, count: 0 };
-    existing.total += Math.abs(Number((t as any).amount || 0));
-    existing.count++;
-    categoryMap.set(cat, existing);
-  }
-  const categories = Array.from(categoryMap.entries())
-    .map(([name, data]) => ({ name, ...data }))
-    .sort((a, b) => b.total - a.total);
+  const categories = useMemo(() => {
+    const categoryMap = new Map<string, { total: number; count: number }>();
+    for (const t of transactions) {
+      const cat = (t as any).category_original || "Sem categoria";
+      const existing = categoryMap.get(cat) || { total: 0, count: 0 };
+      existing.total += Math.abs(Number((t as any).amount || 0));
+      existing.count++;
+      categoryMap.set(cat, existing);
+    }
+    return Array.from(categoryMap.entries())
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.total - a.total);
+  }, [transactions]);
+
+  // Detect the primary card brand from the most recent cycle
+  const primaryBrand: CardBrand = useMemo(() => {
+    if (cycles.length === 0) return detectCardBrand(null);
+    return detectCardBrand(cycles[0]?.card_label);
+  }, [cycles]);
+
+  // Latest cycle info
+  const latestCycle = cycles.length > 0 ? cycles[0] : null;
 
   return {
     cycles,
@@ -133,6 +144,8 @@ export function useCreditCardDashboard() {
     reviewItems,
     kpis,
     categories,
+    primaryBrand,
+    latestCycle,
     isLoading: cyclesQuery.isLoading || transactionsQuery.isLoading,
     isDetecting: detectMutation.isPending,
     detect: detectMutation.mutate,
