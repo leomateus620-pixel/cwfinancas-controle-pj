@@ -134,25 +134,15 @@ export default function CreditCardPage() {
   return (
     <div className="space-y-6 p-4 md:p-6 animate-fade-in">
       {/* HERO */}
-      <div className="liquid-glass rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
-        <CreditCard3D brand={primaryBrand} totalNet={kpis.netAmount} dueDate={latestCycle ? formatDate(latestCycle.due_date) : undefined} cycleLabel={latestCycle?.card_label || undefined} />
-        <div className="flex-1 space-y-4 text-center md:text-left">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Cartão de Crédito</h1>
-            <p className="text-muted-foreground mt-1">Consolidação das faturas corporativas detectadas nas planilhas</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 justify-center md:justify-start">
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => detect()} disabled={isDetecting}>
-              <RefreshCw className={`h-4 w-4 ${isDetecting ? "animate-spin" : ""}`} /> Reprocessar
-            </Button>
-            {latestCycle && (
-              <Badge variant="secondary" className="gap-1 px-3 py-1 text-xs rounded-full">
-                <Clock className="h-3 w-3" /> Vencimento: {formatDate(latestCycle.due_date)}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
+      <CreditCardHero
+        hasData={hasData}
+        isDetecting={isDetecting}
+        connectionId={connectionId}
+        detect={detect}
+        cycleCount={kpis.cycleCount}
+        transactionCount={kpis.transactionCount}
+        lastDetection={latestCycle?.created_at}
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
