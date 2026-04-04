@@ -76,9 +76,15 @@ export function useCreditCardDashboard() {
       queryClient.invalidateQueries({ queryKey: ["cc-cycles"] });
       queryClient.invalidateQueries({ queryKey: ["cc-transactions"] });
       queryClient.invalidateQueries({ queryKey: ["cc-review"] });
-      toast.success(
-        `Detecção concluída: ${data.cycles} faturas, ${data.transactions} lançamentos`
-      );
+      if (data.cycles === 0 && data.transactions === 0) {
+        toast.warning("Nenhuma fatura detectada", {
+          description: data.diagnostic?.suggestion || "Verifique se a planilha contém blocos de cartão com datas repetidas e banco identificável.",
+        });
+      } else {
+        toast.success(
+          `Detecção concluída: ${data.cycles} faturas, ${data.transactions} lançamentos`
+        );
+      }
     },
     onError: (err: any) => {
       toast.error("Erro na detecção: " + (err.message || "Erro desconhecido"));
