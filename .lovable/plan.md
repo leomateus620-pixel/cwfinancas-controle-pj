@@ -1,144 +1,120 @@
 
 
-## Plano: Redesign Premium do Menu "Cartão de Crédito" + Cartão 3D Dinâmico
+## Plano: Correção do Bug Crítico — 0 Faturas / 0 Lançamentos
 
-### Diagnóstico
+### Causa Raiz Identificada
 
-**Edge Function**: Deployada e funcional. O erro "Failed to send a request" provavelmente ocorre com CORS headers incompletos. O header atual é `authorization, x-client-info, apikey, content-type` mas falta `x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version`. A detecção em si funciona.
+O pipeline retorna 0/0 porque a detecção nunca é acionada. A auditoria forense dos dados reais revela:
 
-**Detecção**: A lógica atual é sólida --- agrupa por tab, detecta blocos contíguos com "Fatura CC"/banco + mesma data + 3+ linhas. Score por bloco (0.6-0.95). Funcional, sem bugs críticos.
+**1. `client_vendor` é NULL em 100% das transações.**
+A função verifica `hasCCPattern(t.client_vendor)` e `hasBankPattern(t.client_vendor)` — ambas retornam `false/null` com `client_vendor = null`.
 
-**UI**: Funcional mas visualmente básica --- sem cartão 3D, sem identificação de banco, sem animações, sem hero section, sem premium.
+**2. O nome do banco está em `raw_data->>'Banco'`**, não em `client_vendor`.
+- Connection `4fa15756`: `raw_data.Banco` = "UNICRED" ou "CRESOL"
+- Connection `9c5aa84f`: `raw_data.Banco` = null (este é o extrato Sicredi direto)
 
-**Hook**: Funciona, mas `transactionsQuery` depende de `cyclesQuery.data` sem query key incluindo os cycle IDs, causando possível stale data.
+**3. Blocos reais existem, mas são invisíveis à detecção atual.**
+Exemplo concreto: Connection `4fa15756`, aba "Janeiro", linhas 76-102:
+- 27 linhas contíguas, todas com data `2026-01-22`
+- Todas com `banco: UNICRED`
+- Descrições: "POSTO BERRES", "VACCARI", "AIRBNB * HMXYHDH (5/6)", "SHOPEE *MAGAZINEDECOR (5/12)", "CACAUSHOW SANTA ROSA (1/2)", "AMAZONMKTPLC*LOJAELECT (5/10)"
+- Categorias: Gasolina, Alimentação, Aquisições, Manutenções
+- **Este É o bloco de fatura do cartão UNICRED** — completamente ignorado.
 
-### Mudanças
+**4. A condição de entrada (linha 109) rejeita TUDO.**
+```
+if (!vendorHasCC && !descHasCC && !vendorHasBank) { i++; continue; }
+```
+Como `client_vendor = null` e descrições são nomes de comerciantes (não "Fatura CC"), nenhuma linha passa.
 
-#### 1. Fix CORS na Edge Function
+---
 
-Atualizar `corsHeaders` para incluir todos os headers do Supabase client e importar de `@supabase/supabase-js/cors` quando possível.
+### Correção — Edge Function `detect-credit-cards`
 
-#### 2. Copiar imagens dos cartões para assets
+#### Mudança 1: Ler `raw_data.Banco` como fonte primária do banco
 
-Copiar as 4 imagens (Banrisul, Nubank, Sicredi, Unicred) para `src/assets/cards/` e criar um cartão genérico via CSS gradient.
+A interface `Transaction` já inclui `raw_data: any`. A detecção deve extrair o banco de `raw_data?.Banco || raw_data?.banco`.
 
-#### 3. Catálogo de cartões + detecção de banco
+#### Mudança 2: Nova heurística de detecção por bloco (não mais por linha isolada)
 
-Criar `src/lib/cardCatalog.ts`:
+Em vez de exigir que a PRIMEIRA linha tenha padrão CC/banco no vendor, a nova abordagem:
 
-```text
-- Interface CardBrand { id, name, aliases[], asset, gradientFallback, textColor }
-- Catálogo: nubank, sicredi, unicred, banrisul, generic
-- detectCardBrand(label: string): CardBrand — match por aliases
+1. Agrupar por `(source_tab, date, banco_from_raw_data)` 
+2. Para cada grupo com 3+ linhas contíguas do mesmo banco e mesma data:
+   - Calcular sinais: presença de parcelas `(X/Y)`, descrições curtas de comerciantes, predominância de negativos, contiguidade
+   - Se score ≥ 0.6, aceitar como bloco de cartão
+3. Manter a detecção existente por "Fatura CC" como fast-path (alta confiança)
+
+#### Mudança 3: Retorno diagnóstico quando 0/0
+
+Se `blocks.length === 0`, retornar:
+```json
+{
+  "cycles": 0,
+  "transactions": 0,
+  "status": "no_blocks_found",
+  "diagnostic": {
+    "totalTransactions": N,
+    "tabsScanned": [...],
+    "transactionsPerTab": {...},
+    "candidateGroups": N,
+    "rejectedGroups": [...],
+    "suggestion": "..."
+  }
+}
 ```
 
-Aliases:
-- nubank: "nu", "nuba", "nubank"
-- sicredi: "sicr", "sicredi"
-- unicred: "unicred"
-- banrisul: "banrisul", "banri"
-- generic: fallback
+#### Mudança 4: Detecção de parcelas como sinal forte
 
-#### 4. Componente CreditCard3D
+Regex para `(X/Y)` ou `PARC=` nas descrições — sinal forte de cartão de crédito.
 
-Criar `src/components/credit-card/CreditCard3D.tsx`:
-
-- CSS 3D transforms com `perspective`, `rotateX/Y`
-- Parallax leve via mouse move (throttled)
-- Imagem do cartão como background
-- Glow/reflexo via pseudo-elements
-- Dados sobrepostos: nome do cartão, vencimento, total líquido
-- Animação de entrada com `@keyframes`
-- `prefers-reduced-motion` respeitado
-- Fallback gradient para cartão genérico
-
-#### 5. Reescrita completa do CreditCardPage.tsx
-
-Layout premium com liquid glass:
+#### Lógica nova de `detectBlocks`:
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│  HERO SECTION                                            │
-│  ┌─────────────────┐  ┌───────────────────────────────┐  │
-│  │  CreditCard3D   │  │  Título + Subtítulo           │  │
-│  │  (parallax/tilt)│  │  Resumo: líquido, vencimento  │  │
-│  │                 │  │  CTA: Detectar Lançamentos    │  │
-│  └─────────────────┘  │  Status da última detecção    │  │
-│                        └───────────────────────────────┘  │
-└──────────────────────────────────────────────────────────┘
-
-┌──────────┬──────────┬──────────┬──────────┬──────────────┐
-│ Fatura   │ Despesas │ Reembol- │ Lança-   │ Faturas      │
-│ Líquida  │ Brutas   │ sos      │ mentos   │ Detectadas   │
-└──────────┴──────────┴──────────┴──────────┴──────────────┘
-
-┌────────────────────────┬─────────────────────────────────┐
-│ FATURAS POR CICLO      │ CATEGORIAS (donut + lista)      │
-│ cards com card_label   │                                  │
-│ + badge banco          │                                  │
-└────────────────────────┴─────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────┐
-│ TABELA DE LANÇAMENTOS (busca + filtros)                   │
-└──────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────┐
-│ REVISÃO PENDENTE (se houver)                             │
-└──────────────────────────────────────────────────────────┘
+Para cada tab:
+  1. Extrair banco de raw_data.Banco para cada transação
+  2. Agrupar linhas contíguas com (mesma data + mesmo banco)
+  3. Para cada grupo ≥ 3 linhas:
+     a. Contar parcelas (regex (X/Y))
+     b. Contar descrições curtas de comerciantes
+     c. Contar negativos
+     d. Verificar se banco == "UNICRED"|"CRESOL"|etc
+     e. Se "Fatura CC" presente → confiança 0.95
+     f. Se parcelas ≥ 2 + mesmo banco + ≥ 5 linhas → 0.85
+     g. Se mesmo banco + ≥ 3 linhas + >60% negativos → 0.75
+     h. Se ≥ 0.6 → aceitar bloco
+  4. Blocos < 0.6 vão para diagnostic
 ```
 
-**Hero Section**:
-- Fundo `liquid-glass-card-hero`
-- Cartão 3D à esquerda com parallax
-- Info resumo à direita
-- O cartão mostrado é o do ciclo mais recente (ou genérico se vazio)
+### Correção — Frontend (Hook + UX)
 
-**KPIs**:
-- 5 cards `liquid-glass-kpi`
-- Ícones com cápsulas translúcidas
-- Valores grandes e legíveis
+#### `useCreditCardDashboard.ts`
 
-**Empty State Premium**:
-- Cartão 3D genérico com glow
-- Texto orientado à ação
-- CTA "Detectar Lançamentos" destacado
-- Subtexto explicando o pipeline
+No `onSuccess`, verificar `data.status === "no_blocks_found"` e mostrar toast de warning com diagnóstico em vez de sucesso falso.
 
-**Loading State**:
-- Skeleton premium com shimmer
-- Feedback por etapa (se detecção em andamento)
-
-**Faturas por Ciclo**:
-- Badge visual do banco detectado (mini-ícone)
-- Status com cores semânticas
-
-#### 6. Hook refinado
-
-- Corrigir `transactionsQuery` para usar `queryKey` com `cycleIds`
-- Adicionar `cardBrand` derivado do ciclo mais recente
-
-#### 7. Animações CSS
-
-Adicionar ao `index.css`:
-- `@keyframes card-float` (leve flutuação)
-- `@keyframes card-enter` (entrada suave)
-- `.credit-card-3d` com perspective e transitions
+```typescript
+onSuccess: (data) => {
+  if (data.cycles === 0 && data.transactions === 0) {
+    toast.warning("Nenhuma fatura detectada", {
+      description: data.diagnostic?.suggestion || "Verifique se a planilha contém blocos de cartão"
+    });
+  } else {
+    toast.success(`${data.cycles} faturas, ${data.transactions} lançamentos`);
+  }
+}
+```
 
 ### Arquivos
 
-| Acao | Arquivo |
+| Ação | Arquivo |
 |------|---------|
-| Copiar | `user-uploads://Cartao_*.png` → `src/assets/cards/` |
-| Criar | `src/lib/cardCatalog.ts` |
-| Criar | `src/components/credit-card/CreditCard3D.tsx` |
-| Reescrever | `src/pages/CreditCardPage.tsx` |
-| Editar | `src/hooks/useCreditCardDashboard.ts` (fix query dep + add cardBrand) |
-| Editar | `supabase/functions/detect-credit-cards/index.ts` (fix CORS) |
-| Editar | `src/index.css` (add card animations) |
+| Reescrever | `supabase/functions/detect-credit-cards/index.ts` (lógica de detecção + diagnóstico) |
+| Editar | `src/hooks/useCreditCardDashboard.ts` (toast warning para 0/0) |
 
 ### Escopo restrito
-- Zero alteração na detecção/lógica do pipeline (já funcional)
 - Zero novas tabelas ou migrações
-- Zero impacto em outros menus/páginas
-- Edge function: apenas fix CORS headers
+- Zero alteração no pipeline de sync/importação
+- Zero alteração em outros menus
+- Mesma edge function, mesma rota, mesmo payload
+- Apenas a lógica de detecção e o feedback ao usuário
 
