@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useCreditCardDashboard } from "@/hooks/useCreditCardDashboard";
-import { CreditCard3D } from "@/components/credit-card/CreditCard3D";
+import { CreditCardHero } from "@/components/credit-card/CreditCardHero";
 import { detectCardBrand } from "@/lib/cardCatalog";
 import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 import { GlassCard } from "@/components/home/GlassCard";
@@ -15,12 +15,10 @@ import {
   ArrowUpRight,
   ReceiptText,
   Wallet,
-  RefreshCw,
   CheckCircle2,
   XCircle,
   AlertTriangle,
   TrendingDown,
-  Clock,
   Layers,
 } from "lucide-react";
 import {
@@ -105,19 +103,15 @@ export default function CreditCardPage() {
   if (!hasData && !isDetecting) {
     return (
       <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="liquid-glass rounded-3xl p-10 max-w-2xl w-full text-center space-y-8 animate-fade-in">
-          <div className="mx-auto"><CreditCard3D brand={primaryBrand} className="mx-auto" /></div>
-          <div className="space-y-3">
-            <h1 className="text-2xl font-bold text-foreground">Cartão de Crédito</h1>
-            <p className="text-muted-foreground max-w-md mx-auto leading-relaxed">
-              Detecte automaticamente os lançamentos de cartão corporativo nas suas planilhas. O sistema identifica blocos de fatura, separa despesas de reembolsos e consolida tudo aqui.
-            </p>
-          </div>
-          <Button size="lg" className="gap-2 text-base px-8 py-3 rounded-xl shadow-lg" onClick={() => detect()} disabled={isDetecting || !connectionId}>
-            {isDetecting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Search className="h-5 w-5" />}
-            Detectar Lançamentos
-          </Button>
-          {!connectionId && <p className="text-xs text-muted-foreground/60">Conecte uma planilha primeiro para detectar lançamentos.</p>}
+        <div className="max-w-3xl w-full animate-fade-in">
+          <CreditCardHero
+            hasData={false}
+            isDetecting={isDetecting}
+            connectionId={connectionId}
+            detect={detect}
+            cycleCount={0}
+            transactionCount={0}
+          />
         </div>
       </div>
     );
@@ -138,25 +132,15 @@ export default function CreditCardPage() {
   return (
     <div className="space-y-6 p-4 md:p-6 animate-fade-in">
       {/* HERO */}
-      <div className="liquid-glass rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center gap-8">
-        <CreditCard3D brand={primaryBrand} totalNet={kpis.netAmount} dueDate={latestCycle ? formatDate(latestCycle.due_date) : undefined} cycleLabel={latestCycle?.card_label || undefined} />
-        <div className="flex-1 space-y-4 text-center md:text-left">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Cartão de Crédito</h1>
-            <p className="text-muted-foreground mt-1">Consolidação das faturas corporativas detectadas nas planilhas</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 justify-center md:justify-start">
-            <Button variant="outline" size="sm" className="gap-2 rounded-xl" onClick={() => detect()} disabled={isDetecting}>
-              <RefreshCw className={`h-4 w-4 ${isDetecting ? "animate-spin" : ""}`} /> Reprocessar
-            </Button>
-            {latestCycle && (
-              <Badge variant="secondary" className="gap-1 px-3 py-1 text-xs rounded-full">
-                <Clock className="h-3 w-3" /> Vencimento: {formatDate(latestCycle.due_date)}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
+      <CreditCardHero
+        hasData={hasData}
+        isDetecting={isDetecting}
+        connectionId={connectionId}
+        detect={detect}
+        cycleCount={kpis.cycleCount}
+        transactionCount={kpis.transactionCount}
+        lastDetection={latestCycle?.created_at}
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
