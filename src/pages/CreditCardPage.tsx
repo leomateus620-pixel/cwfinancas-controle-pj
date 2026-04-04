@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { useCreditCardDashboard } from "@/hooks/useCreditCardDashboard";
-import { CreditCard3D } from "@/components/credit-card/CreditCard3D";
+import { CreditCardHero } from "@/components/credit-card/CreditCardHero";
 import { detectCardBrand } from "@/lib/cardCatalog";
 import { formatCurrencyBR, formatCompactBR } from "@/lib/currency";
 import { GlassCard } from "@/components/home/GlassCard";
