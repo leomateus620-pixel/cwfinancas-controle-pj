@@ -36,7 +36,7 @@ export function CreditCard3D({
     setGlare({ x: 50, y: 50, opacity: 0 });
   }, []);
 
-  const src = assetOverride || cardBlackPremium;
+  const src = assetOverride || walletCardsPremium;
 
   return (
     <div
