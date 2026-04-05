@@ -1,120 +1,90 @@
 
 
-## Plano: Correção do Bug Crítico — 0 Faturas / 0 Lançamentos
+## Plano: Hero com Nova Imagem + Correção Crítica da Detecção
 
-### Causa Raiz Identificada
+### Diagnóstico Forense
 
-O pipeline retorna 0/0 porque a detecção nunca é acionada. A auditoria forense dos dados reais revela:
+**Causa raiz do LCF (0 faturas / 0 lançamentos):**
 
-**1. `client_vendor` é NULL em 100% das transações.**
-A função verifica `hasCCPattern(t.client_vendor)` e `hasBankPattern(t.client_vendor)` — ambas retornam `false/null` com `client_vendor = null`.
+A planilha LCF armazena o identificador do cartão em `raw_data->>'Conta'` = `"Fatura CC Sicredi"`, **NÃO** em `raw_data->>'Banco'` (que é NULL para essas abas).
 
-**2. O nome do banco está em `raw_data->>'Banco'`**, não em `client_vendor`.
-- Connection `4fa15756`: `raw_data.Banco` = "UNICRED" ou "CRESOL"
-- Connection `9c5aa84f`: `raw_data.Banco` = null (este é o extrato Sicredi direto)
+Dados reais confirmados no banco:
+- `Jan26`: 7 linhas com `Conta = "Fatura CC Sicredi"`, data `2026-01-13`
+- `Fev26`: 8 linhas com `Conta = "Fatura CC Sicredi"`, data `2026-02-13`
+- `Mar26`: 11 linhas com `Conta = "Fatura CC Sicredi"`, data `2026-03-13`
 
-**3. Blocos reais existem, mas são invisíveis à detecção atual.**
-Exemplo concreto: Connection `4fa15756`, aba "Janeiro", linhas 76-102:
-- 27 linhas contíguas, todas com data `2026-01-22`
-- Todas com `banco: UNICRED`
-- Descrições: "POSTO BERRES", "VACCARI", "AIRBNB * HMXYHDH (5/6)", "SHOPEE *MAGAZINEDECOR (5/12)", "CACAUSHOW SANTA ROSA (1/2)", "AMAZONMKTPLC*LOJAELECT (5/10)"
-- Categorias: Gasolina, Alimentação, Aquisições, Manutenções
-- **Este É o bloco de fatura do cartão UNICRED** — completamente ignorado.
+A função `extractBanco()` atual lê apenas `raw_data.Banco`. O campo `Conta` é completamente ignorado. Como `Banco` é NULL, nenhum grupo é formado, nenhum bloco é detectado.
 
-**4. A condição de entrada (linha 109) rejeita TUDO.**
-```
-if (!vendorHasCC && !descHasCC && !vendorHasBank) { i++; continue; }
-```
-Como `client_vendor = null` e descrições são nomes de comerciantes (não "Fatura CC"), nenhuma linha passa.
+**Causa raiz do Tarifa Zero (contaminação):**
 
----
+Na planilha Tarifa Zero, o campo `raw_data.Banco` contém "UNICRED"/"CRESOL" em TODAS as linhas da aba, incluindo receitas, PIX, transferências. O agrupamento `(date + banco)` captura tudo que tenha 3+ linhas na mesma data — inclusive blocos de receitas/pagamentos operacionais que não são cartão.
 
-### Correção — Edge Function `detect-credit-cards`
+### Tarefa 1 — Trocar imagem do Hero
 
-#### Mudança 1: Ler `raw_data.Banco` como fonte primária do banco
+Copiar a imagem da carteira de couro com os 4 cartões para `src/assets/cards/` e usar como asset principal do `CreditCard3D`. Renomear CTA de "Detectar Lançamentos" para "Conectar cartão". Ajustar glow/profundidade.
 
-A interface `Transaction` já inclui `raw_data: any`. A detecção deve extrair o banco de `raw_data?.Banco || raw_data?.banco`.
+### Tarefa 2 — Correção da Detecção (Edge Function)
 
-#### Mudança 2: Nova heurística de detecção por bloco (não mais por linha isolada)
-
-Em vez de exigir que a PRIMEIRA linha tenha padrão CC/banco no vendor, a nova abordagem:
-
-1. Agrupar por `(source_tab, date, banco_from_raw_data)` 
-2. Para cada grupo com 3+ linhas contíguas do mesmo banco e mesma data:
-   - Calcular sinais: presença de parcelas `(X/Y)`, descrições curtas de comerciantes, predominância de negativos, contiguidade
-   - Se score ≥ 0.6, aceitar como bloco de cartão
-3. Manter a detecção existente por "Fatura CC" como fast-path (alta confiança)
-
-#### Mudança 3: Retorno diagnóstico quando 0/0
-
-Se `blocks.length === 0`, retornar:
-```json
-{
-  "cycles": 0,
-  "transactions": 0,
-  "status": "no_blocks_found",
-  "diagnostic": {
-    "totalTransactions": N,
-    "tabsScanned": [...],
-    "transactionsPerTab": {...},
-    "candidateGroups": N,
-    "rejectedGroups": [...],
-    "suggestion": "..."
-  }
-}
-```
-
-#### Mudança 4: Detecção de parcelas como sinal forte
-
-Regex para `(X/Y)` ou `PARC=` nas descrições — sinal forte de cartão de crédito.
-
-#### Lógica nova de `detectBlocks`:
+#### Mudança A: `extractBanco()` deve ler `raw_data.Conta` também
 
 ```text
-Para cada tab:
-  1. Extrair banco de raw_data.Banco para cada transação
-  2. Agrupar linhas contíguas com (mesma data + mesmo banco)
-  3. Para cada grupo ≥ 3 linhas:
-     a. Contar parcelas (regex (X/Y))
-     b. Contar descrições curtas de comerciantes
-     c. Contar negativos
-     d. Verificar se banco == "UNICRED"|"CRESOL"|etc
-     e. Se "Fatura CC" presente → confiança 0.95
-     f. Se parcelas ≥ 2 + mesmo banco + ≥ 5 linhas → 0.85
-     g. Se mesmo banco + ≥ 3 linhas + >60% negativos → 0.75
-     h. Se ≥ 0.6 → aceitar bloco
-  4. Blocos < 0.6 vão para diagnostic
+Ordem de prioridade:
+1. raw_data.Conta → se contém "Fatura CC" → extrair banco ("Sicredi")
+2. raw_data.Banco → fallback atual
+3. client_vendor → fallback existente
 ```
 
-### Correção — Frontend (Hook + UX)
+#### Mudança B: Nova camada de detecção por `Conta` (fast-path)
 
-#### `useCreditCardDashboard.ts`
+Antes do agrupamento por `(date + banco)`, fazer um fast-path:
 
-No `onSuccess`, verificar `data.status === "no_blocks_found"` e mostrar toast de warning com diagnóstico em vez de sucesso falso.
-
-```typescript
-onSuccess: (data) => {
-  if (data.cycles === 0 && data.transactions === 0) {
-    toast.warning("Nenhuma fatura detectada", {
-      description: data.diagnostic?.suggestion || "Verifique se a planilha contém blocos de cartão"
-    });
-  } else {
-    toast.success(`${data.cycles} faturas, ${data.transactions} lançamentos`);
-  }
-}
+```text
+1. Filtrar todas as linhas onde raw_data.Conta ILIKE '%Fatura CC%'
+2. Agrupar por (source_tab, date, conta_normalizada)
+3. Cada grupo ≥ 3 linhas → bloco de alta confiança (0.95)
+4. Extrair banco do texto "Fatura CC Sicredi" → "Sicredi"
 ```
+
+Isso resolve o LCF imediatamente.
+
+#### Mudança C: Anti-contaminação (resolver Tarifa Zero)
+
+No agrupamento genérico por `(date + banco)`, adicionar filtros de exclusão:
+
+```text
+Sinais de EXCLUSÃO (not_credit_card):
+- description contém: "RECEBIMENTO PIX", "PAGAMENTO PIX SICREDI", 
+  "LIQUIDACAO BOLETO", "DEBITO CONVENIOS", "DEBITO ARRECADACAO",
+  "TED ", "APLIC. FINANC", "TRANSFERENCIA"
+- movement_type == "INCOME" E description contém "RECEBIMENTO"
+```
+
+Linhas com sinais de exclusão devem ser removidas do grupo ANTES do cálculo de score. Se o grupo remanescente tiver < 3 linhas, rejeitar.
+
+#### Mudança D: Priorizar `Conta` sobre `Banco` para label do cartão
+
+Se `raw_data.Conta` contém "Fatura CC Sicredi", o `cardLabel` deve ser "Cartão Sicredi", não derivado de `Banco`.
+
+#### Mudança E: Diagnóstico enriquecido
+
+Adicionar ao retorno diagnóstico:
+- `contaFieldPresent`: boolean
+- `bancoFieldPresent`: boolean  
+- `faturaCC_lines_found`: number
+- Sugestão mais precisa quando `Conta` tem "Fatura CC" mas `Banco` está vazio
 
 ### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Reescrever | `supabase/functions/detect-credit-cards/index.ts` (lógica de detecção + diagnóstico) |
-| Editar | `src/hooks/useCreditCardDashboard.ts` (toast warning para 0/0) |
+| Copiar | `user-uploads://Cartões_de_crédito_em_carteira_de_couro.png` → `src/assets/cards/wallet-cards-premium.png` |
+| Editar | `src/components/credit-card/CreditCard3D.tsx` (usar nova imagem como default) |
+| Editar | `src/components/credit-card/CreditCardHero.tsx` (CTA "Conectar cartão", ajustes visuais) |
+| Reescrever | `supabase/functions/detect-credit-cards/index.ts` (fast-path por Conta, exclusões anti-contaminação) |
 
 ### Escopo restrito
 - Zero novas tabelas ou migrações
 - Zero alteração no pipeline de sync/importação
-- Zero alteração em outros menus
-- Mesma edge function, mesma rota, mesmo payload
-- Apenas a lógica de detecção e o feedback ao usuário
+- Zero impacto em outros menus
+- Mesma rota, mesmo payload, mesmas tabelas de persistência
 
