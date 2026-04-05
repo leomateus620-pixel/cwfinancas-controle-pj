@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import cardBlackPremium from "@/assets/cards/card-black-premium.png";
+import walletCardsPremium from "@/assets/cards/wallet-cards-premium.png";
 
 interface CreditCard3DProps {
   assetOverride?: string | null;
