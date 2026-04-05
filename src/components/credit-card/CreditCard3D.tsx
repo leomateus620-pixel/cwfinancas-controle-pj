@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import cardBlackPremium from "@/assets/cards/card-black-premium.png";
+import walletCardsPremium from "@/assets/cards/wallet-cards-premium.png";
 
 interface CreditCard3DProps {
   assetOverride?: string | null;
@@ -36,7 +36,7 @@ export function CreditCard3D({
     setGlare({ x: 50, y: 50, opacity: 0 });
   }, []);
 
-  const src = assetOverride || cardBlackPremium;
+  const src = assetOverride || walletCardsPremium;
 
   return (
     <div

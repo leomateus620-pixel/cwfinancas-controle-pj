@@ -70,7 +70,7 @@ export function CreditCardHero({ hasData, isDetecting, connectionId, detect, cyc
                 ) : (
                   <Search className="h-4 w-4" />
                 )}
-                Detectar Lançamentos
+                Conectar cartão
               </Button>
             )}
             {!connectionId && (
