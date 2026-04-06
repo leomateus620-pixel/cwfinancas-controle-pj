@@ -1,90 +1,91 @@
 
 
-## Plano: Hero com Nova Imagem + Correção Crítica da Detecção
+## Plano: Refatoração Premium do Menu Cartão de Crédito — Estado Dinâmico + Ciclo Selecionado
 
-### Diagnóstico Forense
+### Diagnóstico
 
-**Causa raiz do LCF (0 faturas / 0 lançamentos):**
+**Estado atual**: O hero aparece SEMPRE (com e sem dados). Não há seletor de ciclo — todos os KPIs, categorias e lançamentos mostram dados agregados de todos os ciclos juntos. O hook retorna `latestCycle` mas a página não usa para filtrar.
 
-A planilha LCF armazena o identificador do cartão em `raw_data->>'Conta'` = `"Fatura CC Sicredi"`, **NÃO** em `raw_data->>'Banco'` (que é NULL para essas abas).
-
-Dados reais confirmados no banco:
-- `Jan26`: 7 linhas com `Conta = "Fatura CC Sicredi"`, data `2026-01-13`
-- `Fev26`: 8 linhas com `Conta = "Fatura CC Sicredi"`, data `2026-02-13`
-- `Mar26`: 11 linhas com `Conta = "Fatura CC Sicredi"`, data `2026-03-13`
-
-A função `extractBanco()` atual lê apenas `raw_data.Banco`. O campo `Conta` é completamente ignorado. Como `Banco` é NULL, nenhum grupo é formado, nenhum bloco é detectado.
-
-**Causa raiz do Tarifa Zero (contaminação):**
-
-Na planilha Tarifa Zero, o campo `raw_data.Banco` contém "UNICRED"/"CRESOL" em TODAS as linhas da aba, incluindo receitas, PIX, transferências. O agrupamento `(date + banco)` captura tudo que tenha 3+ linhas na mesma data — inclusive blocos de receitas/pagamentos operacionais que não são cartão.
-
-### Tarefa 1 — Trocar imagem do Hero
-
-Copiar a imagem da carteira de couro com os 4 cartões para `src/assets/cards/` e usar como asset principal do `CreditCard3D`. Renomear CTA de "Detectar Lançamentos" para "Conectar cartão". Ajustar glow/profundidade.
-
-### Tarefa 2 — Correção da Detecção (Edge Function)
-
-#### Mudança A: `extractBanco()` deve ler `raw_data.Conta` também
+### Arquitetura de Mudanças
 
 ```text
-Ordem de prioridade:
-1. raw_data.Conta → se contém "Fatura CC" → extrair banco ("Sicredi")
-2. raw_data.Banco → fallback atual
-3. client_vendor → fallback existente
+┌─ SEM DADOS ──────────────────────────────────┐
+│  CreditCardHero (onboarding, CTA, 3D card)   │
+└──────────────────────────────────────────────┘
+
+┌─ COM DADOS ──────────────────────────────────┐
+│  ConnectedHeader (3D card + fatura recente)   │
+│  CycleSelector (tabs: Mar/26, Fev/26, Todos) │
+│  KPIs (filtrados por ciclo)                   │
+│  Categorias + Lançamentos (filtrados)         │
+│  Review Queue                                 │
+└──────────────────────────────────────────────┘
 ```
 
-#### Mudança B: Nova camada de detecção por `Conta` (fast-path)
+### Mudanças
 
-Antes do agrupamento por `(date + banco)`, fazer um fast-path:
+#### 1. Novo componente `CreditCardConnectedHeader`
 
-```text
-1. Filtrar todas as linhas onde raw_data.Conta ILIKE '%Fatura CC%'
-2. Agrupar por (source_tab, date, conta_normalizada)
-3. Cada grupo ≥ 3 linhas → bloco de alta confiança (0.95)
-4. Extrair banco do texto "Fatura CC Sicredi" → "Sicredi"
-```
+Header horizontal premium com duas colunas:
+- **Esquerda**: `CreditCard3D` usando o asset do banco detectado no ciclo selecionado (via `cardCatalog`)
+- **Direita**: Nome do cartão, banco, vencimento da fatura mais recente, valor líquido, quantidade de lançamentos, reembolsos, status badge, botão "Reprocessar"
 
-Isso resolve o LCF imediatamente.
+Substitui o `CreditCardHero` quando `hasData === true`.
 
-#### Mudança C: Anti-contaminação (resolver Tarifa Zero)
+#### 2. Novo componente `CreditCardCycleSelector`
 
-No agrupamento genérico por `(date + banco)`, adicionar filtros de exclusão:
+Barra horizontal de chips/tabs para selecionar ciclo:
+- Ciclo mais recente selecionado por padrão
+- Labels: "Mar/2026", "Fev/2026", etc. (derivados de `due_date`)
+- Opção "Todos" como última tab (visão secundária)
+- Visual: chips pill com estado ativo/inativo em liquid glass
 
-```text
-Sinais de EXCLUSÃO (not_credit_card):
-- description contém: "RECEBIMENTO PIX", "PAGAMENTO PIX SICREDI", 
-  "LIQUIDACAO BOLETO", "DEBITO CONVENIOS", "DEBITO ARRECADACAO",
-  "TED ", "APLIC. FINANC", "TRANSFERENCIA"
-- movement_type == "INCOME" E description contém "RECEBIMENTO"
-```
+#### 3. Refatorar `CreditCardPage.tsx`
 
-Linhas com sinais de exclusão devem ser removidas do grupo ANTES do cálculo de score. Se o grupo remanescente tiver < 3 linhas, rejeitar.
+- Estado `selectedCycleId: string | "all"` (default = `cycles[0]?.id`)
+- Quando `hasData`: renderizar `ConnectedHeader` + `CycleSelector` em vez do Hero
+- Quando `!hasData`: manter Hero atual
+- Derivar `filteredTransactions`, `filteredCategories`, `filteredKPIs` com base no ciclo selecionado
+- Ao trocar ciclo: atualizar cartão 3D (brand do ciclo), KPIs, categorias, lançamentos
 
-#### Mudança D: Priorizar `Conta` sobre `Banco` para label do cartão
+#### 4. Refatorar KPIs por ciclo
 
-Se `raw_data.Conta` contém "Fatura CC Sicredi", o `cardLabel` deve ser "Cartão Sicredi", não derivado de `Banco`.
+Quando um ciclo específico está selecionado, KPIs vêm do ciclo:
+- `grossAmount` = `cycle.gross_amount`
+- `netAmount` = `cycle.net_amount`
+- `reimbursementAmount` = `cycle.reimbursement_amount`
+- `transactionCount` = transações filtradas
+- `cycleCount` = 1 (ou total se "Todos")
 
-#### Mudança E: Diagnóstico enriquecido
+Quando "Todos": manter agregação atual.
 
-Adicionar ao retorno diagnóstico:
-- `contaFieldPresent`: boolean
-- `bancoFieldPresent`: boolean  
-- `faturaCC_lines_found`: number
-- Sugestão mais precisa quando `Conta` tem "Fatura CC" mas `Banco` está vazio
+#### 5. Categorias filtradas por ciclo
+
+O `useMemo` de `categories` atualmente agrega todas as transações. Mover para dentro da página e filtrar por `selectedCycleId`. Melhorar layout: legendas maiores, spacing, truncamento com tooltip.
+
+#### 6. Lançamentos filtrados por ciclo
+
+A tabela já mostra `filteredTx` — adicionar filtro por `cycle_id` antes do filtro de busca.
+
+#### 7. Animação do gráfico de categorias
+
+Adicionar `animationBegin` e `animationDuration` ao Pie para entrada suave. Sombra sutil via `filter: drop-shadow` no container SVG.
 
 ### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Copiar | `user-uploads://Cartões_de_crédito_em_carteira_de_couro.png` → `src/assets/cards/wallet-cards-premium.png` |
-| Editar | `src/components/credit-card/CreditCard3D.tsx` (usar nova imagem como default) |
-| Editar | `src/components/credit-card/CreditCardHero.tsx` (CTA "Conectar cartão", ajustes visuais) |
-| Reescrever | `supabase/functions/detect-credit-cards/index.ts` (fast-path por Conta, exclusões anti-contaminação) |
+| Criar | `src/components/credit-card/CreditCardConnectedHeader.tsx` |
+| Criar | `src/components/credit-card/CreditCardCycleSelector.tsx` |
+| Reescrever | `src/pages/CreditCardPage.tsx` (estado dinâmico + filtros por ciclo) |
+| Preservar | `src/components/credit-card/CreditCardHero.tsx` (usado apenas no empty state) |
+| Preservar | `src/components/credit-card/CreditCard3D.tsx` (reutilizado no connected header) |
+| Preservar | `src/hooks/useCreditCardDashboard.ts` (sem alterações) |
+| Preservar | `src/lib/cardCatalog.ts` (sem alterações) |
 
 ### Escopo restrito
-- Zero novas tabelas ou migrações
-- Zero alteração no pipeline de sync/importação
-- Zero impacto em outros menus
-- Mesma rota, mesmo payload, mesmas tabelas de persistência
+- Zero alteração no hook, edge function, tabelas ou detecção
+- Zero novos assets — usa os 4 assets de banco já existentes via `cardCatalog`
+- Zero impacto em outros menus/páginas
+- Lógica de filtragem por ciclo é 100% frontend (useMemo)
 
