@@ -829,6 +829,9 @@ function GoogleSheetsPageContent() {
         </Card>
       )}
 
+      {/* Credit Card Review Queue */}
+      <CreditCardReviewSection />
+
       {/* Info Card - admin only */}
       {isSheetAdmin && (
         <Card className="glass-premium border-border/50 shadow-premium-sm bg-gradient-to-br from-chart-2/5 to-transparent overflow-hidden relative">
