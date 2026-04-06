@@ -49,8 +49,8 @@ function ConfidenceBadge({ value }: { value: number | null | undefined }) {
 
 export default function CreditCardPage() {
   const {
-    cycles, transactions, reviewItems, kpis, primaryBrand,
-    latestCycle, isLoading, isDetecting, detect, reviewItem, connectionId,
+    cycles, transactions, kpis, primaryBrand,
+    latestCycle, isLoading, isDetecting, detect, connectionId,
   } = useCreditCardDashboard();
 
   const [search, setSearch] = useState("");
