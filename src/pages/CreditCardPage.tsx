@@ -15,9 +15,6 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   ReceiptText,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
 } from "lucide-react";
 import {
   PieChart,
