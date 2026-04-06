@@ -49,8 +49,10 @@ import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorB
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Info } from "lucide-react";
-
+import { Info, AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Badge } from "@/components/ui/badge";
 const SHEET_ADMIN_EMAILS = ["leomateus620@gmail.com", "contato@cwfinancas.com"];
 
 const CONNECTION_VALIDITY_DAYS = 30;
