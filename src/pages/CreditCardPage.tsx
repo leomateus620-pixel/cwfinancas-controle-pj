@@ -294,7 +294,7 @@ export default function CreditCardPage() {
         </GlassCard>
       </div>
 
-      {/* Transactions */}
+      {/* Transactions - collapsible */}
       <GlassCard className="p-5 space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
@@ -303,77 +303,62 @@ export default function CreditCardPage() {
               <span className="text-xs text-muted-foreground font-normal ml-1">· {cycleTx.length} itens</span>
             )}
           </h2>
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl bg-white/[0.04] border-white/[0.08] text-sm" />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/[0.06] text-muted-foreground text-xs uppercase tracking-wider">
-                <th className="text-left py-3 px-3 font-medium">Vencimento</th>
-                <th className="text-left py-3 px-3 font-medium">Descrição</th>
-                <th className="text-left py-3 px-3 font-medium">Categoria</th>
-                <th className="text-right py-3 px-3 font-medium">Valor</th>
-                <th className="text-center py-3 px-3 font-medium">Tipo</th>
-                <th className="text-center py-3 px-3 font-medium">Confiança</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTx.length === 0 ? (
-                <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">{search ? "Nenhum resultado." : "Nenhum lançamento."}</td></tr>
-              ) : filteredTx.map((t: any) => (
-                <tr key={t.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
-                  <td className="py-2.5 px-3 tabular-nums text-foreground/80">{formatDate(t.due_date)}</td>
-                  <td className="py-2.5 px-3 text-foreground max-w-[250px] truncate">{t.original_description || "—"}</td>
-                  <td className="py-2.5 px-3"><span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-foreground/70">{t.category_original || "—"}</span></td>
-                  <td className="py-2.5 px-3 text-right tabular-nums font-medium">
-                    <span className={t.transaction_type === "reimbursement" ? "text-emerald-500" : "text-foreground"}>
-                      {t.transaction_type === "reimbursement" ? "+" : ""}{formatCurrencyBR(Math.abs(Number(t.amount || 0)))}
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-3 text-center">
-                    {t.transaction_type === "reimbursement"
-                      ? <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 text-[10px] px-2">Reembolso</Badge>
-                      : <Badge variant="outline" className="text-foreground/60 border-white/[0.1] text-[10px] px-2">Despesa</Badge>}
-                  </td>
-                  <td className="py-2.5 px-3 text-center"><ConfidenceBadge value={t.detection_confidence} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </GlassCard>
-
-      {/* Review Queue */}
-      {reviewItems.length > 0 && (
-        <GlassCard className="p-5 space-y-4">
-          <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-amber-500" /> Revisão Pendente
-            <Badge variant="secondary" className="ml-2 text-xs">{reviewItems.length}</Badge>
-          </h2>
-          <div className="space-y-3">
-            {reviewItems.map((item: any) => (
-              <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.04] border border-amber-500/10">
-                <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-foreground truncate">Aba: {item.source_tab} · Linha {item.source_row_number}</p>
-                  <p className="text-xs text-muted-foreground">{item.reason_flag || "Confiança baixa"} · {((item.confidence || 0) * 100).toFixed(0)}%</p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/10" onClick={() => reviewItem({ id: item.id, decision: "approved" })}>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Aprovar
-                  </Button>
-                  <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10" onClick={() => reviewItem({ id: item.id, decision: "rejected" })}>
-                    <XCircle className="h-3.5 w-3.5" /> Rejeitar
-                  </Button>
-                </div>
+          <div className="flex items-center gap-3">
+            {showTransactions && (
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Buscar..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9 rounded-xl bg-white/[0.04] border-white/[0.08] text-sm" />
               </div>
-            ))}
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground hover:text-foreground shrink-0"
+              onClick={() => setShowTransactions(!showTransactions)}
+            >
+              {showTransactions ? "Ocultar" : "Mostrar"}
+            </Button>
           </div>
-        </GlassCard>
-      )}
+        </div>
+        {showTransactions && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-muted-foreground text-xs uppercase tracking-wider">
+                  <th className="text-left py-3 px-3 font-medium">Vencimento</th>
+                  <th className="text-left py-3 px-3 font-medium">Descrição</th>
+                  <th className="text-left py-3 px-3 font-medium">Categoria</th>
+                  <th className="text-right py-3 px-3 font-medium">Valor</th>
+                  <th className="text-center py-3 px-3 font-medium">Tipo</th>
+                  <th className="text-center py-3 px-3 font-medium">Confiança</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTx.length === 0 ? (
+                  <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">{search ? "Nenhum resultado." : "Nenhum lançamento."}</td></tr>
+                ) : filteredTx.map((t: any) => (
+                  <tr key={t.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
+                    <td className="py-2.5 px-3 tabular-nums text-foreground/80">{formatDate(t.due_date)}</td>
+                    <td className="py-2.5 px-3 text-foreground max-w-[250px] truncate">{t.original_description || "—"}</td>
+                    <td className="py-2.5 px-3"><span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-foreground/70">{t.category_original || "—"}</span></td>
+                    <td className="py-2.5 px-3 text-right tabular-nums font-medium">
+                      <span className={t.transaction_type === "reimbursement" ? "text-emerald-500" : "text-foreground"}>
+                        {t.transaction_type === "reimbursement" ? "+" : ""}{formatCurrencyBR(Math.abs(Number(t.amount || 0)))}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      {t.transaction_type === "reimbursement"
+                        ? <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 text-[10px] px-2">Reembolso</Badge>
+                        : <Badge variant="outline" className="text-foreground/60 border-white/[0.1] text-[10px] px-2">Despesa</Badge>}
+                    </td>
+                    <td className="py-2.5 px-3 text-center"><ConfidenceBadge value={t.detection_confidence} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
     </div>
   );
 }
