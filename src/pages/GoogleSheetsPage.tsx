@@ -49,8 +49,10 @@ import { GoogleSheetsErrorBoundary } from "@/components/error/GoogleSheetsErrorB
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Info } from "lucide-react";
-
+import { Info, AlertTriangle, CheckCircle2, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Badge } from "@/components/ui/badge";
 const SHEET_ADMIN_EMAILS = ["leomateus620@gmail.com", "contato@cwfinancas.com"];
 
 const CONNECTION_VALIDITY_DAYS = 30;
@@ -82,6 +84,94 @@ const formatExpiryDate = (createdAt: string) => {
 };
 
 type PageState = "loading" | "not_connected" | "error" | "success";
+
+// Credit Card Review Queue Section
+function CreditCardReviewSection() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [showReview, setShowReview] = useState(true);
+
+  const reviewQuery = useQuery({
+    queryKey: ["cc-review", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from("credit_card_review_queue")
+        .select("*")
+        .eq("user_id", user.id)
+        .is("final_decision", null)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async ({ id, decision }: { id: string; decision: string }) => {
+      const { error } = await supabase
+        .from("credit_card_review_queue")
+        .update({
+          final_decision: decision,
+          reviewed_by: user?.id,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cc-review"] });
+    },
+  });
+
+  const items = reviewQuery.data || [];
+  if (items.length === 0) return null;
+
+  return (
+    <Card className="glass-premium border-border/50 shadow-premium-sm overflow-hidden relative">
+      <div className="absolute inset-0 gradient-mesh opacity-20 pointer-events-none" />
+      <CardHeader className="relative z-10">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            Revisão de Cartão de Crédito
+            <Badge variant="secondary" className="ml-2 text-xs">{items.length}</Badge>
+          </CardTitle>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setShowReview(!showReview)}
+          >
+            {showReview ? <><ChevronUp className="h-4 w-4 mr-1" /> Ocultar</> : <><ChevronDown className="h-4 w-4 mr-1" /> Mostrar</>}
+          </Button>
+        </div>
+        <CardDescription>Lançamentos de cartão com confiança baixa aguardando revisão manual.</CardDescription>
+      </CardHeader>
+      {showReview && (
+        <CardContent className="relative z-10 space-y-3">
+          {items.map((item: any) => (
+            <div key={item.id} className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.04] border border-amber-500/10">
+              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-foreground truncate">Aba: {item.source_tab} · Linha {item.source_row_number}</p>
+                <p className="text-xs text-muted-foreground">{item.reason_flag || "Confiança baixa"} · {((item.confidence || 0) * 100).toFixed(0)}%</p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/10" onClick={() => reviewMutation.mutate({ id: item.id, decision: "approved" })}>
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Aprovar
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 gap-1 text-xs text-red-500 border-red-500/30 hover:bg-red-500/10" onClick={() => reviewMutation.mutate({ id: item.id, decision: "rejected" })}>
+                  <XCircle className="h-3.5 w-3.5" /> Rejeitar
+                </Button>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
 
 // Sync History Section Component
 function SyncHistorySection() {
@@ -828,6 +918,9 @@ function GoogleSheetsPageContent() {
           </CardContent>
         </Card>
       )}
+
+      {/* Credit Card Review Queue */}
+      <CreditCardReviewSection />
 
       {/* Info Card - admin only */}
       {isSheetAdmin && (
