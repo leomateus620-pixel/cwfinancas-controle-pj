@@ -1,91 +1,77 @@
 
 
-## Plano: Refatoração Premium do Menu Cartão de Crédito — Estado Dinâmico + Ciclo Selecionado
+## Plano: Previsão Financeira 2026 — Escritório Zimmermann (Orçamento → Forecast + PDF)
 
-### Diagnóstico
+### O que será feito
 
-**Estado atual**: O hero aparece SEMPRE (com e sem dados). Não há seletor de ciclo — todos os KPIs, categorias e lançamentos mostram dados agregados de todos os ciclos juntos. O hook retorna `latestCycle` mas a página não usa para filtrar.
+Processar o arquivo XLSX do orçamento base 2025 do Escritório Zimmermann, gerar uma previsão financeira mensal para Jan-Dez 2026 com distribuição realista de receitas e despesas, inserir os dados na tabela `forecast_monthly` do banco de dados para visualização no menu "Previsões Financeiras", e gerar um PDF premium com todas as informações.
 
-### Arquitetura de Mudanças
+### Dados do Orçamento (extraídos do XLSX)
 
-```text
-┌─ SEM DADOS ──────────────────────────────────┐
-│  CreditCardHero (onboarding, CTA, 3D card)   │
-└──────────────────────────────────────────────┘
+**Despesas anuais: R$ 600.000** (34 itens categorizados)
+**Receita anual: R$ 756.000** (sem categorias — serão criadas)
+**Resultado líquido: R$ 156.000** (margem ~20,6%)
 
-┌─ COM DADOS ──────────────────────────────────┐
-│  ConnectedHeader (3D card + fatura recente)   │
-│  CycleSelector (tabs: Mar/26, Fev/26, Todos) │
-│  KPIs (filtrados por ciclo)                   │
-│  Categorias + Lançamentos (filtrados)         │
-│  Review Queue                                 │
-└──────────────────────────────────────────────┘
-```
+### Etapa 1 — Script de processamento e inserção
 
-### Mudanças
+Um script Python que:
 
-#### 1. Novo componente `CreditCardConnectedHeader`
+1. **Lê o XLSX** e extrai todas as linhas de despesa com área, categoria, subcategoria, valor anual e média mensal
+2. **Cria categorias de receita** contextualizadas para escritório contábil:
+   - Prestação de Serviços Contábeis (~50%): R$ 378.000
+   - Serviços Financeiros e BPO (~25%): R$ 189.000
+   - Consultoria Tributária e Fiscal (~12%): R$ 90.720
+   - Seguros e Corretagem (~8%): R$ 60.480
+   - Serviços Avulsos e Projetos (~5%): R$ 37.800
+3. **Distribui mensalmente** com sazonalidade realista:
+   - Janeiro: receita reduzida (~85%) — volta de férias
+   - Fevereiro-Março: pico por IRPF e obrigações acessórias (~110-115%)
+   - Abril-Maio: normalização (~100%)
+   - Junho: leve queda (~95%)
+   - Julho: menor mês (~88%) — férias de clientes
+   - Agosto-Outubro: crescimento (~100-105%)
+   - Novembro: alta (~108%) — planejamento tributário
+   - Dezembro: 13º, bônus, despesas extras (~112% despesa, ~90% receita)
+4. **Gera 12 registros** na tabela `forecast_monthly` com:
+   - `receita_real` = receita projetada (como base 2025)
+   - `despesa_real` = despesa projetada
+   - `saldo_real` = receita - despesa
+   - `receita_prev_base/opt/pess` = cenários (base, +10%, -10%)
+   - `confidence_score` = 82 (orçamento estruturado)
+   - `is_forecast` = true
+   - `sheet_id` = NULL (demanda especial)
+5. **Insere no banco** via Supabase REST API
 
-Header horizontal premium com duas colunas:
-- **Esquerda**: `CreditCard3D` usando o asset do banco detectado no ciclo selecionado (via `cardCatalog`)
-- **Direita**: Nome do cartão, banco, vencimento da fatura mais recente, valor líquido, quantidade de lançamentos, reembolsos, status badge, botão "Reprocessar"
+### Etapa 2 — Verificação no menu
 
-Substitui o `CreditCardHero` quando `hasData === true`.
+Confirmar que o menu "Previsões Financeiras" exibe corretamente os 12 meses com KPIs, gráfico, fluxo de caixa e insights.
 
-#### 2. Novo componente `CreditCardCycleSelector`
+### Etapa 3 — Geração do PDF Premium
 
-Barra horizontal de chips/tabs para selecionar ciclo:
-- Ciclo mais recente selecionado por padrão
-- Labels: "Mar/2026", "Fev/2026", etc. (derivados de `due_date`)
-- Opção "Todos" como última tab (visão secundária)
-- Visual: chips pill com estado ativo/inativo em liquid glass
+PDF com reportlab contendo:
 
-#### 3. Refatorar `CreditCardPage.tsx`
+1. **Capa**: "Previsão Financeira 2026 — Escritório Contábil Zimmermann"
+2. **Resumo Executivo**: KPIs principais (receita total, despesa total, saldo, margem, confiança)
+3. **Gráfico de Projeção**: Receita vs Despesa vs Saldo por mês (matplotlib → imagem)
+4. **Fluxo de Caixa Projetado**: Tabela mensal com entradas, saídas, saldo e acumulado
+5. **Breakdown de Despesas**: Por área/categoria com % do orçamento
+6. **Breakdown de Receitas**: Por categoria criada
+7. **Cenários**: Base, Otimista e Pessimista com comparação
+8. **Insights**: Sazonalidade, riscos e recomendações
 
-- Estado `selectedCycleId: string | "all"` (default = `cycles[0]?.id`)
-- Quando `hasData`: renderizar `ConnectedHeader` + `CycleSelector` em vez do Hero
-- Quando `!hasData`: manter Hero atual
-- Derivar `filteredTransactions`, `filteredCategories`, `filteredKPIs` com base no ciclo selecionado
-- Ao trocar ciclo: atualizar cartão 3D (brand do ciclo), KPIs, categorias, lançamentos
-
-#### 4. Refatorar KPIs por ciclo
-
-Quando um ciclo específico está selecionado, KPIs vêm do ciclo:
-- `grossAmount` = `cycle.gross_amount`
-- `netAmount` = `cycle.net_amount`
-- `reimbursementAmount` = `cycle.reimbursement_amount`
-- `transactionCount` = transações filtradas
-- `cycleCount` = 1 (ou total se "Todos")
-
-Quando "Todos": manter agregação atual.
-
-#### 5. Categorias filtradas por ciclo
-
-O `useMemo` de `categories` atualmente agrega todas as transações. Mover para dentro da página e filtrar por `selectedCycleId`. Melhorar layout: legendas maiores, spacing, truncamento com tooltip.
-
-#### 6. Lançamentos filtrados por ciclo
-
-A tabela já mostra `filteredTx` — adicionar filtro por `cycle_id` antes do filtro de busca.
-
-#### 7. Animação do gráfico de categorias
-
-Adicionar `animationBegin` e `animationDuration` ao Pie para entrada suave. Sombra sutil via `filter: drop-shadow` no container SVG.
-
-### Arquivos
+### Arquivos impactados
 
 | Ação | Arquivo |
 |------|---------|
-| Criar | `src/components/credit-card/CreditCardConnectedHeader.tsx` |
-| Criar | `src/components/credit-card/CreditCardCycleSelector.tsx` |
-| Reescrever | `src/pages/CreditCardPage.tsx` (estado dinâmico + filtros por ciclo) |
-| Preservar | `src/components/credit-card/CreditCardHero.tsx` (usado apenas no empty state) |
-| Preservar | `src/components/credit-card/CreditCard3D.tsx` (reutilizado no connected header) |
-| Preservar | `src/hooks/useCreditCardDashboard.ts` (sem alterações) |
-| Preservar | `src/lib/cardCatalog.ts` (sem alterações) |
+| Script temporário | `/tmp/zimmermann_forecast.py` (processamento + inserção) |
+| Script temporário | `/tmp/zimmermann_pdf.py` (geração do PDF) |
+| Output | `/mnt/documents/Previsao_Financeira_2026_Zimmermann.pdf` |
+| Inserção no banco | `forecast_monthly` (12 registros para 2026) |
 
 ### Escopo restrito
-- Zero alteração no hook, edge function, tabelas ou detecção
-- Zero novos assets — usa os 4 assets de banco já existentes via `cardCatalog`
-- Zero impacto em outros menus/páginas
-- Lógica de filtragem por ciclo é 100% frontend (useMemo)
+- Zero alteração em código do app (páginas, hooks, componentes)
+- Zero novas tabelas ou migrações
+- Usa a tabela `forecast_monthly` existente
+- Dados inseridos com `sheet_id = NULL` (consistente com o hook existente)
+- O menu "Previsões Financeiras" já lê esses dados automaticamente
 
