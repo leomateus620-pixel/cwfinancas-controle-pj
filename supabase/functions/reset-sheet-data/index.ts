@@ -12,7 +12,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Validate user auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -25,35 +24,30 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify user identity
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await userClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims?.sub) {
+    const { data: userData, error: userError } = await userClient.auth.getUser(token);
+    if (userError || !userData?.user?.id) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const userId = claimsData.claims.sub as string;
+    const userId = userData.user.id;
 
-    // Parse body
     const body = await req.json().catch(() => ({}));
     const connectionId: string | null = body.connection_id || null;
     const scope: string = body.scope || "ALL";
 
     console.log(`[reset-sheet-data] userId=${userId} connectionId=${connectionId} scope=${scope}`);
 
-    // Use service role client for deletions (bypasses RLS)
     const admin = createClient(supabaseUrl, serviceRoleKey);
-
     const deleted: Record<string, number> = {};
     const errors: Array<{ table: string; error: string }> = [];
 
-    // Helper to delete and count
-    const deleteFrom = async (table: string, query: ReturnType<ReturnType<typeof admin.from>["delete"]>) => {
+    const deleteFrom = async (table: string, query: any) => {
       const { data, error } = await query.select("id");
       if (error) {
         console.error(`[reset-sheet-data] Error deleting from ${table}:`, error.message);
@@ -65,269 +59,194 @@ Deno.serve(async (req) => {
       }
     };
 
+    const deleteBatched = async (table: string, column: string, ids: string[], extraFilter?: (q: any) => any) => {
+      let total = 0;
+      for (let i = 0; i < ids.length; i += 100) {
+        const batch = ids.slice(i, i + 100);
+        let q = admin.from(table).delete().in(column, batch);
+        if (extraFilter) q = extraFilter(q);
+        const { data, error } = await q.select("id");
+        if (!error) total += (data?.length ?? 0);
+      }
+      deleted[table] = (deleted[table] ?? 0) + total;
+      console.log(`[reset-sheet-data] Deleted ${total} from ${table}`);
+    };
+
     const shouldDeleteTransactions = scope === "ALL" || scope === "TRANSACTIONS_ONLY";
     const shouldDeleteDRE = scope === "ALL" || scope === "DRE_ONLY";
 
-    // --- TRANSACTIONS & RELATED (scope ALL or TRANSACTIONS_ONLY) ---
+    // ── CREDIT CARD (scope ALL or TRANSACTIONS_ONLY) ──
     if (shouldDeleteTransactions) {
-      // 1. Get transaction IDs first (for flags cleanup)
+      // 1. credit_card_review_queue
+      if (connectionId) {
+        // Get cycle IDs for this connection, then get transaction IDs, then delete review queue
+        const { data: cycles } = await admin.from("credit_card_cycles").select("id").eq("connection_id", connectionId).eq("user_id", userId);
+        const cycleIds = (cycles || []).map((c: { id: string }) => c.id);
+        if (cycleIds.length > 0) {
+          // Get transaction_ids from cc_transactions in these cycles
+          const { data: ccTxs } = await admin.from("credit_card_transactions").select("transaction_id").in("cycle_id", cycleIds).eq("user_id", userId);
+          const txIds = (ccTxs || []).filter((t: any) => t.transaction_id).map((t: any) => t.transaction_id);
+          if (txIds.length > 0) {
+            await deleteBatched("credit_card_review_queue", "transaction_id", txIds);
+          }
+          // 2. credit_card_transactions
+          await deleteBatched("credit_card_transactions", "cycle_id", cycleIds);
+        }
+        // 3. credit_card_cycles
+        await deleteFrom("credit_card_cycles", admin.from("credit_card_cycles").delete().eq("connection_id", connectionId).eq("user_id", userId));
+      } else {
+        // Total reset
+        await deleteFrom("credit_card_review_queue", admin.from("credit_card_review_queue").delete().eq("user_id", userId));
+        await deleteFrom("credit_card_transactions", admin.from("credit_card_transactions").delete().eq("user_id", userId));
+        await deleteFrom("credit_card_cycles", admin.from("credit_card_cycles").delete().eq("user_id", userId));
+      }
+
+      // 4. Get transaction IDs for flags cleanup
       let transactionIds: string[] = [];
       if (connectionId) {
-        const { data } = await admin
-          .from("transactions")
-          .select("id")
-          .eq("source_sheet_id", connectionId)
-          .eq("user_id", userId);
+        const { data } = await admin.from("transactions").select("id").eq("source_sheet_id", connectionId).eq("user_id", userId);
         transactionIds = (data || []).map((t: { id: string }) => t.id);
       } else {
-        // Reset total: only imported transactions (source_sheet_id is not null)
-        const { data } = await admin
-          .from("transactions")
-          .select("id")
-          .eq("user_id", userId)
-          .not("source_sheet_id", "is", null);
+        // Total reset: get ALL transactions (not just those with source_sheet_id)
+        const { data } = await admin.from("transactions").select("id").eq("user_id", userId);
         transactionIds = (data || []).map((t: { id: string }) => t.id);
       }
 
-      // 2. Delete transaction_flags for those transactions
+      // 5. transaction_flags
       if (transactionIds.length > 0) {
-        // Delete in batches of 100
-        let flagsDeleted = 0;
-        for (let i = 0; i < transactionIds.length; i += 100) {
-          const batch = transactionIds.slice(i, i + 100);
-          const { data, error } = await admin
-            .from("transaction_flags")
-            .delete()
-            .in("transaction_id", batch)
-            .select("id");
-          if (!error) flagsDeleted += (data?.length ?? 0);
-        }
-        deleted["transaction_flags"] = flagsDeleted;
-        console.log(`[reset-sheet-data] Deleted ${flagsDeleted} transaction_flags`);
+        await deleteBatched("transaction_flags", "transaction_id", transactionIds);
       } else {
         deleted["transaction_flags"] = 0;
       }
 
-      // 3. Delete transactions
+      // 6. transactions
       if (connectionId) {
-        await deleteFrom(
-          "transactions",
-          admin.from("transactions").delete().eq("source_sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("transactions", admin.from("transactions").delete().eq("source_sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "transactions",
-          admin.from("transactions").delete().eq("user_id", userId).not("source_sheet_id", "is", null)
-        );
+        // Total reset: delete ALL transactions (including orphans with NULL source_sheet_id)
+        await deleteFrom("transactions", admin.from("transactions").delete().eq("user_id", userId));
       }
 
-      // 4. Delete financial_daily_aggregates
+      // 7. financial_daily_aggregates
       if (connectionId) {
-        await deleteFrom(
-          "financial_daily_aggregates",
-          admin.from("financial_daily_aggregates").delete().eq("source_sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("financial_daily_aggregates", admin.from("financial_daily_aggregates").delete().eq("source_sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "financial_daily_aggregates",
-          admin.from("financial_daily_aggregates").delete().eq("user_id", userId)
-        );
+        await deleteFrom("financial_daily_aggregates", admin.from("financial_daily_aggregates").delete().eq("user_id", userId));
       }
 
-      // 4b. Delete accounts_payable_receivable
+      // 8. accounts_payable_receivable
       if (connectionId) {
-        await deleteFrom(
-          "accounts_payable_receivable",
-          admin.from("accounts_payable_receivable").delete().eq("connection_id", connectionId).eq("user_id", userId)
-        );
-        // Also clean orphaned records with NULL connection_id
-        await deleteFrom(
-          "accounts_payable_receivable (orphans)",
-          admin.from("accounts_payable_receivable").delete().is("connection_id", null).eq("user_id", userId)
-        );
+        await deleteFrom("accounts_payable_receivable", admin.from("accounts_payable_receivable").delete().eq("connection_id", connectionId).eq("user_id", userId));
+        await deleteFrom("accounts_payable_receivable (orphans)", admin.from("accounts_payable_receivable").delete().is("connection_id", null).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "accounts_payable_receivable",
-          admin.from("accounts_payable_receivable").delete().eq("user_id", userId)
-        );
+        await deleteFrom("accounts_payable_receivable", admin.from("accounts_payable_receivable").delete().eq("user_id", userId));
       }
 
-      // 4c. Delete bank_balances
+      // 9. bank_balances
       if (connectionId) {
-        await deleteFrom(
-          "bank_balances",
-          admin.from("bank_balances").delete().eq("connection_id", connectionId).eq("user_id", userId)
-        );
-        // Also clean orphaned records with NULL connection_id
-        await deleteFrom(
-          "bank_balances (orphans)",
-          admin.from("bank_balances").delete().is("connection_id", null).eq("user_id", userId)
-        );
+        await deleteFrom("bank_balances", admin.from("bank_balances").delete().eq("connection_id", connectionId).eq("user_id", userId));
+        await deleteFrom("bank_balances (orphans)", admin.from("bank_balances").delete().is("connection_id", null).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "bank_balances",
-          admin.from("bank_balances").delete().eq("user_id", userId)
-        );
+        await deleteFrom("bank_balances", admin.from("bank_balances").delete().eq("user_id", userId));
       }
     }
 
-    // --- DRE (scope ALL or DRE_ONLY) ---
+    // ── DRE (scope ALL or DRE_ONLY) ──
     if (shouldDeleteDRE) {
-      // 5. Delete dre_lines (via period_id or directly)
       if (connectionId) {
-        // Get period IDs for this connection
-        const { data: periods } = await admin
-          .from("dre_periods")
-          .select("id")
-          .eq("sheet_id", connectionId)
-          .eq("user_id", userId);
+        const { data: periods } = await admin.from("dre_periods").select("id").eq("sheet_id", connectionId).eq("user_id", userId);
         const periodIds = (periods || []).map((p: { id: string }) => p.id);
-        
         if (periodIds.length > 0) {
-          let linesDeleted = 0;
-          for (let i = 0; i < periodIds.length; i += 100) {
-            const batch = periodIds.slice(i, i + 100);
-            const { data, error } = await admin
-              .from("dre_lines")
-              .delete()
-              .in("period_id", batch)
-              .eq("user_id", userId)
-              .select("id");
-            if (!error) linesDeleted += (data?.length ?? 0);
-          }
-          deleted["dre_lines"] = linesDeleted;
+          await deleteBatched("dre_lines", "period_id", periodIds, (q: any) => q.eq("user_id", userId));
         } else {
           deleted["dre_lines"] = 0;
         }
       } else {
-        await deleteFrom(
-          "dre_lines",
-          admin.from("dre_lines").delete().eq("user_id", userId)
-        );
+        await deleteFrom("dre_lines", admin.from("dre_lines").delete().eq("user_id", userId));
       }
 
-      // 6. Delete dre_periods
       if (connectionId) {
-        await deleteFrom(
-          "dre_periods",
-          admin.from("dre_periods").delete().eq("sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("dre_periods", admin.from("dre_periods").delete().eq("sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "dre_periods",
-          admin.from("dre_periods").delete().eq("user_id", userId)
-        );
+        await deleteFrom("dre_periods", admin.from("dre_periods").delete().eq("user_id", userId));
       }
 
-      // 7. Delete dre_values
       if (connectionId) {
-        await deleteFrom(
-          "dre_values",
-          admin.from("dre_values").delete().eq("sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("dre_values", admin.from("dre_values").delete().eq("sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "dre_values",
-          admin.from("dre_values").delete().eq("user_id", userId)
-        );
+        await deleteFrom("dre_values", admin.from("dre_values").delete().eq("user_id", userId));
       }
 
-      // 8. Delete dre_mappings
       if (connectionId) {
-        await deleteFrom(
-          "dre_mappings",
-          admin.from("dre_mappings").delete().eq("sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("dre_mappings", admin.from("dre_mappings").delete().eq("sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "dre_mappings",
-          admin.from("dre_mappings").delete().eq("user_id", userId)
-        );
+        await deleteFrom("dre_mappings", admin.from("dre_mappings").delete().eq("user_id", userId));
       }
     }
 
-    // --- PROFILES & INSIGHTS (scope ALL only) ---
+    // ── PROFILES, INSIGHTS, FORECASTS, INVOICES (scope ALL) ──
     if (scope === "ALL") {
-      // 9. Delete ai_sheet_profiles
+      // ai_sheet_profiles
       if (connectionId) {
-        await deleteFrom(
-          "ai_sheet_profiles",
-          admin.from("ai_sheet_profiles").delete().eq("connected_sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("ai_sheet_profiles", admin.from("ai_sheet_profiles").delete().eq("connected_sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "ai_sheet_profiles",
-          admin.from("ai_sheet_profiles").delete().eq("user_id", userId)
-        );
+        await deleteFrom("ai_sheet_profiles", admin.from("ai_sheet_profiles").delete().eq("user_id", userId));
       }
 
-      // 10. Delete ai_insights
+      // ai_insights
       if (connectionId) {
-        await deleteFrom(
-          "ai_insights",
-          admin.from("ai_insights").delete().eq("connected_sheet_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("ai_insights", admin.from("ai_insights").delete().eq("connected_sheet_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "ai_insights",
-          admin.from("ai_insights").delete().eq("user_id", userId)
-        );
+        await deleteFrom("ai_insights", admin.from("ai_insights").delete().eq("user_id", userId));
       }
 
-      // 11. Delete sheet_sync_jobs
+      // sheet_sync_jobs
       if (connectionId) {
-        await deleteFrom(
-          "sheet_sync_jobs",
-          admin.from("sheet_sync_jobs").delete().eq("connection_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("sheet_sync_jobs", admin.from("sheet_sync_jobs").delete().eq("connection_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "sheet_sync_jobs",
-          admin.from("sheet_sync_jobs").delete().eq("user_id", userId)
-        );
+        await deleteFrom("sheet_sync_jobs", admin.from("sheet_sync_jobs").delete().eq("user_id", userId));
       }
 
-      // 12. Delete google_sheet_sync_logs
+      // google_sheet_sync_logs
       if (connectionId) {
-        await deleteFrom(
-          "google_sheet_sync_logs",
-          admin.from("google_sheet_sync_logs").delete().eq("connection_id", connectionId)
-        );
+        await deleteFrom("google_sheet_sync_logs", admin.from("google_sheet_sync_logs").delete().eq("connection_id", connectionId));
       } else {
-        // For total reset, get all connection IDs for user first
-        const { data: conns } = await admin
-          .from("google_sheet_connections")
-          .select("id")
-          .eq("user_id", userId);
+        const { data: conns } = await admin.from("google_sheet_connections").select("id").eq("user_id", userId);
         const connIds = (conns || []).map((c: { id: string }) => c.id);
         if (connIds.length > 0) {
-          let logsDeleted = 0;
-          for (let i = 0; i < connIds.length; i += 100) {
-            const batch = connIds.slice(i, i + 100);
-            const { data, error } = await admin
-              .from("google_sheet_sync_logs")
-              .delete()
-              .in("connection_id", batch)
-              .select("id");
-            if (!error) logsDeleted += (data?.length ?? 0);
-          }
-          deleted["google_sheet_sync_logs"] = logsDeleted;
+          await deleteBatched("google_sheet_sync_logs", "connection_id", connIds);
         } else {
-        deleted["google_sheet_sync_logs"] = 0;
+          deleted["google_sheet_sync_logs"] = 0;
         }
       }
 
-      // 13. Delete sync_tab_audit
+      // sync_tab_audit
       if (connectionId) {
-        await deleteFrom(
-          "sync_tab_audit",
-          admin.from("sync_tab_audit").delete().eq("connection_id", connectionId).eq("user_id", userId)
-        );
+        await deleteFrom("sync_tab_audit", admin.from("sync_tab_audit").delete().eq("connection_id", connectionId).eq("user_id", userId));
       } else {
-        await deleteFrom(
-          "sync_tab_audit",
-          admin.from("sync_tab_audit").delete().eq("user_id", userId)
-        );
+        await deleteFrom("sync_tab_audit", admin.from("sync_tab_audit").delete().eq("user_id", userId));
+      }
+
+      // ── NEW: forecast_monthly ──
+      if (connectionId) {
+        await deleteFrom("forecast_monthly", admin.from("forecast_monthly").delete().eq("sheet_id", connectionId).eq("user_id", userId));
+      } else {
+        await deleteFrom("forecast_monthly", admin.from("forecast_monthly").delete().eq("user_id", userId));
+      }
+
+      // ── NEW: forecast_insights ──
+      if (connectionId) {
+        await deleteFrom("forecast_insights", admin.from("forecast_insights").delete().eq("sheet_id", connectionId).eq("user_id", userId));
+      } else {
+        await deleteFrom("forecast_insights", admin.from("forecast_insights").delete().eq("user_id", userId));
+      }
+
+      // ── NEW: invoices ──
+      if (connectionId) {
+        // invoices don't have connection_id, so on specific connection reset we skip
+        deleted["invoices"] = 0;
+      } else {
+        await deleteFrom("invoices", admin.from("invoices").delete().eq("user_id", userId));
       }
     }
 
