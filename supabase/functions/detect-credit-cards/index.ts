@@ -357,8 +357,9 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
         }
       }
 
-      // Anti-spam: if more than 3 candidate blocks per tab for this account, it's a bank account
-      if (candidateBlocks.length > 0 && candidateBlocks.length <= 3) {
+      // Anti-spam: a real CC invoice appears exactly ONCE per month/tab.
+      // If an account has 2+ blocks in the same tab, it's a regular bank account.
+      if (candidateBlocks.length === 1) {
         for (const cb of candidateBlocks) {
           const allBlockTxns = [...cb.txns, ...cb.reimbursements];
           allBlockTxns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
