@@ -303,18 +303,19 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
     }
 
     // ═══ LAYER 3: Embedded CC Block within a Bank Account ═══
-    // For accounts with spread-out transactions (bank accounts), look for
-    // contiguous sub-blocks of 5+ merchant lines on a single date
+    // For mixed accounts, look for ONE dominant merchant block per month (day 23, etc.)
+    // Key rule: a real CC invoice appears on 1 specific day per month with 10+ merchant lines.
+    // If an account has blocks on many different dates, it's a bank account, not a CC.
     if (distinctDates > 5) {
-      // This is likely a regular bank account — check each date for embedded CC blocks
+      // Collect candidate blocks per date
+      const candidateBlocks: { date: string; merchantLen: number; txns: Transaction[]; reimbursements: Transaction[] }[] = [];
+
       for (const [date, dateGroup] of byDate) {
         const unprocessed = dateGroup.filter(t => !processedTxnIds.has(t.id));
-        if (unprocessed.length < 5) continue;
+        if (unprocessed.length < 8) continue; // Minimum 8 lines for embedded CC
 
-        // Sort by row number
         unprocessed.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
-        // Find contiguous runs of merchant lines (gap <= 2 rows)
         const merchantFlags = unprocessed.map(t => isMerchantLine(t));
         
         // Find the longest contiguous merchant block
@@ -328,7 +329,6 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
           if (merchantFlags[i]) {
             const row = unprocessed[i].source_row_number || 0;
             if (currentStart === -1 || row - lastMerchantRow > 3) {
-              // Start new run
               if (currentLen > bestLen) { bestStart = currentStart; bestLen = currentLen; }
               currentStart = i;
               currentLen = 1;
@@ -340,13 +340,12 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
         }
         if (currentLen > bestLen) { bestStart = currentStart; bestLen = currentLen; }
 
-        if (bestLen >= 5) {
-          // Extract the block including any income lines (reimbursements) within the row range
+        // Require 10+ contiguous merchant lines for embedded CC
+        if (bestLen >= 10) {
           const blockTxns = unprocessed.slice(bestStart, bestStart + bestLen);
           const startRow = blockTxns[0].source_row_number || 0;
           const endRow = blockTxns[blockTxns.length - 1].source_row_number || 0;
 
-          // Also include any INCOME lines between startRow and endRow (reimbursements)
           const reimbursements = unprocessed.filter(t => {
             if (processedTxnIds.has(t.id)) return false;
             if (t.movement_type !== "INCOME") return false;
@@ -354,12 +353,19 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
             return row >= startRow && row <= endRow && !blockTxns.includes(t);
           });
 
-          const allBlockTxns = [...blockTxns, ...reimbursements];
+          candidateBlocks.push({ date, merchantLen: bestLen, txns: blockTxns, reimbursements });
+        }
+      }
+
+      // Anti-spam: if more than 3 candidate blocks per tab for this account, it's a bank account
+      if (candidateBlocks.length > 0 && candidateBlocks.length <= 3) {
+        for (const cb of candidateBlocks) {
+          const allBlockTxns = [...cb.txns, ...cb.reimbursements];
           allBlockTxns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
-          const confidence = bestLen >= 10 ? 0.85 : 0.75;
+          const confidence = cb.merchantLen >= 12 ? 0.85 : 0.75;
 
-          console.log(`[detect-cc] Layer3 EMBEDDED CC: conta="${conta}" tab="${tab}" date=${date} merchantBlock=${bestLen} reimbursements=${reimbursements.length}`);
+          console.log(`[detect-cc] Layer3 EMBEDDED CC: conta="${conta}" tab="${tab}" date=${cb.date} merchantBlock=${cb.merchantLen} reimbursements=${cb.reimbursements.length}`);
 
           const detectedTxns = allBlockTxns.map(t => {
             processedTxnIds.add(t.id);
@@ -367,22 +373,24 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
               transaction: t,
               type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
               confidence,
-              flags: { detection_path: "layer3_embedded_cc", conta, block_size: allBlockTxns.length, merchantBlockLen: bestLen },
+              flags: { detection_path: "layer3_embedded_cc", conta, block_size: allBlockTxns.length, merchantBlockLen: cb.merchantLen },
             };
           });
 
           blocks.push({
             cardLabel: extractCardLabel(conta),
             banco: conta,
-            dueDate: date,
+            dueDate: cb.date,
             sourceTab: tab,
             startRow: allBlockTxns[0].source_row_number || 0,
             endRow: allBlockTxns[allBlockTxns.length - 1].source_row_number || 0,
             confidence,
-            signals: { lineCount: allBlockTxns.length, merchantBlockLen: bestLen, path: "layer3_embedded" },
+            signals: { lineCount: allBlockTxns.length, merchantBlockLen: cb.merchantLen, path: "layer3_embedded" },
             transactions: detectedTxns,
           });
         }
+      } else if (candidateBlocks.length > 3) {
+        console.log(`[detect-cc] Layer3 REJECTED (too many blocks): conta="${conta}" tab="${tab}" blocks=${candidateBlocks.length} — likely a bank account`);
       }
     }
   }
