@@ -359,41 +359,58 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
         }
       }
 
+      // Track per-conta results
+      if (!layer3ResultsPerConta.has(conta)) layer3ResultsPerConta.set(conta, { accepted: 0, rejected: 0 });
+      const contaStats = layer3ResultsPerConta.get(conta)!;
+
       // Anti-spam: a real CC invoice appears exactly ONCE per month/tab.
-      // If an account has 2+ blocks in the same tab, it's a regular bank account.
       if (candidateBlocks.length === 1) {
-        for (const cb of candidateBlocks) {
-          const allBlockTxns = [...cb.txns, ...cb.reimbursements];
-          allBlockTxns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
+        contaStats.accepted++;
+        const cb = candidateBlocks[0];
+        const allBlockTxns = [...cb.txns, ...cb.reimbursements];
+        allBlockTxns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
-          const confidence = cb.merchantLen >= 12 ? 0.85 : 0.75;
+        const confidence = cb.merchantLen >= 12 ? 0.85 : 0.75;
 
-          console.log(`[detect-cc] Layer3 EMBEDDED CC: conta="${conta}" tab="${tab}" date=${cb.date} merchantBlock=${cb.merchantLen} reimbursements=${cb.reimbursements.length}`);
+        console.log(`[detect-cc] Layer3 EMBEDDED CC: conta="${conta}" tab="${tab}" date=${cb.date} merchantBlock=${cb.merchantLen}`);
 
-          const detectedTxns = allBlockTxns.map(t => {
-            processedTxnIds.add(t.id);
-            return {
-              transaction: t,
-              type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
-              confidence,
-              flags: { detection_path: "layer3_embedded_cc", conta, block_size: allBlockTxns.length, merchantBlockLen: cb.merchantLen },
-            };
-          });
-
-          blocks.push({
-            cardLabel: extractCardLabel(conta),
-            banco: conta,
-            dueDate: cb.date,
-            sourceTab: tab,
-            startRow: allBlockTxns[0].source_row_number || 0,
-            endRow: allBlockTxns[allBlockTxns.length - 1].source_row_number || 0,
+        const detectedTxns = allBlockTxns.map(t => {
+          processedTxnIds.add(t.id);
+          return {
+            transaction: t,
+            type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
             confidence,
-            signals: { lineCount: allBlockTxns.length, merchantBlockLen: cb.merchantLen, path: "layer3_embedded" },
-            transactions: detectedTxns,
-          });
-        }
+            flags: { detection_path: "layer3_embedded_cc", conta, block_size: allBlockTxns.length, merchantBlockLen: cb.merchantLen },
+          };
+        });
+
+        blocks.push({
+          cardLabel: extractCardLabel(conta),
+          banco: conta,
+          dueDate: cb.date,
+          sourceTab: tab,
+          startRow: allBlockTxns[0].source_row_number || 0,
+          endRow: allBlockTxns[allBlockTxns.length - 1].source_row_number || 0,
+          confidence,
+          signals: { lineCount: allBlockTxns.length, merchantBlockLen: cb.merchantLen, path: "layer3_embedded" },
+          transactions: detectedTxns,
+        });
       } else if (candidateBlocks.length > 1) {
+        contaStats.rejected++;
         console.log(`[detect-cc] Layer3 REJECTED (${candidateBlocks.length} blocks in tab): conta="${conta}" tab="${tab}" — likely a bank account`);
+      }
+    }
+  }
+
+  // ═══ Cross-tab validation: if a conta was rejected in ANY tab, purge ALL its Layer 3 blocks ═══
+  for (const [conta, stats] of layer3ResultsPerConta) {
+    if (stats.rejected > 0 && stats.accepted > 0) {
+      console.log(`[detect-cc] Cross-tab PURGE: conta="${conta}" rejected in ${stats.rejected} tab(s), removing ${stats.accepted} accepted block(s)`);
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        if (blocks[i].banco === conta && blocks[i].signals?.path === "layer3_embedded") {
+          for (const dt of blocks[i].transactions) processedTxnIds.delete(dt.transaction.id);
+          blocks.splice(i, 1);
+        }
       }
     }
   }
