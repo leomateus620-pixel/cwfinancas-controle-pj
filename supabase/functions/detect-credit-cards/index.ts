@@ -390,8 +390,8 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
             transactions: detectedTxns,
           });
         }
-      } else if (candidateBlocks.length > 3) {
-        console.log(`[detect-cc] Layer3 REJECTED (too many blocks): conta="${conta}" tab="${tab}" blocks=${candidateBlocks.length} — likely a bank account`);
+      } else if (candidateBlocks.length > 1) {
+        console.log(`[detect-cc] Layer3 REJECTED (${candidateBlocks.length} blocks in tab): conta="${conta}" tab="${tab}" — likely a bank account`);
       }
     }
   }
