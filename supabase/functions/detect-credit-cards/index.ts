@@ -40,87 +40,63 @@ interface DetectedBlock {
   }[];
 }
 
-interface DiagnosticGroup {
-  tab: string;
-  date: string;
-  banco: string;
-  lineCount: number;
-  score: number;
-  rejectionReason: string;
-  signals: Record<string, any>;
-}
-
 // ─── Helpers ───
 
 const INSTALLMENT_RE = /\((\d+)\/(\d+)\)/;
 const PARC_RE = /PARC=/i;
-const CC_PATTERNS = [/fatura\s*cc/i, /cart[aã]o/i, /credit\s*card/i, /fatura\s+cart[aã]o/i];
-const KNOWN_BANKS = ["unicred", "cresol", "sicredi", "nubank", "inter", "itau", "itaú", "bradesco", "santander", "banrisul", "c6", "safra", "btg", "original", "bb"];
 
-// Anti-contamination: lines matching these are NOT credit card
-const EXCLUSION_PATTERNS = [
-  /recebimento\s*pix/i, /pagamento\s*pix/i,
-  /liquidacao\s*boleto/i, /liquidação\s*boleto/i,
-  /debito\s*convenio/i, /débito\s*convênio/i,
-  /debito\s*arrecadacao/i, /débito\s*arrecadação/i,
-  /\bted\b/i, /\bdoc\b/i,
-  /aplic\.?\s*financ/i, /aplicacao\s*financ/i,
-  /transferencia/i, /transferência/i,
-  /resgate\s*aplic/i,
-  /saldo\s*anterior/i, /saldo\s*final/i,
-  /rendimento/i,
-  /pagamento\s*titulo/i, /pagamento\s*título/i,
+const KNOWN_BANKS = [
+  "unicred", "cresol", "sicredi", "nubank", "inter", "itau", "itaú",
+  "bradesco", "santander", "banrisul", "c6", "safra", "btg", "original",
+  "banco do brasil", "bb",
 ];
 
-function isExcludedLine(t: Transaction): boolean {
-  const desc = (t.description || "").toUpperCase();
-  if (EXCLUSION_PATTERNS.some(p => p.test(desc))) return true;
-  // Income lines with receipt keywords
-  if (t.movement_type === "INCOME" && /recebimento/i.test(desc)) return true;
-  return false;
+// Banking patterns that EXCLUDE a line from being a CC merchant transaction
+const BANKING_PATTERNS = [
+  /\bpix\b/i, /recebimento/i, /pagamento\s*(pix|titulo|título|boleto)/i,
+  /liquidac[aã]o/i, /\bted\b/i, /\bdoc\b/i,
+  /transferencia/i, /transferência/i,
+  /debito\s*(convenio|convênio|arrecada)/i, /débito\s*(convênio|arrecadação)/i,
+  /aplic\.?\s*financ/i, /aplicacao\s*financ/i, /aplicação/i,
+  /resgate\s*aplic/i,
+  /saldo\s*anterior/i, /saldo\s*final/i, /saldo\s*conta/i,
+  /rendimento/i,
+  /tarifa/i, /taxa\s*manut/i,
+  /\bboleto\b/i,
+  /dep[oó]sito/i,
+  /cr[eé]dito\s*sal[aá]rio/i,
+  /pagamento\s*folha/i,
+  /estorno.*pix/i,
+];
+
+/**
+ * Determines if a transaction line looks like a merchant/CC purchase
+ * (as opposed to regular banking activity like PIX, TED, etc.)
+ */
+function isMerchantLine(t: Transaction): boolean {
+  const desc = (t.description || "").trim();
+  if (!desc || desc.length < 2) return false;
+
+  // If any banking pattern matches, it's NOT a merchant line
+  if (BANKING_PATTERNS.some(p => p.test(desc))) return false;
+
+  // Income lines are typically not CC purchases (except reimbursements within a CC block)
+  // We handle reimbursements separately after block detection
+  if (t.movement_type === "INCOME") return false;
+
+  // Transfer types are not CC
+  if (t.movement_type === "TRANSFER") return false;
+
+  return true;
 }
 
-// Extract bank from raw_data, prioritizing Conta field (for "Fatura CC" pattern)
-function extractBancoInfo(t: Transaction): { banco: string | null; isExplicitCC: boolean; contaLabel: string | null } {
-  // Priority 1: raw_data.Conta — if it contains "Fatura CC", it's explicit CC
+function getContaField(t: Transaction): string | null {
   const conta = t.raw_data?.Conta || t.raw_data?.conta || t.raw_data?.CONTA;
-  if (conta) {
-    const contaStr = String(conta).trim();
-    if (/fatura\s*cc/i.test(contaStr)) {
-      // Extract bank name after "Fatura CC"
-      const match = contaStr.match(/fatura\s*cc\s+(.+)/i);
-      const bancoName = match ? match[1].trim() : contaStr;
-      return { banco: bancoName, isExplicitCC: true, contaLabel: contaStr };
-    }
-  }
-
-  // Priority 2: raw_data.Banco
-  const fromRaw = t.raw_data?.Banco || t.raw_data?.banco || t.raw_data?.BANCO;
-  if (fromRaw) return { banco: String(fromRaw).trim(), isExplicitCC: false, contaLabel: conta ? String(conta).trim() : null };
-
-  // Priority 3: client_vendor
-  const vendor = t.client_vendor;
-  if (vendor) {
-    const lower = vendor.toLowerCase();
-    for (const b of KNOWN_BANKS) {
-      if (lower.includes(b)) return { banco: vendor.trim(), isExplicitCC: false, contaLabel: null };
-    }
-  }
-  return { banco: null, isExplicitCC: false, contaLabel: null };
-}
-
-function hasCCPattern(text: string | null): boolean {
-  if (!text) return false;
-  return CC_PATTERNS.some((p) => p.test(text));
+  return conta ? String(conta).trim() : null;
 }
 
 function hasInstallment(desc: string): boolean {
   return INSTALLMENT_RE.test(desc) || PARC_RE.test(desc);
-}
-
-function isKnownBank(banco: string): boolean {
-  const lower = banco.toLowerCase();
-  return KNOWN_BANKS.some((b) => lower.includes(b));
 }
 
 function computeRowHash(t: Transaction): string {
@@ -133,225 +109,317 @@ function computeRowHash(t: Transaction): string {
   return Math.abs(hash).toString(36);
 }
 
-function extractCardLabel(banco: string): string {
-  const lower = banco.toLowerCase();
+function extractCardLabel(conta: string): string {
+  const lower = conta.toLowerCase();
+  if (/fatura\s*cc/i.test(lower)) {
+    const match = conta.match(/fatura\s*cc\s+(.+)/i);
+    if (match) {
+      const bankName = match[1].trim();
+      return `Cartão ${bankName.charAt(0).toUpperCase() + bankName.slice(1)}`;
+    }
+  }
+  if (lower.includes("banco do brasil")) return "Cartão Banco do Brasil";
+  if (lower.includes("sicredi")) return "Cartão Sicredi";
+  if (lower.includes("nubank") || lower.includes("nuba")) return "Cartão Nubank";
+  if (lower.includes("banrisul")) return "Cartão Banrisul";
   if (lower.includes("unicred")) return "Cartão Unicred";
-  if (lower.includes("cresol")) return "Cartão Cresol";
-  if (lower.includes("sicredi") || lower.includes("sicr")) return "Cartão Sicredi";
-  if (lower.includes("nubank") || lower.includes("nuba") || lower === "nu") return "Cartão Nubank";
-  if (lower.includes("banrisul") || lower.includes("banri")) return "Cartão Banrisul";
-  if (lower.includes("inter")) return "Cartão Inter";
   if (lower.includes("itau") || lower.includes("itaú")) return "Cartão Itaú";
   if (lower.includes("bradesco")) return "Cartão Bradesco";
-  return `Cartão ${banco}`;
+  if (lower.includes("inter")) return "Cartão Inter";
+  return `Cartão ${conta}`;
 }
 
-// ─── Block detection ───
+// ─── 3-Layer Block Detection ───
 
-function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; diagnosticGroups: DiagnosticGroup[]; diagnosticMeta: Record<string, any> } {
-  const byTab = new Map<string, Transaction[]>();
-  let contaFieldCount = 0;
-  let bancoFieldCount = 0;
-  let faturaCC_lines = 0;
+function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; diagnosticMeta: Record<string, any> } {
+  // Group all transactions by (source_tab, conta)
+  const byTabConta = new Map<string, Transaction[]>();
+  let faturaCC_count = 0;
 
   for (const t of transactions) {
     const tab = t.source_tab || "__unknown__";
-    if (!byTab.has(tab)) byTab.set(tab, []);
-    byTab.get(tab)!.push(t);
-    if (t.raw_data?.Conta || t.raw_data?.conta || t.raw_data?.CONTA) contaFieldCount++;
-    if (t.raw_data?.Banco || t.raw_data?.banco || t.raw_data?.BANCO) bancoFieldCount++;
+    const conta = getContaField(t) || "__no_conta__";
+    const key = `${tab}|||${conta}`;
+    if (!byTabConta.has(key)) byTabConta.set(key, []);
+    byTabConta.get(key)!.push(t);
   }
 
   const blocks: DetectedBlock[] = [];
-  const diagnosticGroups: DiagnosticGroup[] = [];
   const processedTxnIds = new Set<string>();
+  // Track Layer 3 results per conta for cross-tab validation
+  const layer3ResultsPerConta = new Map<string, { accepted: number; rejected: number }>();
 
-  for (const [tab, txns] of byTab) {
+  for (const [tabContaKey, txns] of byTabConta) {
+    const [tab, conta] = tabContaKey.split("|||", 2);
     txns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
-    // ═══ FAST-PATH: Lines with explicit "Fatura CC" in Conta field ═══
-    const explicitCCLines: Transaction[] = [];
-    const nonExplicitLines: Transaction[] = [];
-
-    for (const t of txns) {
-      const info = extractBancoInfo(t);
-      if (info.isExplicitCC && !isExcludedLine(t)) {
-        explicitCCLines.push(t);
-        faturaCC_lines++;
-      } else {
-        nonExplicitLines.push(t);
-      }
-    }
-
-    // Group explicit CC lines by (date + banco)
-    if (explicitCCLines.length > 0) {
-      const ccGroups = new Map<string, Transaction[]>();
-      for (const t of explicitCCLines) {
-        const info = extractBancoInfo(t);
-        const key = `${t.date}|${info.banco}`;
-        if (!ccGroups.has(key)) ccGroups.set(key, []);
-        ccGroups.get(key)!.push(t);
+    // ═══ LAYER 1: Explicit "Fatura CC" in Conta field ═══
+    if (/fatura\s*cc/i.test(conta)) {
+      faturaCC_count += txns.length;
+      // Group by date
+      const byDate = new Map<string, Transaction[]>();
+      for (const t of txns) {
+        if (processedTxnIds.has(t.id)) continue;
+        if (!byDate.has(t.date)) byDate.set(t.date, []);
+        byDate.get(t.date)!.push(t);
       }
 
-      for (const [key, group] of ccGroups) {
-        const [date, banco] = key.split("|", 2);
-        if (group.length < 2) continue; // Even 2 explicit "Fatura CC" lines is strong enough
-
+      for (const [date, group] of byDate) {
+        if (group.length < 2) continue;
         group.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
-        const expenseCount = group.filter(t => t.movement_type === "EXPENSE").length;
-        const installmentCount = group.filter(t => hasInstallment(t.description)).length;
-
-        const confidence = 0.95;
-
-        const detectedTxns = group.map((t) => {
+        const detectedTxns = group.map(t => {
           processedTxnIds.add(t.id);
           return {
             transaction: t,
             type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
-            confidence,
-            flags: {
-              banco,
-              has_installment: hasInstallment(t.description),
-              movement_type: t.movement_type,
-              block_size: group.length,
-              detection_path: "explicit_fatura_cc",
-            },
+            confidence: 0.95,
+            flags: { detection_path: "layer1_explicit_fatura_cc", conta, block_size: group.length },
           };
         });
 
         blocks.push({
-          cardLabel: extractCardLabel(banco),
-          banco,
+          cardLabel: extractCardLabel(conta),
+          banco: conta,
           dueDate: date,
           sourceTab: tab,
           startRow: group[0].source_row_number || 0,
           endRow: group[group.length - 1].source_row_number || 0,
-          confidence,
-          signals: { lineCount: group.length, expenseCount, installmentCount, path: "explicit_fatura_cc" },
+          confidence: 0.95,
+          signals: { lineCount: group.length, path: "layer1_explicit" },
           transactions: detectedTxns,
         });
       }
+      continue; // Done with this conta group
     }
 
-    // ═══ GENERIC PATH: Group remaining lines by (date + banco) ═══
-    const groups = new Map<string, Transaction[]>();
-    for (const t of nonExplicitLines) {
+    // Skip contas that don't look like they could contain CC data
+    if (conta === "__no_conta__") continue;
+
+    // ═══ Analyze this account's transaction distribution ═══
+    const byDate = new Map<string, Transaction[]>();
+    for (const t of txns) {
       if (processedTxnIds.has(t.id)) continue;
-      if (isExcludedLine(t)) continue; // Anti-contamination
-
-      const info = extractBancoInfo(t);
-      if (!info.banco) continue;
-      // Skip if vendor/description matches CC pattern (already handled by fast-path)
-      const key = `${t.date}|${info.banco}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(t);
+      if (!byDate.has(t.date)) byDate.set(t.date, []);
+      byDate.get(t.date)!.push(t);
     }
 
-    for (const [key, group] of groups) {
-      const [date, banco] = key.split("|", 2);
-      if (group.length < 3) continue;
+    // Find the date with the most transactions
+    let maxDate = "";
+    let maxDateCount = 0;
+    for (const [date, group] of byDate) {
+      if (group.length > maxDateCount) {
+        maxDateCount = group.length;
+        maxDate = date;
+      }
+    }
 
+    const totalLines = txns.filter(t => !processedTxnIds.has(t.id)).length;
+    if (totalLines === 0 || maxDateCount < 5) continue;
+
+    const concentration = maxDateCount / totalLines;
+    const distinctDates = byDate.size;
+
+    // Count merchant lines on the max date
+    const maxDateGroup = byDate.get(maxDate) || [];
+    const merchantOnMaxDate = maxDateGroup.filter(t => isMerchantLine(t));
+    const merchantRatio = maxDateGroup.length > 0 ? merchantOnMaxDate.length / maxDateGroup.length : 0;
+
+    // ═══ LAYER 2: Dedicated CC Account ═══
+    // Account where one date concentrates >50% of lines AND >70% are merchant-like
+    if (concentration > 0.5 && maxDateCount >= 15 && merchantRatio > 0.7) {
+      console.log(`[detect-cc] Layer2 DEDICATED CC: conta="${conta}" tab="${tab}" date=${maxDate} lines=${maxDateCount} merchantRatio=${merchantRatio.toFixed(2)} concentration=${concentration.toFixed(2)}`);
+
+      const group = maxDateGroup;
       group.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
-      const expenseCount = group.filter(t => t.movement_type === "EXPENSE").length;
-      const incomeCount = group.filter(t => t.movement_type === "INCOME").length;
-      const expenseRatio = expenseCount / group.length;
-      const installmentCount = group.filter(t => hasInstallment(t.description)).length;
-      const hasFaturaCC = group.some(t => hasCCPattern(t.client_vendor) || hasCCPattern(t.description));
-      const bancoIsKnown = isKnownBank(banco);
+      // Include ALL lines on this date (merchant + potential reimbursements)
+      // Only exclude clearly banking lines
+      const ccLines = group.filter(t => {
+        if (BANKING_PATTERNS.some(p => p.test(t.description || ""))) return false;
+        return true;
+      });
 
-      let contiguousCount = 0;
-      for (let i = 1; i < group.length; i++) {
-        const gap = (group[i].source_row_number || 0) - (group[i - 1].source_row_number || 0);
-        if (gap <= 2) contiguousCount++;
-      }
-      const contiguityRatio = group.length > 1 ? contiguousCount / (group.length - 1) : 0;
+      if (ccLines.length >= 10) {
+        const detectedTxns = ccLines.map(t => {
+          processedTxnIds.add(t.id);
+          return {
+            transaction: t,
+            type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
+            confidence: 0.90,
+            flags: { detection_path: "layer2_dedicated_cc", conta, block_size: ccLines.length, merchantRatio },
+          };
+        });
 
-      const shortDescCount = group.filter(t => t.description.length <= 30 && t.description.length > 2).length;
-      const shortDescRatio = shortDescCount / group.length;
-
-      const signals = {
-        lineCount: group.length,
-        expenseRatio,
-        installmentCount,
-        hasFaturaCC,
-        bancoIsKnown,
-        contiguityRatio,
-        shortDescRatio,
-        incomeCount,
-        path: "generic_grouping",
-      };
-
-      let confidence = 0;
-
-      if (hasFaturaCC) {
-        confidence = 0.95;
-      } else {
-        if (bancoIsKnown && group.length >= 3) confidence = 0.5;
-        if (installmentCount >= 2) confidence += 0.15;
-        else if (installmentCount >= 1) confidence += 0.08;
-        if (expenseRatio >= 0.8) confidence += 0.1;
-        else if (expenseRatio >= 0.6) confidence += 0.05;
-        if (contiguityRatio >= 0.8) confidence += 0.1;
-        if (group.length >= 15) confidence += 0.1;
-        else if (group.length >= 8) confidence += 0.05;
-        if (shortDescRatio >= 0.7) confidence += 0.05;
+        blocks.push({
+          cardLabel: extractCardLabel(conta),
+          banco: conta,
+          dueDate: maxDate,
+          sourceTab: tab,
+          startRow: ccLines[0].source_row_number || 0,
+          endRow: ccLines[ccLines.length - 1].source_row_number || 0,
+          confidence: 0.90,
+          signals: { lineCount: ccLines.length, merchantRatio, concentration, path: "layer2_dedicated" },
+          transactions: detectedTxns,
+        });
       }
 
-      confidence = Math.min(confidence, 0.99);
+      // Also check other dates for this dedicated CC account (secondary invoice dates)
+      for (const [date, dateGroup] of byDate) {
+        if (date === maxDate) continue;
+        const merchLines = dateGroup.filter(t => !processedTxnIds.has(t.id) && isMerchantLine(t));
+        if (merchLines.length >= 10) {
+          const merchRatio = merchLines.length / dateGroup.length;
+          if (merchRatio > 0.6) {
+            merchLines.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
+            const allCCLines = dateGroup.filter(t => !processedTxnIds.has(t.id) && !BANKING_PATTERNS.some(p => p.test(t.description || "")));
+            
+            const detectedTxns = allCCLines.map(t => {
+              processedTxnIds.add(t.id);
+              return {
+                transaction: t,
+                type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
+                confidence: 0.85,
+                flags: { detection_path: "layer2_dedicated_cc_secondary", conta, block_size: allCCLines.length },
+              };
+            });
 
-      if (confidence >= 0.6) {
-        const detectedTxns = group.map((t) => {
+            if (detectedTxns.length >= 5) {
+              blocks.push({
+                cardLabel: extractCardLabel(conta),
+                banco: conta,
+                dueDate: date,
+                sourceTab: tab,
+                startRow: allCCLines[0].source_row_number || 0,
+                endRow: allCCLines[allCCLines.length - 1].source_row_number || 0,
+                confidence: 0.85,
+                signals: { lineCount: allCCLines.length, merchantRatio: merchRatio, path: "layer2_secondary" },
+                transactions: detectedTxns,
+              });
+            }
+          }
+        }
+      }
+
+      continue; // Done with this dedicated CC account
+    }
+
+    // ═══ LAYER 3: Embedded CC Block within a Bank Account ═══
+    // For mixed accounts, look for ONE dominant merchant block per month (day 23, etc.)
+    // Key rule: a real CC invoice appears on 1 specific day per month with 10+ merchant lines.
+    // If an account has blocks on many different dates, it's a bank account, not a CC.
+    if (distinctDates > 5) {
+      // Collect candidate blocks per date
+      const candidateBlocks: { date: string; merchantLen: number; txns: Transaction[]; reimbursements: Transaction[] }[] = [];
+
+      for (const [date, dateGroup] of byDate) {
+        const unprocessed = dateGroup.filter(t => !processedTxnIds.has(t.id));
+        if (unprocessed.length < 8) continue; // Minimum 8 lines for embedded CC
+
+        unprocessed.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
+
+        const merchantFlags = unprocessed.map(t => isMerchantLine(t));
+        
+        // Find the longest contiguous merchant block
+        let bestStart = -1;
+        let bestLen = 0;
+        let currentStart = -1;
+        let currentLen = 0;
+        let lastMerchantRow = -999;
+
+        for (let i = 0; i < unprocessed.length; i++) {
+          if (merchantFlags[i]) {
+            const row = unprocessed[i].source_row_number || 0;
+            if (currentStart === -1 || row - lastMerchantRow > 3) {
+              if (currentLen > bestLen) { bestStart = currentStart; bestLen = currentLen; }
+              currentStart = i;
+              currentLen = 1;
+            } else {
+              currentLen++;
+            }
+            lastMerchantRow = row;
+          }
+        }
+        if (currentLen > bestLen) { bestStart = currentStart; bestLen = currentLen; }
+
+        // Require 10+ contiguous merchant lines for embedded CC
+        if (bestLen >= 10) {
+          const blockTxns = unprocessed.slice(bestStart, bestStart + bestLen);
+          const startRow = blockTxns[0].source_row_number || 0;
+          const endRow = blockTxns[blockTxns.length - 1].source_row_number || 0;
+
+          const reimbursements = unprocessed.filter(t => {
+            if (processedTxnIds.has(t.id)) return false;
+            if (t.movement_type !== "INCOME") return false;
+            const row = t.source_row_number || 0;
+            return row >= startRow && row <= endRow && !blockTxns.includes(t);
+          });
+
+          candidateBlocks.push({ date, merchantLen: bestLen, txns: blockTxns, reimbursements });
+        }
+      }
+
+      // Track per-conta results
+      if (!layer3ResultsPerConta.has(conta)) layer3ResultsPerConta.set(conta, { accepted: 0, rejected: 0 });
+      const contaStats = layer3ResultsPerConta.get(conta)!;
+
+      // Anti-spam: a real CC invoice appears exactly ONCE per month/tab.
+      if (candidateBlocks.length === 1) {
+        contaStats.accepted++;
+        const cb = candidateBlocks[0];
+        const allBlockTxns = [...cb.txns, ...cb.reimbursements];
+        allBlockTxns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
+
+        const confidence = cb.merchantLen >= 12 ? 0.85 : 0.75;
+
+        console.log(`[detect-cc] Layer3 EMBEDDED CC: conta="${conta}" tab="${tab}" date=${cb.date} merchantBlock=${cb.merchantLen}`);
+
+        const detectedTxns = allBlockTxns.map(t => {
           processedTxnIds.add(t.id);
           return {
             transaction: t,
             type: (t.movement_type === "INCOME" ? "reimbursement" : "expense") as "expense" | "reimbursement",
             confidence,
-            flags: {
-              banco,
-              has_installment: hasInstallment(t.description),
-              movement_type: t.movement_type,
-              block_size: group.length,
-              detection_path: "generic_grouping",
-            },
+            flags: { detection_path: "layer3_embedded_cc", conta, block_size: allBlockTxns.length, merchantBlockLen: cb.merchantLen },
           };
         });
 
         blocks.push({
-          cardLabel: extractCardLabel(banco),
-          banco,
-          dueDate: date,
+          cardLabel: extractCardLabel(conta),
+          banco: conta,
+          dueDate: cb.date,
           sourceTab: tab,
-          startRow: group[0].source_row_number || 0,
-          endRow: group[group.length - 1].source_row_number || 0,
+          startRow: allBlockTxns[0].source_row_number || 0,
+          endRow: allBlockTxns[allBlockTxns.length - 1].source_row_number || 0,
           confidence,
-          signals,
+          signals: { lineCount: allBlockTxns.length, merchantBlockLen: cb.merchantLen, path: "layer3_embedded" },
           transactions: detectedTxns,
         });
-      } else if (confidence >= 0.3) {
-        diagnosticGroups.push({
-          tab,
-          date,
-          banco,
-          lineCount: group.length,
-          score: confidence,
-          rejectionReason: `Score ${confidence.toFixed(2)} < 0.6. expenseRatio=${expenseRatio.toFixed(2)}, installments=${installmentCount}, contiguity=${contiguityRatio.toFixed(2)}`,
-          signals,
-        });
+      } else if (candidateBlocks.length > 1) {
+        contaStats.rejected++;
+        console.log(`[detect-cc] Layer3 REJECTED (${candidateBlocks.length} blocks in tab): conta="${conta}" tab="${tab}" — likely a bank account`);
+      }
+    }
+  }
+
+  // ═══ Cross-tab validation: if a conta was rejected in ANY tab, purge ALL its Layer 3 blocks ═══
+  for (const [conta, stats] of layer3ResultsPerConta) {
+    if (stats.rejected > 0 && stats.accepted > 0) {
+      console.log(`[detect-cc] Cross-tab PURGE: conta="${conta}" rejected in ${stats.rejected} tab(s), removing ${stats.accepted} accepted block(s)`);
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        if (blocks[i].banco === conta && blocks[i].signals?.path === "layer3_embedded") {
+          for (const dt of blocks[i].transactions) processedTxnIds.delete(dt.transaction.id);
+          blocks.splice(i, 1);
+        }
       }
     }
   }
 
   return {
     blocks,
-    diagnosticGroups,
     diagnosticMeta: {
-      contaFieldPresent: contaFieldCount > 0,
-      bancoFieldPresent: bancoFieldCount > 0,
-      faturaCC_lines_found: faturaCC_lines,
-      contaFieldCount,
-      bancoFieldCount,
+      faturaCC_lines_found: faturaCC_count,
+      totalAccounts: byTabConta.size,
     },
   };
 }
@@ -421,14 +489,8 @@ Deno.serve(async (req) => {
     if (allTransactions.length === 0) {
       return new Response(
         JSON.stringify({
-          cycles: 0,
-          transactions: 0,
-          status: "no_transactions",
-          diagnostic: {
-            totalTransactions: 0,
-            tabsScanned: [],
-            suggestion: "Nenhuma transação encontrada para esta planilha. Sincronize a planilha primeiro.",
-          },
+          cycles: 0, transactions: 0, status: "no_transactions",
+          diagnostic: { totalTransactions: 0, suggestion: "Nenhuma transação encontrada. Sincronize a planilha primeiro." },
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -436,39 +498,28 @@ Deno.serve(async (req) => {
 
     const tabStats: Record<string, number> = {};
     for (const t of allTransactions) {
-      const tab = t.source_tab || "__unknown__";
-      tabStats[tab] = (tabStats[tab] || 0) + 1;
+      tabStats[t.source_tab || "__unknown__"] = (tabStats[t.source_tab || "__unknown__"] || 0) + 1;
     }
 
-    const { blocks, diagnosticGroups, diagnosticMeta } = detectBlocks(allTransactions);
+    const { blocks, diagnosticMeta } = detectBlocks(allTransactions);
 
-    console.log(`[detect-cc] user=${userId} connection=${connectionId} totalTxns=${allTransactions.length} tabs=${Object.keys(tabStats).length} blocksFound=${blocks.length} diagnosticGroups=${diagnosticGroups.length} faturaCC_lines=${diagnosticMeta.faturaCC_lines_found}`);
+    console.log(`[detect-cc] user=${userId} totalTxns=${allTransactions.length} tabs=${Object.keys(tabStats).length} blocksFound=${blocks.length}`);
 
     if (blocks.length === 0) {
-      let suggestion = "";
-      if (diagnosticMeta.faturaCC_lines_found > 0) {
-        suggestion = `Encontradas ${diagnosticMeta.faturaCC_lines_found} linhas com "Fatura CC", mas não formaram blocos suficientes. Verifique se existem pelo menos 2 linhas com mesma data.`;
-      } else if (diagnosticMeta.contaFieldPresent && !diagnosticMeta.bancoFieldPresent) {
-        suggestion = "O campo 'Conta' está presente mas não contém padrão 'Fatura CC'. Verifique se a planilha identifica faturas de cartão na coluna de conta/banco.";
-      } else if (diagnosticGroups.length > 0) {
-        suggestion = `Encontrados ${diagnosticGroups.length} grupos candidatos, mas nenhum atingiu confiança mínima de 0.6. Verifique se a planilha contém blocos de cartão com datas repetidas e banco identificável.`;
-      } else {
-        suggestion = "Nenhum grupo de linhas com mesma data e banco foi encontrado. Verifique se as colunas 'Banco' ou 'Conta' estão preenchidas na planilha.";
+      const contaValues = new Set<string>();
+      for (const t of allTransactions) {
+        const c = getContaField(t);
+        if (c) contaValues.add(c);
       }
-
       return new Response(
         JSON.stringify({
-          cycles: 0,
-          transactions: 0,
-          status: "no_blocks_found",
+          cycles: 0, transactions: 0, status: "no_blocks_found",
           diagnostic: {
             totalTransactions: allTransactions.length,
             tabsScanned: Object.keys(tabStats),
-            transactionsPerTab: tabStats,
-            candidateGroups: diagnosticGroups.length,
-            rejectedGroups: diagnosticGroups.slice(0, 10),
+            contaValues: Array.from(contaValues),
             ...diagnosticMeta,
-            suggestion,
+            suggestion: "Nenhuma fatura de cartão detectada. Verifique se a planilha contém blocos de cartão concentrados em uma data (ex: 'Fatura CC Sicredi' ou conta dedicada de BB com 30+ linhas no mesmo dia).",
           },
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -506,14 +557,14 @@ Deno.serve(async (req) => {
 
     for (const block of blocks) {
       const grossAmount = block.transactions
-        .filter((t) => t.type === "expense")
+        .filter(t => t.type === "expense")
         .reduce((sum, t) => sum + Math.abs(t.transaction.amount), 0);
       const reimbAmount = block.transactions
-        .filter((t) => t.type === "reimbursement")
+        .filter(t => t.type === "reimbursement")
         .reduce((sum, t) => sum + Math.abs(t.transaction.amount), 0);
 
       const blockRaw = block.transactions
-        .map((t) => `${t.transaction.source_row_number}|${t.transaction.amount}`)
+        .map(t => `${t.transaction.source_row_number}|${t.transaction.amount}`)
         .join(";");
       let bHash = 0;
       for (let i = 0; i < blockRaw.length; i++) {
@@ -554,7 +605,7 @@ Deno.serve(async (req) => {
 
       totalCycles++;
 
-      const ccTxns = block.transactions.map((dt) => ({
+      const ccTxns = block.transactions.map(dt => ({
         cycle_id: cycle.id,
         user_id: userId,
         transaction_id: dt.transaction.id,
@@ -581,7 +632,7 @@ Deno.serve(async (req) => {
       }
 
       if (block.confidence < 0.7) {
-        const reviewItems = block.transactions.map((dt) => ({
+        const reviewItems = block.transactions.map(dt => ({
           user_id: userId,
           transaction_id: dt.transaction.id,
           source_tab: block.sourceTab,

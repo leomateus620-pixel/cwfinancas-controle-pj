@@ -15,6 +15,15 @@ export interface CardBrand {
 
 const CARD_BRANDS: CardBrand[] = [
   {
+    id: "bancodobrasil",
+    name: "Banco do Brasil",
+    aliases: ["banco do brasil", "bb"],
+    asset: null,
+    gradient: "linear-gradient(135deg, #FFCD00 0%, #003882 40%, #002D62 100%)",
+    textColor: "#fff",
+    accentColor: "#003882",
+  },
+  {
     id: "nubank",
     name: "Nubank",
     aliases: ["nu", "nuba", "nubank", "nu pagamentos"],
