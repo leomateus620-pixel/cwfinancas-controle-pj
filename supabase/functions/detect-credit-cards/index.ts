@@ -146,6 +146,8 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
 
   const blocks: DetectedBlock[] = [];
   const processedTxnIds = new Set<string>();
+  // Track Layer 3 results per conta for cross-tab validation
+  const layer3ResultsPerConta = new Map<string, { accepted: number; rejected: number }>();
 
   for (const [tabContaKey, txns] of byTabConta) {
     const [tab, conta] = tabContaKey.split("|||", 2);
