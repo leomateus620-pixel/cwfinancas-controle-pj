@@ -1,77 +1,81 @@
 
 
-## Plano: Previsão Financeira 2026 — Escritório Zimmermann (Orçamento → Forecast + PDF)
+## Plano: Corrigir Limpeza Incompleta de Dados ao Desconectar Planilha
 
-### O que será feito
+### Diagnóstico
 
-Processar o arquivo XLSX do orçamento base 2025 do Escritório Zimmermann, gerar uma previsão financeira mensal para Jan-Dez 2026 com distribuição realista de receitas e despesas, inserir os dados na tabela `forecast_monthly` do banco de dados para visualização no menu "Previsões Financeiras", e gerar um PDF premium com todas as informações.
+O `reset-sheet-data` **não limpa** várias tabelas que acumulam dados. Para o usuário principal (`ae3ae0d0`), que não tem planilha conectada, restam:
 
-### Dados do Orçamento (extraídos do XLSX)
+| Tabela | Registros órfãos | Motivo |
+|--------|-------------------|--------|
+| `transactions` | 6 | `source_sheet_id = NULL` — o reset só apaga onde `source_sheet_id IS NOT NULL` |
+| `forecast_monthly` | 22 | Tabela **nunca** é limpa pelo reset |
+| `invoices` | 2 | Tabela **nunca** é limpa pelo reset |
+| `credit_card_cycles` | 46 | Tabela **nunca** é limpa pelo reset |
+| `credit_card_transactions` | 464 | Tabela **nunca** é limpa pelo reset |
+| `credit_card_review_queue` | 55 | Tabela **nunca** é limpa pelo reset |
 
-**Despesas anuais: R$ 600.000** (34 itens categorizados)
-**Receita anual: R$ 756.000** (sem categorias — serão criadas)
-**Resultado líquido: R$ 156.000** (margem ~20,6%)
+### Causa Raiz
 
-### Etapa 1 — Script de processamento e inserção
+A edge function `reset-sheet-data` foi criada antes das features de Cartão de Crédito e Previsões Financeiras. Essas tabelas simplesmente não foram incluídas no fluxo de limpeza. Além disso, transações com `source_sheet_id = NULL` (inseridas por scripts ou importações avulsas) escapam do filtro.
 
-Um script Python que:
+### Correção
 
-1. **Lê o XLSX** e extrai todas as linhas de despesa com área, categoria, subcategoria, valor anual e média mensal
-2. **Cria categorias de receita** contextualizadas para escritório contábil:
-   - Prestação de Serviços Contábeis (~50%): R$ 378.000
-   - Serviços Financeiros e BPO (~25%): R$ 189.000
-   - Consultoria Tributária e Fiscal (~12%): R$ 90.720
-   - Seguros e Corretagem (~8%): R$ 60.480
-   - Serviços Avulsos e Projetos (~5%): R$ 37.800
-3. **Distribui mensalmente** com sazonalidade realista:
-   - Janeiro: receita reduzida (~85%) — volta de férias
-   - Fevereiro-Março: pico por IRPF e obrigações acessórias (~110-115%)
-   - Abril-Maio: normalização (~100%)
-   - Junho: leve queda (~95%)
-   - Julho: menor mês (~88%) — férias de clientes
-   - Agosto-Outubro: crescimento (~100-105%)
-   - Novembro: alta (~108%) — planejamento tributário
-   - Dezembro: 13º, bônus, despesas extras (~112% despesa, ~90% receita)
-4. **Gera 12 registros** na tabela `forecast_monthly` com:
-   - `receita_real` = receita projetada (como base 2025)
-   - `despesa_real` = despesa projetada
-   - `saldo_real` = receita - despesa
-   - `receita_prev_base/opt/pess` = cenários (base, +10%, -10%)
-   - `confidence_score` = 82 (orçamento estruturado)
-   - `is_forecast` = true
-   - `sheet_id` = NULL (demanda especial)
-5. **Insere no banco** via Supabase REST API
+#### 1. Atualizar `reset-sheet-data` para limpar as tabelas faltantes
 
-### Etapa 2 — Verificação no menu
+Adicionar ao escopo de limpeza (quando `scope = "ALL"`):
 
-Confirmar que o menu "Previsões Financeiras" exibe corretamente os 12 meses com KPIs, gráfico, fluxo de caixa e insights.
+- **`credit_card_transactions`** — deletar por `user_id` (e opcionalmente filtrar por `cycle_id` de ciclos da conexão)
+- **`credit_card_cycles`** — deletar por `user_id` + `connection_id`
+- **`credit_card_review_queue`** — deletar por `user_id`
+- **`forecast_monthly`** — deletar por `user_id` + `sheet_id` (ou `sheet_id IS NULL` para dados avulsos)
+- **`forecast_insights`** — deletar por `user_id` + `sheet_id`
+- **`invoices`** — deletar por `user_id`
 
-### Etapa 3 — Geração do PDF Premium
+Quando `connectionId` é fornecido:
+- `credit_card_cycles` → filtrar por `connection_id`
+- `credit_card_transactions` → deletar onde `cycle_id` pertence aos ciclos daquela conexão
+- `forecast_monthly` / `forecast_insights` → filtrar por `sheet_id = connectionId`
 
-PDF com reportlab contendo:
+Quando `connectionId` é NULL (reset total):
+- Deletar tudo do `user_id`
 
-1. **Capa**: "Previsão Financeira 2026 — Escritório Contábil Zimmermann"
-2. **Resumo Executivo**: KPIs principais (receita total, despesa total, saldo, margem, confiança)
-3. **Gráfico de Projeção**: Receita vs Despesa vs Saldo por mês (matplotlib → imagem)
-4. **Fluxo de Caixa Projetado**: Tabela mensal com entradas, saídas, saldo e acumulado
-5. **Breakdown de Despesas**: Por área/categoria com % do orçamento
-6. **Breakdown de Receitas**: Por categoria criada
-7. **Cenários**: Base, Otimista e Pessimista com comparação
-8. **Insights**: Sazonalidade, riscos e recomendações
+#### 2. Corrigir o filtro de transações órfãs
 
-### Arquivos impactados
+Atualmente o reset total faz:
+```sql
+DELETE FROM transactions WHERE user_id = X AND source_sheet_id IS NOT NULL
+```
+
+Isso deixa transações com `source_sheet_id = NULL` (inseridas por scripts). No reset total, deve deletar **todas** as transações do usuário:
+```sql
+DELETE FROM transactions WHERE user_id = X
+```
+
+Manter o filtro `source_sheet_id IS NOT NULL` apenas quando um `connectionId` específico é fornecido.
+
+#### 3. Ordenar as deleções para respeitar dependências
+
+Ordem correta:
+1. `credit_card_review_queue` (depende de transactions)
+2. `credit_card_transactions` (depende de cycles)
+3. `credit_card_cycles`
+4. `transaction_flags`
+5. `transactions`
+6. Demais tabelas existentes
+7. `forecast_monthly`
+8. `forecast_insights`
+9. `invoices`
+
+### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Script temporário | `/tmp/zimmermann_forecast.py` (processamento + inserção) |
-| Script temporário | `/tmp/zimmermann_pdf.py` (geração do PDF) |
-| Output | `/mnt/documents/Previsao_Financeira_2026_Zimmermann.pdf` |
-| Inserção no banco | `forecast_monthly` (12 registros para 2026) |
+| Editar | `supabase/functions/reset-sheet-data/index.ts` (adicionar 6 tabelas + corrigir filtro órfão) |
 
 ### Escopo restrito
-- Zero alteração em código do app (páginas, hooks, componentes)
 - Zero novas tabelas ou migrações
-- Usa a tabela `forecast_monthly` existente
-- Dados inseridos com `sheet_id = NULL` (consistente com o hook existente)
-- O menu "Previsões Financeiras" já lê esses dados automaticamente
+- Zero alteração em código frontend
+- Zero impacto em outros menus — apenas a lógica de limpeza
+- Retrocompatível: o payload e retorno da função não mudam
 
