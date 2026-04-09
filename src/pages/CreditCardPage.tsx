@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { useCreditCardDashboard } from "@/hooks/useCreditCardDashboard";
 import { CreditCardHero } from "@/components/credit-card/CreditCardHero";
 import { CreditCardConnectedHeader } from "@/components/credit-card/CreditCardConnectedHeader";
@@ -20,8 +20,8 @@ import {
   PieChart,
   Pie,
   Cell,
+  Sector,
   ResponsiveContainer,
-  Tooltip,
 } from "recharts";
 
 const PIE_COLORS = [
@@ -47,6 +47,59 @@ function ConfidenceBadge({ value }: { value: number | null | undefined }) {
   return <span className={`text-[10px] px-2 py-0.5 rounded-full border ${cls} font-medium`}>{pct}%</span>;
 }
 
+/* ── 3D Active Shape for Donut ── */
+const renderActiveShape = (props: any) => {
+  const {
+    cx, cy, innerRadius, outerRadius, startAngle, endAngle,
+    fill, payload, value, percent,
+  } = props;
+
+  return (
+    <g>
+      {/* Shadow layer */}
+      <Sector
+        cx={cx}
+        cy={cy + 3}
+        innerRadius={innerRadius - 1}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill="rgba(0,0,0,0.35)"
+        style={{ filter: "blur(6px)" }}
+      />
+      {/* Expanded active sector */}
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius - 2}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        style={{ filter: "drop-shadow(0 0 8px " + fill + ")" }}
+      />
+      {/* Inner ring glow */}
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius - 2}
+        outerRadius={innerRadius}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        opacity={0.5}
+      />
+      {/* Center label */}
+      <text x={cx} y={cy - 8} textAnchor="middle" fill="#fff" fontSize="13" fontWeight="700">
+        {formatCompactBR(value)}
+      </text>
+      <text x={cx} y={cy + 10} textAnchor="middle" fill="rgba(255,255,255,0.6)" fontSize="10">
+        {(percent * 100).toFixed(1)}%
+      </text>
+    </g>
+  );
+};
+
 export default function CreditCardPage() {
   const {
     cycles, transactions, kpis, primaryBrand,
@@ -56,10 +109,10 @@ export default function CreditCardPage() {
   const [search, setSearch] = useState("");
   const [selectedCycleId, setSelectedCycleId] = useState<string | "all">("__init__");
   const [showTransactions, setShowTransactions] = useState(true);
+  const [activeIndex, setActiveIndex] = useState<number>(0);
 
   const hasData = cycles.length > 0;
 
-  // Auto-select latest cycle on first load
   const effectiveCycleId = selectedCycleId === "__init__"
     ? (cycles[0]?.id || "all")
     : selectedCycleId;
@@ -72,13 +125,11 @@ export default function CreditCardPage() {
     ? detectCardBrand(selectedCycle.card_label)
     : primaryBrand;
 
-  // Filtered transactions by cycle
   const cycleTx = useMemo(() => {
     if (effectiveCycleId === "all") return transactions;
     return transactions.filter((t: any) => t.cycle_id === effectiveCycleId);
   }, [transactions, effectiveCycleId]);
 
-  // Search filter on top of cycle filter
   const filteredTx = useMemo(() => {
     if (!search.trim()) return cycleTx;
     const q = search.toLowerCase();
@@ -88,7 +139,6 @@ export default function CreditCardPage() {
     );
   }, [cycleTx, search]);
 
-  // KPIs based on selected cycle
   const cycleKpis = useMemo(() => {
     if (effectiveCycleId === "all") return kpis;
     if (!selectedCycle) return kpis;
@@ -102,23 +152,27 @@ export default function CreditCardPage() {
     };
   }, [effectiveCycleId, selectedCycle, cycleTx.length, kpis]);
 
-  // Categories based on filtered transactions
   const cycleCategories = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
+    let grandTotal = 0;
     for (const t of cycleTx) {
       const cat = (t as any).category_original || "Sem categoria";
+      const amt = Math.abs(Number((t as any).amount || 0));
       const existing = map.get(cat) || { total: 0, count: 0 };
-      existing.total += Math.abs(Number((t as any).amount || 0));
+      existing.total += amt;
       existing.count++;
+      grandTotal += amt;
       map.set(cat, existing);
     }
     return Array.from(map.entries())
-      .map(([name, data]) => ({ name, ...data }))
+      .map(([name, data]) => ({ name, ...data, pct: grandTotal > 0 ? (data.total / grandTotal) * 100 : 0 }))
       .sort((a, b) => b.total - a.total);
   }, [cycleTx]);
 
   const hasAnimatedRef = useRef(false);
   if (hasData) hasAnimatedRef.current = true;
+
+  const onPieEnter = useCallback((_: any, index: number) => setActiveIndex(index), []);
 
   // ─── Loading ───
   if (isLoading) {
@@ -160,6 +214,8 @@ export default function CreditCardPage() {
     );
   }
 
+  const pieData = cycleCategories.slice(0, 8);
+
   // ─── Connected dashboard ───
   return (
     <div className="space-y-6 p-4 md:p-6 animate-fade-in">
@@ -187,8 +243,8 @@ export default function CreditCardPage() {
 
       {/* Categories + Cycle Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Categories */}
-        <GlassCard className="p-5 space-y-4">
+        {/* Categories – 3D Donut */}
+        <GlassCard className="p-6 space-y-4 min-h-[360px]">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <ArrowDownRight className="h-5 w-5 text-primary" /> Categorias
             {effectiveCycleId !== "all" && selectedCycle && (
@@ -198,48 +254,68 @@ export default function CreditCardPage() {
             )}
           </h2>
           <div className="flex flex-col md:flex-row items-center gap-6">
-            {cycleCategories.length > 0 ? (
+            {pieData.length > 0 ? (
               <>
-                <div className="w-48 h-48 shrink-0" style={{ filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.15))" }}>
+                <div className="w-52 h-52 shrink-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
+                      <defs>
+                        <filter id="cc-pie-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="3" stdDeviation="4" floodColor="rgba(0,0,0,0.3)" />
+                        </filter>
+                      </defs>
                       <Pie
-                        data={cycleCategories.slice(0, 8)}
+                        activeIndex={activeIndex}
+                        activeShape={renderActiveShape}
+                        data={pieData}
                         dataKey="total"
                         nameKey="name"
                         cx="50%"
                         cy="50%"
-                        innerRadius={44}
-                        outerRadius={76}
+                        innerRadius={48}
+                        outerRadius={78}
                         paddingAngle={2}
+                        onMouseEnter={onPieEnter}
                         isAnimationActive={!hasAnimatedRef.current}
                         animationBegin={100}
                         animationDuration={800}
+                        style={{ filter: "url(#cc-pie-shadow)", cursor: "pointer" }}
                       >
-                        {cycleCategories.slice(0, 8).map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        {pieData.map((_, i) => (
+                          <Cell
+                            key={i}
+                            fill={PIE_COLORS[i % PIE_COLORS.length]}
+                            stroke="rgba(0,0,0,0.2)"
+                            strokeWidth={1}
+                          />
                         ))}
                       </Pie>
-                      <Tooltip
-                        formatter={(v: number) => formatCurrencyBR(v)}
-                        contentStyle={{
-                          background: "rgba(15,23,42,0.9)",
-                          border: "1px solid rgba(255,255,255,0.1)",
-                          borderRadius: "12px",
-                          color: "#fff",
-                          fontSize: "12px",
-                        }}
-                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div className="flex-1 space-y-2.5 max-h-[240px] overflow-y-auto w-full pr-1">
-                  {cycleCategories.slice(0, 8).map((cat, i) => (
-                    <div key={cat.name} className="flex items-center gap-3 text-sm group" title={cat.name}>
-                      <span className="w-3 h-3 rounded-full shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                      <span className="flex-1 truncate text-foreground/80 group-hover:text-foreground transition-colors">{cat.name}</span>
+                <div className="flex-1 space-y-1.5 max-h-[260px] overflow-y-auto w-full pr-1">
+                  {pieData.map((cat, i) => (
+                    <div
+                      key={cat.name}
+                      className={`flex items-center gap-3 text-sm rounded-lg px-3 py-2 cursor-pointer transition-all duration-200 ${
+                        activeIndex === i
+                          ? "bg-white/[0.08] scale-[1.02]"
+                          : "hover:bg-white/[0.04]"
+                      }`}
+                      onMouseEnter={() => setActiveIndex(i)}
+                      title={cat.name}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0 transition-transform duration-200"
+                        style={{
+                          background: PIE_COLORS[i % PIE_COLORS.length],
+                          transform: activeIndex === i ? "scale(1.3)" : "scale(1)",
+                          boxShadow: activeIndex === i ? `0 0 8px ${PIE_COLORS[i % PIE_COLORS.length]}` : "none",
+                        }}
+                      />
+                      <span className="flex-1 truncate text-foreground/80">{cat.name}</span>
                       <span className="font-semibold tabular-nums text-foreground">{formatCompactBR(cat.total)}</span>
-                      <span className="text-xs text-muted-foreground w-8 text-right">({cat.count})</span>
+                      <span className="text-xs text-muted-foreground w-12 text-right">{cat.pct.toFixed(1)}%</span>
                     </div>
                   ))}
                 </div>
@@ -250,12 +326,12 @@ export default function CreditCardPage() {
           </div>
         </GlassCard>
 
-        {/* Cycle list (secondary view) */}
-        <GlassCard className="p-5 space-y-4">
+        {/* Cycle list */}
+        <GlassCard className="p-6 space-y-4 min-h-[360px]">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <ArrowUpRight className="h-5 w-5 text-primary" /> Todos os Ciclos
           </h2>
-          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+          <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
             {cycles.map((cycle: any) => {
               const brand = detectCardBrand(cycle.card_label);
               const isActive = cycle.id === effectiveCycleId;
@@ -263,9 +339,9 @@ export default function CreditCardPage() {
                 <button
                   key={cycle.id}
                   onClick={() => setSelectedCycleId(cycle.id)}
-                  className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all text-left
+                  className={`w-full flex items-center gap-4 p-3.5 rounded-xl border transition-all duration-200 text-left
                     ${isActive
-                      ? "bg-primary/[0.08] border-primary/30 ring-1 ring-primary/20"
+                      ? "bg-primary/[0.08] border-primary/30 ring-1 ring-primary/20 scale-[1.01]"
                       : "bg-white/[0.04] border-white/[0.06] hover:bg-white/[0.07]"
                     }
                   `}
@@ -291,8 +367,8 @@ export default function CreditCardPage() {
         </GlassCard>
       </div>
 
-      {/* Transactions - collapsible */}
-      <GlassCard className="p-5 space-y-4">
+      {/* Transactions */}
+      <GlassCard className="p-6 space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
             <ReceiptText className="h-5 w-5 text-primary" /> Lançamentos
@@ -322,12 +398,12 @@ export default function CreditCardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/[0.06] text-muted-foreground text-xs uppercase tracking-wider">
-                  <th className="text-left py-3 px-3 font-medium">Vencimento</th>
-                  <th className="text-left py-3 px-3 font-medium">Descrição</th>
-                  <th className="text-left py-3 px-3 font-medium">Categoria</th>
-                  <th className="text-right py-3 px-3 font-medium">Valor</th>
-                  <th className="text-center py-3 px-3 font-medium">Tipo</th>
-                  <th className="text-center py-3 px-3 font-medium">Confiança</th>
+                  <th className="text-left py-3 px-4 font-medium">Vencimento</th>
+                  <th className="text-left py-3 px-4 font-medium">Descrição</th>
+                  <th className="text-left py-3 px-4 font-medium">Categoria</th>
+                  <th className="text-right py-3 px-4 font-medium">Valor</th>
+                  <th className="text-center py-3 px-4 font-medium">Tipo</th>
+                  <th className="text-center py-3 px-4 font-medium">Confiança</th>
                 </tr>
               </thead>
               <tbody>
@@ -335,20 +411,20 @@ export default function CreditCardPage() {
                   <tr><td colSpan={6} className="text-center py-8 text-muted-foreground">{search ? "Nenhum resultado." : "Nenhum lançamento."}</td></tr>
                 ) : filteredTx.map((t: any) => (
                   <tr key={t.id} className="border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
-                    <td className="py-2.5 px-3 tabular-nums text-foreground/80">{formatDate(t.due_date)}</td>
-                    <td className="py-2.5 px-3 text-foreground max-w-[250px] truncate">{t.original_description || "—"}</td>
-                    <td className="py-2.5 px-3"><span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-foreground/70">{t.category_original || "—"}</span></td>
-                    <td className="py-2.5 px-3 text-right tabular-nums font-medium">
+                    <td className="py-3 px-4 tabular-nums text-foreground/80">{formatDate(t.due_date)}</td>
+                    <td className="py-3 px-4 text-foreground max-w-[260px] truncate">{t.original_description || "—"}</td>
+                    <td className="py-3 px-4"><span className="text-xs px-2 py-0.5 rounded-full bg-white/[0.06] text-foreground/70">{t.category_original || "—"}</span></td>
+                    <td className="py-3 px-4 text-right tabular-nums font-medium">
                       <span className={t.transaction_type === "reimbursement" ? "text-emerald-500" : "text-foreground"}>
                         {t.transaction_type === "reimbursement" ? "+" : ""}{formatCurrencyBR(Math.abs(Number(t.amount || 0)))}
                       </span>
                     </td>
-                    <td className="py-2.5 px-3 text-center">
+                    <td className="py-3 px-4 text-center">
                       {t.transaction_type === "reimbursement"
                         ? <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 text-[10px] px-2">Reembolso</Badge>
                         : <Badge variant="outline" className="text-foreground/60 border-white/[0.1] text-[10px] px-2">Despesa</Badge>}
                     </td>
-                    <td className="py-2.5 px-3 text-center"><ConfidenceBadge value={t.detection_confidence} /></td>
+                    <td className="py-3 px-4 text-center"><ConfidenceBadge value={t.detection_confidence} /></td>
                   </tr>
                 ))}
               </tbody>

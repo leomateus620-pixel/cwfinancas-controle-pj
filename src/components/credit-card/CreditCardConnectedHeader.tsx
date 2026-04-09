@@ -28,9 +28,9 @@ export function CreditCardConnectedHeader({
 }: Props) {
   return (
     <section className="liquid-glass rounded-2xl overflow-hidden">
-      <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-0">
+      <div className="grid grid-cols-1 lg:grid-cols-[auto_1fr] gap-0 items-center">
         {/* Card 3D */}
-        <div className="relative flex items-center justify-center p-6 md:p-8 min-h-[200px]">
+        <div className="relative flex items-center justify-center p-8 min-h-[220px]">
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <div
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[180px] rounded-full blur-3xl opacity-20"
@@ -41,7 +41,7 @@ export function CreditCardConnectedHeader({
         </div>
 
         {/* Info */}
-        <div className="p-6 md:p-8 flex flex-col justify-center space-y-5 border-l border-white/[0.06]">
+        <div className="p-6 md:p-8 flex flex-col justify-center space-y-5 lg:border-l border-white/[0.06]">
           {/* Title row */}
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
