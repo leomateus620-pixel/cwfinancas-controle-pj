@@ -108,7 +108,7 @@ export default function CreditCardPage() {
 
   const [search, setSearch] = useState("");
   const [selectedCycleId, setSelectedCycleId] = useState<string | "all">("__init__");
-  const [showTransactions, setShowTransactions] = useState(true);
+  const [showTransactions, setShowTransactions] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number>(0);
 
   const hasData = cycles.length > 0;
