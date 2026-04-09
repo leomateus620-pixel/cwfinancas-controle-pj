@@ -89,7 +89,7 @@ type PageState = "loading" | "not_connected" | "error" | "success";
 function CreditCardReviewSection() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [showReview, setShowReview] = useState(true);
+  const [showReview, setShowReview] = useState(false);
 
   const reviewQuery = useQuery({
     queryKey: ["cc-review", user?.id],
@@ -177,13 +177,12 @@ function CreditCardReviewSection() {
 function SyncHistorySection() {
   const { runs, stats, isLoading } = useSyncStatus();
   const { data: audits } = useSyncAudit();
+  const [showHistory, setShowHistory] = useState(false);
   
   if (isLoading || runs.length === 0) return null;
 
   const lastRun = runs[0];
   const hasErrors = lastRun?.rows_failed > 0;
-
-  // Get audits from the most recent sync job
   const latestAudits = audits?.slice(0, 20) || [];
 
   return (
@@ -195,28 +194,38 @@ function SyncHistorySection() {
             <History className="w-5 h-5 text-primary" />
             Histórico de Sincronização
           </CardTitle>
-          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground flex items-center gap-1">
               <BarChart3 className="w-4 h-4" />
               {stats.total_rows_upserted} linhas importadas
             </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              {showHistory ? <><ChevronUp className="h-4 w-4 mr-1" /> Ocultar</> : <><ChevronDown className="h-4 w-4 mr-1" /> Mostrar</>}
+            </Button>
           </div>
         </div>
       </CardHeader>
-      <CardContent className="relative z-10 space-y-4">
-        <SyncHistoryTable runs={runs.slice(0, 5)} />
-        
-        {hasErrors && lastRun.errors?.length > 0 && (
-          <SyncErrorList 
-            errors={lastRun.errors} 
-            maxErrors={5}
-          />
-        )}
+      {showHistory && (
+        <CardContent className="relative z-10 space-y-4">
+          <SyncHistoryTable runs={runs.slice(0, 5)} />
+          
+          {hasErrors && lastRun.errors?.length > 0 && (
+            <SyncErrorList 
+              errors={lastRun.errors} 
+              maxErrors={5}
+            />
+          )}
 
-        {latestAudits.length > 0 && (
-          <SyncAuditTable audits={latestAudits} />
-        )}
-      </CardContent>
+          {latestAudits.length > 0 && (
+            <SyncAuditTable audits={latestAudits} />
+          )}
+        </CardContent>
+      )}
     </Card>
   );
 }
