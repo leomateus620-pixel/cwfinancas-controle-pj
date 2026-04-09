@@ -1,3 +1,4 @@
+import bancodobrasilImg from "@/assets/cards/bancodobrasil.png";
 import banrisulImg from "@/assets/cards/banrisul.png";
 import nubankImg from "@/assets/cards/nubank.png";
 import sicrediImg from "@/assets/cards/sicredi.png";
@@ -18,7 +19,7 @@ const CARD_BRANDS: CardBrand[] = [
     id: "bancodobrasil",
     name: "Banco do Brasil",
     aliases: ["banco do brasil", "bb"],
-    asset: null,
+    asset: bancodobrasilImg,
     gradient: "linear-gradient(135deg, #FFCD00 0%, #003882 40%, #002D62 100%)",
     textColor: "#fff",
     accentColor: "#003882",
