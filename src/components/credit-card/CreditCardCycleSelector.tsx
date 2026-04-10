@@ -36,7 +36,7 @@ function ChipDot({ color, active }: { color: string; active: boolean }) {
       className="w-2.5 h-2.5 rounded-full shrink-0 transition-all duration-300"
       style={{
         background: active ? "#fff" : color,
-        boxShadow: active ? `0 0 8px ${color}, 0 0 3px ${color}` : `0 0 4px ${color}55`,
+        boxShadow: active ? `0 0 12px ${color}, 0 0 5px ${color}` : `0 0 6px ${color}66`,
       }}
     />
   );
@@ -72,18 +72,18 @@ function CycleChip({
       `}
       style={
         active
-          ? {
-              background: `linear-gradient(135deg, ${ac}33 0%, ${ac}18 100%)`,
-              borderColor: `${ac}66`,
-              boxShadow: `0 4px 20px ${ac}30, inset 0 1px 0 rgba(255,255,255,0.12)`,
-            }
-          : {
-              background: hovered ? `${ac}0D` : "rgba(255,255,255,0.04)",
-              borderColor: hovered ? `${ac}25` : "rgba(255,255,255,0.06)",
-              boxShadow: hovered
-                ? `0 2px 12px ${ac}15, inset 0 1px 0 rgba(255,255,255,0.06)`
-                : "inset 0 1px 0 rgba(255,255,255,0.04)",
-            }
+           ? {
+               background: `linear-gradient(135deg, ${ac}55 0%, ${ac}35 100%)`,
+               borderColor: `${ac}90`,
+               boxShadow: `0 4px 24px ${ac}50, inset 0 1px 0 rgba(255,255,255,0.15)`,
+             }
+           : {
+               background: hovered ? `${ac}20` : "rgba(255,255,255,0.04)",
+               borderColor: hovered ? `${ac}40` : "rgba(255,255,255,0.06)",
+               boxShadow: hovered
+                 ? `0 2px 16px ${ac}25, inset 0 1px 0 rgba(255,255,255,0.08)`
+                 : "inset 0 1px 0 rgba(255,255,255,0.04)",
+             }
       }
     >
       <ChipDot color={ac} active={active} />
@@ -225,13 +225,13 @@ function CycleChipInner({
       style={{
         borderLeftColor: hasBorder ? "rgba(255,255,255,0.06)" : undefined,
         ...(active
-          ? {
-              background: `linear-gradient(135deg, ${ac}33 0%, ${ac}18 100%)`,
-              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.1)`,
-            }
-          : {
-              background: hovered ? `${ac}0D` : "rgba(255,255,255,0.04)",
-            }),
+           ? {
+               background: `linear-gradient(135deg, ${ac}55 0%, ${ac}35 100%)`,
+               boxShadow: `0 2px 16px ${ac}40, inset 0 1px 0 rgba(255,255,255,0.12)`,
+             }
+           : {
+               background: hovered ? `${ac}20` : "rgba(255,255,255,0.04)",
+             }),
       }}
     >
       <ChipDot color={ac} active={active} />
