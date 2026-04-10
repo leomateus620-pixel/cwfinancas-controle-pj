@@ -45,24 +45,23 @@ export function CreditCardConnectedHeader({
           {/* Title row */}
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">
-                {(() => {
-                  const bankName = brand.name;
-                  const prefix = "Cartão";
-                  return (
-                    <>
-                      <span>{prefix} </span>
-                      <span
-                        style={{
-                          color: brand.id !== "generic" ? brand.accentColor : undefined,
-                          textShadow: brand.id !== "generic" ? `0 0 20px ${brand.accentColor}60, 0 0 6px ${brand.accentColor}40` : undefined,
-                        }}
-                      >
-                        {bankName}
-                      </span>
-                    </>
-                  );
-                })()}
+              <h1 className="text-2xl font-bold flex items-center gap-2">
+                <span className="text-foreground">Cartão</span>
+                {brand.id !== "generic" ? (
+                  <span
+                    className="relative inline-block"
+                    style={{
+                      background: `linear-gradient(135deg, ${brand.accentColor} 0%, ${brand.accentColor}CC 50%, ${brand.accentColor}88 100%)`,
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                      filter: `drop-shadow(0 0 12px ${brand.accentColor}80) drop-shadow(0 0 4px ${brand.accentColor}50)`,
+                    }}
+                  >
+                    {brand.name}
+                  </span>
+                ) : (
+                  <span className="text-foreground">{brand.name}</span>
+                )}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5" />

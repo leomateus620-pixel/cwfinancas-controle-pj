@@ -22,7 +22,7 @@ const CARD_BRANDS: CardBrand[] = [
     asset: bancodobrasilImg,
     gradient: "linear-gradient(135deg, #FFCD00 0%, #003882 40%, #002D62 100%)",
     textColor: "#fff",
-    accentColor: "#003882",
+    accentColor: "#FFCD00",
   },
   {
     id: "nubank",
