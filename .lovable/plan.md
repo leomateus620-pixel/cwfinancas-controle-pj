@@ -1,38 +1,46 @@
 
 
-## Plano: Imagem BB Ourocard + Melhorias UX Cartão de Crédito
+## Plano: Seletor de Ciclos com Cores do Cartão + Liquid Glass Premium
 
 ### O que será feito
 
-1. **Imagem do Banco do Brasil**: Copiar a imagem anexada do Ourocard Black para `src/assets/cards/bancodobrasil.png` e vincular no `cardCatalog.ts` como asset do brand "Banco do Brasil" (atualmente `asset: null`).
+Redesenhar o `CreditCardCycleSelector` para que cada chip reflita a identidade visual do banco emissor (verde Sicredi, amarelo/azul BB, azul Banrisul), com profundidade liquid glass e micro-animações.
 
-2. **Corrigir tooltip escuro que esconde valores**: O `Tooltip` do Recharts usa `contentStyle` com fundo `rgba(15,23,42,0.9)` — praticamente preto sobre fundo escuro. Trocar para glassmorphism translúcido com backdrop-blur, texto branco legível e borda luminosa.
+### Design
 
-3. **Gráfico de categorias com visual 3D e micro-animações**:
-   - Substituir o `PieChart` plano por um donut com `renderActiveShape` customizado que expande o setor ativo com sombra e offset (efeito 3D)
-   - Adicionar hover interativo: setor se destaca com glow e a categoria correspondente na lista recebe highlight sincronizado (bidirecional)
-   - Drop-shadow no container com filtro SVG para profundidade visual
-
-4. **Melhorar alinhamento e UX geral**:
-   - Header: Centralizar verticalmente o cartão 3D com os KPIs, padding consistente
-   - Cards de Categorias e Ciclos: Igualar alturas mínimas, espaçamento uniforme
-   - Lista de categorias: Adicionar percentual (%) ao lado do valor compacto
-   - Transações: Melhorar padding e espaçamento da tabela
-
-### Arquivos
-
-| Ação | Arquivo |
-|------|---------|
-| Copiar asset | `user-uploads://9_de_abr._de_2026_20_42_12.png` → `src/assets/cards/bancodobrasil.png` |
-| Editar | `src/lib/cardCatalog.ts` (vincular asset do BB) |
-| Editar | `src/pages/CreditCardPage.tsx` (donut 3D, tooltip fix, alinhamentos, % nas categorias) |
-| Editar | `src/components/credit-card/CreditCardConnectedHeader.tsx` (alinhamento padding) |
+Cada chip de mês/cartão terá:
+- **Estado ativo**: fundo com gradiente translúcido derivado do `accentColor` do banco (ex: `rgba(0,107,63,0.25)` para Sicredi), borda luminosa na cor do banco (`accentColor` com 40% opacidade), box-shadow com glow colorido, texto branco
+- **Estado inativo**: fundo `white/[0.04]` com bolinha colorida do banco, texto muted, hover com leve tint da cor do banco
+- **Agrupamento multi-cartão** (mesmo mês): container com borda glass, cada sub-chip usa a cor do seu respectivo banco quando ativo
+- **Botão "Todos"**: mantém o estilo neutro glass (sem cor de banco)
+- **Micro-animações**: `transition-all duration-300`, scale sutil no ativo (`scale-[1.02]`), glow pulsante via box-shadow
 
 ### Detalhes técnicos
 
-**Tooltip fix**: Usar `wrapperStyle` + `contentStyle` com `backdropFilter: 'blur(16px)'`, fundo `rgba(30,41,59,0.85)`, borda `rgba(255,255,255,0.15)`.
+Para cada ciclo, o `brand.accentColor` já está disponível via `detectCardBrand()`. O estilo ativo será aplicado via `style` inline:
+```tsx
+// Ativo
+style={{
+  background: `linear-gradient(135deg, ${accentColor}33 0%, ${accentColor}18 100%)`,
+  borderColor: `${accentColor}66`,
+  boxShadow: `0 4px 20px ${accentColor}30, inset 0 1px 0 rgba(255,255,255,0.1)`,
+}}
 
-**Donut 3D**: Usar `renderActiveShape` do Recharts com `Sector` customizado — setor ativo deslocado 6px do centro com `outerRadius + 8`, sombra via `filter: drop-shadow`. Estado `activeIndex` sincronizado com hover na lista de categorias.
+// Inativo hover — via onMouseEnter/Leave com estado
+style={{
+  background: hovered ? `${accentColor}0D` : 'rgba(255,255,255,0.04)',
+}}
+```
 
-**Micro-animações**: Transição CSS de 200ms no hover dos itens de categoria + `onMouseEnter`/`onMouseLeave` para sincronizar com o gráfico.
+O dot indicador no ativo terá um anel de glow (`box-shadow: 0 0 6px ${accentColor}`).
+
+### Arquivo
+
+| Ação | Arquivo |
+|------|---------|
+| Reescrever | `src/components/credit-card/CreditCardCycleSelector.tsx` |
+
+### Escopo restrito
+- Apenas o componente `CreditCardCycleSelector`
+- Zero alteração em outros arquivos
 
