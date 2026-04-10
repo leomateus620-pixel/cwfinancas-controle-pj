@@ -1,46 +1,33 @@
 
 
-## Plano: Seletor de Ciclos com Cores do Cartão + Liquid Glass Premium
+## Plano: Cores vibrantes no seletor de ciclos + título colorido por banco
+
+### Problemas identificados
+
+1. **Seletor de ciclos sem cor visível**: Os chips usam `${accentColor}33` (20% opacidade) e `${accentColor}18` (9%) — tão transparente que parece cinza no fundo escuro. Precisa de opacidade muito maior.
+
+2. **Título "Cartão Sicredi" sem cor do banco**: O `cycleName` no `ConnectedHeader` é exibido em branco puro. Precisa separar "Cartão" (branco neutro) do nome do banco (na cor do banco com efeito liquid glass).
 
 ### O que será feito
 
-Redesenhar o `CreditCardCycleSelector` para que cada chip reflita a identidade visual do banco emissor (verde Sicredi, amarelo/azul BB, azul Banrisul), com profundidade liquid glass e micro-animações.
+**1. CreditCardConnectedHeader.tsx — Título com cor do banco**
+- Separar o título em duas partes: "Cartão" em branco e o nome do banco (ex: "Sicredi", "Banco do Brasil") estilizado com `color: brand.accentColor`, text-shadow com glow na cor do banco
+- Usar `brand.accentColor` diretamente no texto do nome
 
-### Design
+**2. CreditCardCycleSelector.tsx — Cores vivas nos chips**
+- Estado ativo: aumentar opacidade do gradiente de `33/18` para `55/35` (mais saturado), borda de `66` para `90`, box-shadow mais intenso com `50` em vez de `30`
+- Estado hover inativo: de `0D` para `20`
+- Dot ativo: glow mais forte com spread maior
+- Container de grupo multi-cartão: borda colorida do cartão ativo (não branca genérica)
 
-Cada chip de mês/cartão terá:
-- **Estado ativo**: fundo com gradiente translúcido derivado do `accentColor` do banco (ex: `rgba(0,107,63,0.25)` para Sicredi), borda luminosa na cor do banco (`accentColor` com 40% opacidade), box-shadow com glow colorido, texto branco
-- **Estado inativo**: fundo `white/[0.04]` com bolinha colorida do banco, texto muted, hover com leve tint da cor do banco
-- **Agrupamento multi-cartão** (mesmo mês): container com borda glass, cada sub-chip usa a cor do seu respectivo banco quando ativo
-- **Botão "Todos"**: mantém o estilo neutro glass (sem cor de banco)
-- **Micro-animações**: `transition-all duration-300`, scale sutil no ativo (`scale-[1.02]`), glow pulsante via box-shadow
-
-### Detalhes técnicos
-
-Para cada ciclo, o `brand.accentColor` já está disponível via `detectCardBrand()`. O estilo ativo será aplicado via `style` inline:
-```tsx
-// Ativo
-style={{
-  background: `linear-gradient(135deg, ${accentColor}33 0%, ${accentColor}18 100%)`,
-  borderColor: `${accentColor}66`,
-  boxShadow: `0 4px 20px ${accentColor}30, inset 0 1px 0 rgba(255,255,255,0.1)`,
-}}
-
-// Inativo hover — via onMouseEnter/Leave com estado
-style={{
-  background: hovered ? `${accentColor}0D` : 'rgba(255,255,255,0.04)',
-}}
-```
-
-O dot indicador no ativo terá um anel de glow (`box-shadow: 0 0 6px ${accentColor}`).
-
-### Arquivo
+### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Reescrever | `src/components/credit-card/CreditCardCycleSelector.tsx` |
+| Editar | `src/components/credit-card/CreditCardConnectedHeader.tsx` (título bicolor) |
+| Editar | `src/components/credit-card/CreditCardCycleSelector.tsx` (opacidades mais altas) |
 
 ### Escopo restrito
-- Apenas o componente `CreditCardCycleSelector`
-- Zero alteração em outros arquivos
+- Apenas 2 componentes visuais
+- Zero alteração em lógica de dados ou catálogo
 
