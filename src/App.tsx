@@ -33,6 +33,7 @@ import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import NotFound from "@/pages/NotFound";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsOfUsePage from "@/pages/TermsOfUsePage";
+import StatementConverterPage from "@/pages/StatementConverterPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -98,6 +99,7 @@ const App = () => {
                   <Route path="/accounts" element={<AccountsPage />} />
                   <Route path="/credit-cards" element={<CreditCardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/statement-converter" element={<StatementConverterPage />} />
                 </Route>
                 
                 <Route path="*" element={<NotFound />} />
