@@ -1324,6 +1324,98 @@ export type Database = {
         }
         Relationships: []
       }
+      pdf_parsed_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          date: string | null
+          description: string
+          id: string
+          is_valid: boolean
+          original_amount: number | null
+          row_index: number
+          upload_id: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          date?: string | null
+          description?: string
+          id?: string
+          is_valid?: boolean
+          original_amount?: number | null
+          row_index?: number
+          upload_id: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          date?: string | null
+          description?: string
+          id?: string
+          is_valid?: boolean
+          original_amount?: number | null
+          row_index?: number
+          upload_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pdf_parsed_transactions_upload_id_fkey"
+            columns: ["upload_id"]
+            isOneToOne: false
+            referencedRelation: "pdf_statement_uploads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pdf_statement_uploads: {
+        Row: {
+          created_at: string
+          detected_type: string
+          error_message: string | null
+          file_name: string
+          file_path: string | null
+          file_size: number | null
+          id: string
+          manual_type: string | null
+          status: string
+          transaction_count: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detected_type?: string
+          error_message?: string | null
+          file_name: string
+          file_path?: string | null
+          file_size?: number | null
+          id?: string
+          manual_type?: string | null
+          status?: string
+          transaction_count?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detected_type?: string
+          error_message?: string | null
+          file_name?: string
+          file_path?: string | null
+          file_size?: number | null
+          id?: string
+          manual_type?: string | null
+          status?: string
+          transaction_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
