@@ -53,6 +53,7 @@ const toolsNavItems = [
   { title: "Google Sheets", url: "/google-sheets", icon: FileSpreadsheet },
   { title: "Upload de Dados", url: "/upload", icon: Upload },
   { title: "Insights IA", url: "/insights", icon: Sparkles },
+  { title: "Conversor de Extratos", url: "/statement-converter", icon: FileDown },
 ];
 
 export function AppSidebar() {
