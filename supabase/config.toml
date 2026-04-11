@@ -59,3 +59,6 @@ verify_jwt = false
 
 [functions.detect-credit-cards]
 verify_jwt = false
+
+[functions.parse-pdf-statement]
+verify_jwt = false
