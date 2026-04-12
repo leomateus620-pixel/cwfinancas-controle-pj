@@ -81,16 +81,13 @@ interface ParsedTransaction {
   row_index: number;
 }
 
-// Match: DD/MM/YYYY or DD/MM/YY  +  description  +  value (with comma or dot)
 const BANK_LINE_RE =
   /^(\d{2}\/\d{2}\/\d{2,4})\s+(.+?)\s+(-?\s*[\d.,]+(?:\s*[CDcd])?)$/;
 
-// Value pattern: 1.234,56 or 1234,56 or -1.234,56
 function parseValue(raw: string): number | null {
   let cleaned = raw.trim().replace(/\s/g, "");
   let sign = 1;
 
-  // Handle C/D suffix (crédito / débito)
   if (/[Cc]$/.test(cleaned)) {
     cleaned = cleaned.slice(0, -1);
     sign = 1;
@@ -104,7 +101,6 @@ function parseValue(raw: string): number | null {
     cleaned = cleaned.slice(1);
   }
 
-  // Brazilian format: 1.234,56
   if (cleaned.includes(",")) {
     cleaned = cleaned.replace(/\./g, "").replace(",", ".");
   }
@@ -121,27 +117,18 @@ function parseBankStatement(text: string): ParsedTransaction[] {
 
   for (const line of lines) {
     if (isNoiseLine(line)) continue;
-
     const match = line.match(BANK_LINE_RE);
     if (match) {
       const [, dateStr, desc, valStr] = match;
       const amount = parseValue(valStr);
       if (amount !== null && desc.trim().length > 1) {
-        txns.push({
-          date: dateStr,
-          description: desc.trim(),
-          amount,
-          original_amount: amount,
-          row_index: idx++,
-        });
+        txns.push({ date: dateStr, description: desc.trim(), amount, original_amount: amount, row_index: idx++ });
       }
     }
   }
-
   return txns;
 }
 
-// Credit card: description + value (no date in output, invert sign)
 const CC_LINE_RE = /^(.+?)\s+(-?\s*[\d.,]+)$/;
 
 function parseCreditCardStatement(text: string): ParsedTransaction[] {
@@ -151,37 +138,121 @@ function parseCreditCardStatement(text: string): ParsedTransaction[] {
 
   for (const line of lines) {
     if (isNoiseLine(line)) continue;
-
-    // Try to strip leading date if present
     let cleanLine = line.replace(/^\d{2}\/\d{2}(?:\/\d{2,4})?\s+/, "");
-
     const match = cleanLine.match(CC_LINE_RE);
     if (match) {
       const [, desc, valStr] = match;
       const originalAmount = parseValue(valStr);
       if (originalAmount !== null && desc.trim().length > 2) {
-        // INVERT SIGN: positive → negative, negative → positive
         const invertedAmount = originalAmount * -1;
-        txns.push({
-          date: null,
-          description: desc.trim(),
-          amount: invertedAmount,
-          original_amount: originalAmount,
-          row_index: idx++,
-        });
+        txns.push({ date: null, description: desc.trim(), amount: invertedAmount, original_amount: originalAmount, row_index: idx++ });
       }
     }
   }
-
   return txns;
 }
 
-// ── PDF text extraction using pdf-parse ─────────────────────────
+// ── PDF text extraction (Deno-compatible) ───────────────────────
 async function extractTextFromPdf(pdfBuffer: Uint8Array): Promise<string> {
-  // Use pdf-parse via esm.sh
-  const pdfParse = (await import("https://esm.sh/pdf-parse@1.1.1")).default;
-  const result = await pdfParse(pdfBuffer);
-  return result.text || "";
+  try {
+    const { extractText, getDocumentProxy } = await import("https://esm.sh/unpdf@0.12.1");
+    const pdf = await getDocumentProxy(pdfBuffer);
+    const { text } = await extractText(pdf, { mergePages: true });
+    return text || "";
+  } catch (e) {
+    console.error("unpdf failed, trying fallback:", e);
+    // Fallback: try pdf-parse with npm: specifier
+    try {
+      const pdfParse = (await import("npm:pdf-parse@1.1.1")).default;
+      const result = await pdfParse(Buffer.from(pdfBuffer));
+      return result.text || "";
+    } catch (e2) {
+      console.error("pdf-parse fallback also failed:", e2);
+      return "";
+    }
+  }
+}
+
+// ── OCR via Lovable AI (Gemini multimodal) ──────────────────────
+async function ocrWithAI(pdfBuffer: Uint8Array): Promise<{ transactions: ParsedTransaction[]; detectedType: DocType }> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) {
+    console.error("LOVABLE_API_KEY not available for OCR");
+    return { transactions: [], detectedType: "unknown" };
+  }
+
+  const base64Pdf = btoa(String.fromCharCode(...pdfBuffer));
+
+  const prompt = `Você é um assistente especializado em extrair transações financeiras de extratos bancários e faturas de cartão de crédito em PDF.
+
+Analise este documento PDF e extraia TODAS as transações financeiras encontradas.
+
+Para cada transação, retorne:
+- date: a data no formato DD/MM/YYYY (ou null se não houver data visível)
+- description: a descrição da transação
+- amount: o valor numérico (positivo para créditos/entradas, negativo para débitos/saídas)
+
+Também classifique o tipo do documento:
+- "bank" para extrato bancário
+- "credit_card" para fatura de cartão de crédito
+
+IMPORTANTE: Para faturas de cartão, INVERTA os sinais (compras devem ser negativas, pagamentos positivos).
+
+Responda APENAS com JSON válido no formato:
+{
+  "type": "bank" | "credit_card",
+  "transactions": [
+    { "date": "DD/MM/YYYY", "description": "texto", "amount": 123.45 }
+  ]
+}`;
+
+  try {
+    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:application/pdf;base64,${base64Pdf}` } },
+          ],
+        }],
+      }),
+    });
+
+    if (!resp.ok) {
+      console.error("AI OCR request failed:", resp.status, await resp.text());
+      return { transactions: [], detectedType: "unknown" };
+    }
+
+    const aiResult = await resp.json();
+    const content = aiResult.choices?.[0]?.message?.content || "";
+
+    // Extract JSON from response (may be wrapped in markdown code blocks)
+    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
+    const jsonStr = (jsonMatch[1] || content).trim();
+
+    const parsed = JSON.parse(jsonStr);
+    const detectedType: DocType = parsed.type === "credit_card" ? "credit_card" : parsed.type === "bank" ? "bank" : "unknown";
+
+    const transactions: ParsedTransaction[] = (parsed.transactions || []).map((t: any, i: number) => ({
+      date: t.date || null,
+      description: String(t.description || "").trim(),
+      amount: typeof t.amount === "number" ? Math.round(t.amount * 100) / 100 : 0,
+      original_amount: typeof t.amount === "number" ? Math.round(Math.abs(t.amount) * 100) / 100 : 0,
+      row_index: i,
+    })).filter((t: ParsedTransaction) => t.description.length > 1);
+
+    return { transactions, detectedType };
+  } catch (e) {
+    console.error("AI OCR parsing failed:", e);
+    return { transactions: [], detectedType: "unknown" };
+  }
 }
 
 // ── Main handler ────────────────────────────────────────────────
@@ -191,7 +262,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Auth
     const authHeader = req.headers.get("authorization") ?? "";
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -214,63 +284,74 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Arquivo e upload_id são obrigatórios" }, 400);
     }
 
-    // Validate PDF
     if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
       return jsonResponse({ error: "Apenas arquivos PDF são aceitos" }, 400);
     }
 
-    // Update status to processing
     await supabase
       .from("pdf_statement_uploads")
       .update({ status: "processing" })
       .eq("id", uploadId)
       .eq("user_id", user.id);
 
-    // Extract text
     const buffer = new Uint8Array(await file.arrayBuffer());
-    let text: string;
+
+    // Try text extraction first
+    let text = "";
+    let useOcr = false;
     try {
       text = await extractTextFromPdf(buffer);
     } catch (e) {
-      await supabase
-        .from("pdf_statement_uploads")
-        .update({ status: "error", error_message: "PDF ilegível ou protegido" })
-        .eq("id", uploadId);
-      return jsonResponse({ error: "Não foi possível ler o PDF. Verifique se o arquivo não está protegido." }, 422);
+      console.error("Text extraction failed:", e);
     }
 
-    if (!text || text.trim().length < 20) {
-      await supabase
-        .from("pdf_statement_uploads")
-        .update({ status: "error", error_message: "PDF sem texto extraível (pode ser imagem/scan)" })
-        .eq("id", uploadId);
-      return jsonResponse({ error: "PDF sem texto extraível. Apenas PDFs com texto selecionável são suportados." }, 422);
+    // If text is too short, fall back to OCR
+    const cleanText = text.replace(/\s+/g, " ").trim();
+    if (cleanText.length < 100) {
+      console.log(`Text too short (${cleanText.length} chars), falling back to AI OCR...`);
+      useOcr = true;
     }
 
-    // Classify
-    let detectedType: DocType = classifyDocument(text);
-    if (manualType === "bank" || manualType === "credit_card") {
-      detectedType = manualType;
-    }
-
-    // Parse transactions
     let transactions: ParsedTransaction[];
-    if (detectedType === "credit_card") {
-      transactions = parseCreditCardStatement(text);
-    } else if (detectedType === "bank") {
-      transactions = parseBankStatement(text);
+    let detectedType: DocType;
+
+    if (useOcr) {
+      // OCR path via AI
+      await supabase
+        .from("pdf_statement_uploads")
+        .update({ status: "processing" })
+        .eq("id", uploadId);
+
+      const ocrResult = await ocrWithAI(buffer);
+      transactions = ocrResult.transactions;
+      detectedType = manualType === "bank" || manualType === "credit_card" ? manualType : ocrResult.detectedType;
     } else {
-      // Try bank first, if few results try credit card
-      const bankTxns = parseBankStatement(text);
-      const ccTxns = parseCreditCardStatement(text);
-      if (bankTxns.length >= ccTxns.length && bankTxns.length > 0) {
-        transactions = bankTxns;
-        detectedType = "bank";
-      } else if (ccTxns.length > 0) {
-        transactions = ccTxns;
-        detectedType = "credit_card";
+      // Standard regex path
+      detectedType = classifyDocument(text);
+      if (manualType === "bank" || manualType === "credit_card") {
+        detectedType = manualType;
+      }
+
+      if (detectedType === "credit_card") {
+        transactions = parseCreditCardStatement(text);
+      } else if (detectedType === "bank") {
+        transactions = parseBankStatement(text);
       } else {
-        transactions = [];
+        const bankTxns = parseBankStatement(text);
+        const ccTxns = parseCreditCardStatement(text);
+        if (bankTxns.length >= ccTxns.length && bankTxns.length > 0) {
+          transactions = bankTxns;
+          detectedType = "bank";
+        } else if (ccTxns.length > 0) {
+          transactions = ccTxns;
+          detectedType = "credit_card";
+        } else {
+          // Last resort: try OCR even if we have text (parsing couldn't find transactions)
+          console.log("Regex found 0 transactions, trying AI OCR as last resort...");
+          const ocrResult = await ocrWithAI(buffer);
+          transactions = ocrResult.transactions;
+          detectedType = ocrResult.detectedType || detectedType;
+        }
       }
     }
 
@@ -306,7 +387,6 @@ Deno.serve(async (req) => {
         is_valid: true,
       }));
 
-      // Batch insert (max 500 at a time)
       for (let i = 0; i < rows.length; i += 500) {
         await supabase.from("pdf_parsed_transactions").insert(rows.slice(i, i + 500));
       }
@@ -316,6 +396,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       detected_type: detectedType,
       transactions,
+      ocr_used: useOcr || (transactions.length > 0 && text.replace(/\s+/g, "").length < 100),
       stats: {
         total_lines: totalLines,
         valid_transactions: transactions.length,
