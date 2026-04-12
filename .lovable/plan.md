@@ -1,95 +1,85 @@
 
 
-## Plano: Módulo "Conversor de Extratos" — PDF para CSV/Excel
+## Plano: Correção do parser PDF + OCR automático + Redesign Liquid Glass Premium
 
-### Visão geral
+### Diagnóstico do erro
 
-Módulo dedicado para converter PDFs de extratos bancários e de cartão de crédito em arquivos CSV/Excel estruturados. Inclui menu na sidebar, página com upload drag-and-drop, classificação automática do tipo de extrato, pré-visualização dos dados extraídos, e exportação.
+**Causa raiz confirmada**: A biblioteca `pdf-parse@1.1.1` importada via `esm.sh` usa internamente `Deno.readFileSync` (confirmado nos logs da edge function), que é incompatível com o runtime async do Deno Edge Functions e causa crash silencioso, resultando no erro 422 "Não foi possível ler o PDF".
 
-### Arquitetura
+### O que será feito
 
-```text
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────┐
-│  Frontend Page   │────▶│  Edge Function        │────▶│  Storage    │
-│  StatementPage   │     │  parse-pdf-statement  │     │  (pdf-uploads)│
-│  (upload+preview)│◀────│  (parse+classify)     │     └─────────────┘
-└─────────────────┘     └──────────────────────┘
+#### 1. Substituir engine de leitura de PDF (Edge Function)
+
+Trocar `pdf-parse` por `unpdf` (biblioteca serverless-first, compatível com Deno):
+
+```typescript
+import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
+
+const pdf = await getDocumentProxy(new Uint8Array(buffer));
+const { text } = await extractText(pdf, { mergePages: true });
 ```
 
-### 1. Backend — Edge Function `parse-pdf-statement`
+Se `unpdf` também falhar no esm.sh, usar o fallback `npm:pdf-parse/lib/pdf-parse.js` (importação Deno nativa).
 
-Nova edge function que recebe o PDF via upload, extrai texto com `pdf-parse` (npm), classifica o documento e retorna transações estruturadas.
+#### 2. OCR automático para PDFs escaneados
 
-**Lógica de classificação:**
-- Palavras-chave cartão: "fatura", "limite", "cartão", "compras nacionais", "compras internacionais"
-- Palavras-chave banco: "extrato", "saldo anterior", "saldo final", "conta corrente"
-- Se ambiguidade: retorna `type: "unknown"` e o frontend pede seleção manual
+Quando o texto extraído for insuficiente (< 100 caracteres úteis), fazer fallback para OCR via Lovable AI (Gemini 2.5 Flash com capacidade multimodal):
 
-**Lógica de parsing:**
-- Regex por padrões de linha: `DD/MM/YYYY + descrição + valor` para bancário
-- Para cartão: `descrição + valor` (com inversão de sinal obrigatória)
-- Filtros de ruído: ignorar linhas com "saldo", "total", "limite", "pagamento mínimo", cabeçalhos, rodapés
+- Converter o PDF para base64
+- Enviar ao Lovable AI Gateway com prompt estruturado para extração de transações
+- Parsear a resposta JSON estruturada com as transações
 
-**Resposta:**
-```json
-{
-  "detected_type": "bank" | "credit_card" | "unknown",
-  "transactions": [
-    { "date": "2025-01-15", "description": "PIX RECEBIDO", "amount": 500.00 }
-  ],
-  "stats": { "total_lines": 120, "valid_transactions": 45, "skipped": 75 }
-}
+```typescript
+// Fallback OCR via Lovable AI
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  method: "POST",
+  headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "google/gemini-2.5-flash",
+    messages: [{
+      role: "user",
+      content: [
+        { type: "text", text: "Extraia todas as transações deste extrato PDF..." },
+        { type: "image_url", image_url: { url: `data:application/pdf;base64,${base64Pdf}` } }
+      ]
+    }],
+  }),
+});
 ```
 
-### 2. Backend — Tabelas no banco de dados
+#### 3. Redesign completo da página — Liquid Glass Premium
 
-**Tabela `pdf_statement_uploads`:**
-- `id`, `user_id`, `file_name`, `file_path` (storage), `detected_type` (bank/credit_card/unknown), `manual_type` (override), `status` (uploading/processing/done/error), `error_message`, `transaction_count`, `created_at`
+O design atual usa inline styles com fundo escuro (`rgba(15,23,42,...)`) que não combina com o design system do projeto (light liquid glass). Será reescrito para usar as classes CSS existentes do projeto:
 
-**Tabela `pdf_parsed_transactions`:**
-- `id`, `upload_id` (FK), `user_id`, `row_index`, `date`, `description`, `amount`, `original_amount`, `is_valid`, `created_at`
+**Header**: Usar `liquid-glass-caixa` com ícone em cápsula translúcida, padrão das outras páginas (ex: ForecastsPage).
 
-RLS: usuários veem apenas seus próprios registros.
+**Upload Zone**: `liquid-glass` com `border-2 border-dashed`, animação de drag-and-drop suave, ícone centralizado em cápsula `bg-primary/10`.
 
-### 3. Backend — Storage bucket
+**Lista de arquivos**: Cards `liquid-glass-compact` com badges coloridos para tipo (bancário=emerald, cartão=violet, desconhecido=amber) e status (processando=amber, concluído=emerald, erro=red).
 
-Criar bucket `pdf-uploads` (privado) para armazenar os PDFs temporários.
+**Pré-visualização**: Container `liquid-glass-caixa` com tabela estilizada usando `bg-muted/20` nos headers, cores de texto `text-foreground` padrão.
 
-### 4. Frontend — Página `StatementConverterPage.tsx`
+**Exportação**: Botões com estilo consistente do projeto (`Button` padrão + variante outline).
 
-**Seções da interface:**
-1. **Hero/Header**: Título "Conversor de Extratos", subtítulo explicativo
-2. **Zona de upload**: Drag-and-drop com ícone, aceitar apenas `.pdf`, validação MIME
-3. **Lista de arquivos**: Cards com nome, tipo detectado (badge colorido), status (processando/concluído/erro), botões reprocessar/excluir
-4. **Pré-visualização**: Tabela com os dados extraídos (Data, Descrição, Valor para banco; Descrição, Valor para cartão)
-5. **Exportação**: Botões "Exportar CSV" e "Exportar Excel" que geram o arquivo no frontend usando `xlsx` (já instalado no projeto via dependências)
+**Orbes decorativos**: Adicionar orbes translúcidos no fundo da página (padrão usado em AccountsPage, DREPage) dentro de container `absolute pointer-events-none`.
 
-**Design**: Liquid glass premium consistente com o resto do sistema — backdrop-blur, bordas translúcidas, badges coloridos para tipo de extrato.
+#### 4. Melhorias funcionais
 
-### 5. Frontend — Rota e sidebar
-
-- Nova rota `/statement-converter` no `App.tsx` (dentro das rotas protegidas)
-- Novo item na sidebar em "Ferramentas": `{ title: "Conversor de Extratos", url: "/statement-converter", icon: FileDown }`
-
-### 6. Exportação CSV/Excel (client-side)
-
-- CSV: gerar string delimitada por `;` (padrão BR), criar blob e download
-- Excel: usar biblioteca `xlsx` para gerar `.xlsx` com formatação básica (cabeçalhos em negrito, colunas auto-width)
+- Carregar uploads anteriores do banco ao montar a página (SELECT de `pdf_statement_uploads` + `pdf_parsed_transactions`)
+- Seleção manual do tipo antes do upload (botão "Bancário" / "Cartão" no card de erro ou no card "unknown")
+- Mensagens de erro mais claras e específicas
+- Indicador visual de progresso durante OCR ("Processando com OCR inteligente...")
 
 ### Arquivos a criar/editar
 
 | Ação | Arquivo |
 |------|---------|
-| Criar | `supabase/functions/parse-pdf-statement/index.ts` |
-| Criar | `src/pages/StatementConverterPage.tsx` |
-| Criar | Migration: tabelas + bucket + RLS |
-| Editar | `src/App.tsx` (adicionar rota) |
-| Editar | `src/components/layout/AppSidebar.tsx` (adicionar menu) |
+| Reescrever | `supabase/functions/parse-pdf-statement/index.ts` (unpdf + OCR fallback) |
+| Reescrever | `src/pages/StatementConverterPage.tsx` (liquid glass + carregar histórico) |
 
-### Escopo da primeira entrega
-
-- Upload de 1 PDF por vez (multi-arquivo como evolução futura)
-- Parsing via regex/heurística (sem OCR — apenas PDFs com texto selecionável)
-- Classificação automática + fallback manual
-- Pré-visualização + exportação CSV/Excel funcional
+### Escopo restrito
+- 2 arquivos
+- Sem novas tabelas ou migrações
+- Sem alterações em rota ou sidebar (já existem)
 
