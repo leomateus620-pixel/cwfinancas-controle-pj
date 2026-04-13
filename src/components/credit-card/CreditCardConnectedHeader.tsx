@@ -23,28 +23,48 @@ function formatDateFull(d: string | null) {
   } catch { return "—"; }
 }
 
-/** Ensure accent color is bright enough for dark backgrounds */
-function ensureBrightAccent(hex: string): string {
-  // Parse hex to RGB
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  // If dark, lighten it
-  if (luminance < 0.45) {
-    const factor = 1.6;
-    const lr = Math.min(255, Math.round(r * factor + 60));
-    const lg = Math.min(255, Math.round(g * factor + 60));
-    const lb = Math.min(255, Math.round(b * factor + 60));
-    return `#${lr.toString(16).padStart(2, "0")}${lg.toString(16).padStart(2, "0")}${lb.toString(16).padStart(2, "0")}`;
-  }
-  return hex;
+/** Brand title with shimmer animation and glow */
+function BrandTitle({ brand }: { brand: CardBrand }) {
+  const [c1, c2, c3] = brand.glowColors;
+
+  return (
+    <span className="relative inline-block">
+      <span
+        className="relative z-10 text-3xl font-extrabold tracking-tight animate-cc-shimmer"
+        style={{
+          background: `linear-gradient(90deg, ${c1}, ${c2}, ${c3}, ${c2}, ${c1})`,
+          backgroundSize: "200% auto",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          filter: `drop-shadow(0 0 6px ${c1}99) drop-shadow(0 0 14px ${c1}66) drop-shadow(0 0 28px ${c1}33)`,
+        }}
+      >
+        {brand.name}
+      </span>
+      {/* Reflection glow beneath text */}
+      <span
+        aria-hidden
+        className="absolute left-0 top-[85%] z-0 w-full h-[60%] pointer-events-none select-none text-3xl font-extrabold tracking-tight"
+        style={{
+          background: `linear-gradient(90deg, ${c1}, ${c2}, ${c3}, ${c2}, ${c1})`,
+          backgroundSize: "200% auto",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          filter: `blur(12px)`,
+          opacity: 0.35,
+          transform: "scaleY(-0.5)",
+        }}
+      >
+        {brand.name}
+      </span>
+    </span>
+  );
 }
 
 export function CreditCardConnectedHeader({
   brand, cycleName, dueDate, netAmount, grossAmount, reimbursementAmount, transactionCount, isDetecting, detect,
 }: Props) {
-  const brightAccent = ensureBrightAccent(brand.accentColor);
+  const [c1] = brand.glowColors;
 
   return (
     <section className="liquid-glass rounded-2xl overflow-hidden">
@@ -54,7 +74,7 @@ export function CreditCardConnectedHeader({
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             <div
               className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[280px] h-[180px] rounded-full blur-3xl opacity-25"
-              style={{ background: brightAccent }}
+              style={{ background: c1 }}
             />
           </div>
           <CreditCard3D assetOverride={brand.asset} className="relative z-10" />
@@ -65,22 +85,12 @@ export function CreditCardConnectedHeader({
           {/* Title row */}
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-2xl font-bold flex items-center gap-2">
+              <h1 className="text-2xl font-bold flex items-center gap-2 leading-tight">
                 <span className="text-foreground">Cartão</span>
                 {brand.id !== "generic" ? (
-                  <span
-                    className="relative inline-block"
-                    style={{
-                      background: `linear-gradient(135deg, ${brightAccent} 0%, ${brightAccent}DD 50%, ${brightAccent}99 100%)`,
-                      WebkitBackgroundClip: "text",
-                      WebkitTextFillColor: "transparent",
-                      filter: `drop-shadow(0 0 16px ${brightAccent}AA) drop-shadow(0 0 6px ${brightAccent}66)`,
-                    }}
-                  >
-                    {brand.name}
-                  </span>
+                  <BrandTitle brand={brand} />
                 ) : (
-                  <span className="text-foreground">{brand.name}</span>
+                  <span className="text-foreground text-3xl font-extrabold">{brand.name}</span>
                 )}
               </h1>
               <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
