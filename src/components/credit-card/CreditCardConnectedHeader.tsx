@@ -25,7 +25,7 @@ function formatDateFull(d: string | null) {
 
 /** Brand title with shimmer animation and glow */
 function BrandTitle({ brand }: { brand: CardBrand }) {
-  const [c1, c2, c3] = brand.glowColors;
+  const [c1, c2, c3] = brand.glowColors ?? ["#4A90D9", "#6BB3FF", "#A8D8FF"];
 
   return (
     <span className="relative inline-block">
@@ -36,7 +36,7 @@ function BrandTitle({ brand }: { brand: CardBrand }) {
           backgroundSize: "200% auto",
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
-          filter: `drop-shadow(0 0 6px ${c1}99) drop-shadow(0 0 14px ${c1}66) drop-shadow(0 0 28px ${c1}33)`,
+          filter: `drop-shadow(0 0 6px ${c1}66) drop-shadow(0 0 14px ${c1}44) drop-shadow(0 0 28px ${c1}22)`,
         }}
       >
         {brand.name}
@@ -51,7 +51,7 @@ function BrandTitle({ brand }: { brand: CardBrand }) {
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
           filter: `blur(12px)`,
-          opacity: 0.35,
+          opacity: 0.2,
           transform: "scaleY(-0.5)",
         }}
       >
@@ -64,7 +64,7 @@ function BrandTitle({ brand }: { brand: CardBrand }) {
 export function CreditCardConnectedHeader({
   brand, cycleName, dueDate, netAmount, grossAmount, reimbursementAmount, transactionCount, isDetecting, detect,
 }: Props) {
-  const [c1] = brand.glowColors;
+  const [c1] = brand.glowColors ?? ["#4A90D9", "#6BB3FF", "#A8D8FF"];
 
   return (
     <section className="liquid-glass rounded-2xl overflow-hidden">
@@ -86,9 +86,21 @@ export function CreditCardConnectedHeader({
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2 leading-tight">
-                <span className="text-foreground">Cartão</span>
                 {brand.id !== "generic" ? (
-                  <BrandTitle brand={brand} />
+                  <>
+                    <span
+                      className="animate-cc-shimmer text-2xl font-bold tracking-tight"
+                      style={{
+                        background: `linear-gradient(90deg, #ffffffcc, ${(brand.glowColors ?? ["#4A90D9"])[0]}88, #ffffffcc)`,
+                        backgroundSize: "200% auto",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                      }}
+                    >
+                      Cartão
+                    </span>
+                    <BrandTitle brand={brand} />
+                  </>
                 ) : (
                   <span className="text-foreground text-3xl font-extrabold">{brand.name}</span>
                 )}
