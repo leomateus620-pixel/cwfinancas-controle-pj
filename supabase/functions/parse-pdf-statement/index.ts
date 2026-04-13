@@ -38,10 +38,14 @@ const BANK_KEYWORDS = [
   "agência", "agencia", "saldo disponível", "saldo disponivel",
   "cheque especial", "saldo do dia", "saldo na data",
   "movimentos da conta", "pix recebido", "pix enviado",
+  "pix - recebido", "pix - enviado", "pix - agendamento",
   "aplicacao automatica", "aplicação automática", "resgate automatico",
   "resgate automático", "banrisul", "banco do brasil", "bradesco",
   "itau", "itaú", "caixa economica", "vero deb", "vero ant",
   "pagamento titulo", "pagamento título", "cheque compensado",
+  "transferência enviada", "transferencia enviada",
+  "pagamento de boleto", "tarifa modulo", "tarifa pacote",
+  "lançamentos", "lancamentos",
 ];
 
 type DocType = "bank" | "credit_card" | "unknown";
@@ -67,7 +71,7 @@ function classifyDocument(text: string): DocType {
 
 // ── Noise filters ───────────────────────────────────────────────
 const NOISE_PATTERNS = [
-  /saldo\s*(anterior|final|do\s*dia|disponível|disponivel|ant\s+em)/i,
+  /^saldo\s*(anterior|final|do\s*dia|disponível|disponivel|ant\s+em)/i,
   /total\s*(da\s*fatura|de\s*compras|geral|do\s*mês|do\s*mes|a\s*pagar)/i,
   /limite\s*(de\s*crédito|de\s*credito|disponível|disponivel|total|da\s*conta)/i,
   /pagamento\s*m[ií]nimo/i,
@@ -89,11 +93,12 @@ const NOISE_PATTERNS = [
   /cdb\s*automatico/i,
   /tarifa\s*economica/i,
   /^\s*NOME:/i,
+  /^s\s*a\s*l\s*d\s*o$/i,
 ];
 
 function isNoiseLine(line: string): boolean {
   for (const pat of NOISE_PATTERNS) {
-    if (pat.test(line)) return true;
+    if (pat.test(line.trim())) return true;
   }
   return false;
 }
@@ -111,8 +116,16 @@ function parseValue(raw: string): number | null {
   let cleaned = raw.trim().replace(/\s/g, "");
   let sign = 1;
 
+  // Handle BB-style (+) / (-) markers
+  if (/\(\+\)$/.test(cleaned)) {
+    sign = 1;
+    cleaned = cleaned.replace(/\(\+\)$/, "");
+  } else if (/\(-\)$/.test(cleaned)) {
+    sign = -1;
+    cleaned = cleaned.replace(/\(-\)$/, "");
+  }
   // Handle trailing C/D (credit/debit markers)
-  if (/[Cc]$/.test(cleaned)) {
+  else if (/[Cc]$/.test(cleaned)) {
     cleaned = cleaned.slice(0, -1);
     sign = 1;
   } else if (/[Dd]$/.test(cleaned)) {
@@ -135,6 +148,9 @@ function parseValue(raw: string): number | null {
   // Remove R$ prefix
   cleaned = cleaned.replace(/^R\$\s*/, "");
 
+  // Remove any remaining whitespace
+  cleaned = cleaned.trim();
+
   // Brazilian format: 1.234,56 → 1234.56
   if (cleaned.includes(",")) {
     cleaned = cleaned.replace(/\./g, "").replace(",", ".");
@@ -145,33 +161,75 @@ function parseValue(raw: string): number | null {
   return Math.round(num * sign * 100) / 100;
 }
 
-// ── Bank statement parser (Banrisul-style + generic) ────────────
+// ── Bank statement parser ───────────────────────────────────────
 function parseBankStatement(text: string): ParsedTransaction[] {
   const lines = text.split("\n");
   const txns: ParsedTransaction[] = [];
   let idx = 0;
   let currentDay: string | null = null;
 
-  // Pattern 1: DD/MM/YYYY desc valor
-  const fullDateRe = /^(\d{2}\/\d{2}\/\d{2,4})\s+(.+?)\s+(-?\s*[\d.,]+(?:\s*[CDcd])?)$/;
-  // Pattern 2: DD HISTORICO DOCUMENTO VALOR (Banrisul)
-  // e.g. "30 VERO DEB BLF 322356 49,50"
-  // e.g. "PAGAMENTO TITULO 680924 82,97-"
-  // e.g. "PIX RECEBIDO 414186 2.300,00"
+  // Pattern 1: DD/MM/YYYY desc valor (generic)
+  const fullDateRe = /^(\d{2}\/\d{2}\/\d{2,4})\s+(.+?)\s+(-?\s*[\d.,]+(?:\s*[CDcd]|\s*\(\+\)|\s*\(-\))?)$/;
+
+  // Pattern BB: DD/MM/YYYY ... valor (+/-) — Banco do Brasil
+  // The text from unpdf often comes as: "02/03/2026 14397 10752029872392 Pix - Recebido 6.151,75 (+)"
+  // or: "02/03/2026 99021 612817000998200 Transferência enviada 10.000,00 (-)"
+  const bbRe = /^(\d{2}\/\d{2}\/\d{4})\s+\d+\s+\d+\s+(.+?)\s+([\d.,]+)\s*\(([+-])\)$/;
+
+  // Pattern BB variant: DD/MM/YYYY lote desc valor (+/-)  (no document number)
+  const bbNoDocRe = /^(\d{2}\/\d{2}\/\d{4})\s+\d+\s+(.+?)\s+([\d.,]+)\s*\(([+-])\)$/;
+
+  // Pattern Banrisul: DD HISTORICO DOCUMENTO VALOR
   const banrisulRe = /^(\d{2})?\s*(.+?)\s+(\d{3,})\s+([\d.,]+[-]?)$/;
-  // Pattern 3: lines with just desc + value (continuation)
-  const simpleValRe = /^(.+?)\s+([\d.,]+[-]?)$/;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line || isNoiseLine(line)) continue;
 
-    // Try full date pattern first
+    // Skip "Saldo do dia", "Saldo Anterior", "S A L D O" lines
+    if (/saldo\s*(do\s*dia|anterior|final)/i.test(line)) continue;
+    if (/s\s+a\s+l\s+d\s+o/i.test(line)) continue;
+    // Skip lines with date 00/00/0000 (BB "saldo do dia" rows)
+    if (/^00\/00\/0000/.test(line)) continue;
+
+    // Try BB pattern first (most specific)
+    const bbMatch = line.match(bbRe);
+    if (bbMatch) {
+      const [, dateStr, desc, valStr, signChar] = bbMatch;
+      const cleanDesc = desc.replace(/\d{2}\/\d{2}\s+\d{2}:\d{2}\s+.*$/, "").trim();
+      const finalDesc = cleanDesc || desc.trim();
+      if (isNoiseLine(finalDesc)) continue;
+      const num = parseValue(valStr);
+      if (num !== null && finalDesc.length > 1) {
+        const sign = signChar === "+" ? 1 : -1;
+        const amount = Math.abs(num) * sign;
+        txns.push({ date: dateStr, description: finalDesc, amount, original_amount: Math.abs(num), row_index: idx++ });
+      }
+      continue;
+    }
+
+    // Try BB no-doc pattern
+    const bbNoDocMatch = line.match(bbNoDocRe);
+    if (bbNoDocMatch) {
+      const [, dateStr, desc, valStr, signChar] = bbNoDocMatch;
+      const cleanDesc = desc.replace(/\d{2}\/\d{2}\s+\d{2}:\d{2}\s+.*$/, "").trim();
+      const finalDesc = cleanDesc || desc.trim();
+      if (isNoiseLine(finalDesc)) continue;
+      const num = parseValue(valStr);
+      if (num !== null && finalDesc.length > 1) {
+        const sign = signChar === "+" ? 1 : -1;
+        const amount = Math.abs(num) * sign;
+        txns.push({ date: dateStr, description: finalDesc, amount, original_amount: Math.abs(num), row_index: idx++ });
+      }
+      continue;
+    }
+
+    // Try full date pattern with (+)/(-) or C/D
     const fullMatch = line.match(fullDateRe);
     if (fullMatch) {
       const [, dateStr, desc, valStr] = fullMatch;
       const amount = parseValue(valStr);
-      if (amount !== null && desc.trim().length > 1) {
+      if (amount !== null && desc.trim().length > 1 && !isNoiseLine(desc)) {
         txns.push({ date: dateStr, description: desc.trim(), amount, original_amount: Math.abs(amount), row_index: idx++ });
       }
       continue;
@@ -189,12 +247,11 @@ function parseBankStatement(text: string): ParsedTransaction[] {
     // Banrisul pattern: DESC DOC_NUMBER VALUE[-]
     const banriMatch = line.match(banrisulRe);
     if (banriMatch) {
-      let dayStr = banriMatch[1] || currentDay;
+      const dayStr = banriMatch[1] || currentDay;
       const desc = banriMatch[2].trim();
       const valStr = banriMatch[4];
       const amount = parseValue(valStr);
 
-      // Skip noise descriptions
       if (amount !== null && desc.length > 2 && !isNoiseLine(desc)) {
         txns.push({
           date: dayStr || null,
@@ -216,32 +273,23 @@ function parseCreditCardStatement(text: string): ParsedTransaction[] {
   const txns: ParsedTransaction[] = [];
   let idx = 0;
 
-  // Nubank pattern: DD MMM .... NNNN Description R$ value
-  // e.g. "05 MAR .... 3801 Porto Seguro Cia Seg G - Parcela 6/10 R$ 147,47"
   const nubankRe = /^(\d{2}\s+\w{3})\s+\.\.\.\.\s*\d{4}\s+(.+?)\s+R\$\s*([\d.,]+)$/;
-
-  // Generic: DD/MM desc R$ value or desc R$ value
   const genericRe = /^(?:\d{2}\/\d{2}(?:\/\d{2,4})?\s+)?(.+?)\s+R\$\s*([\d.,]+)$/;
-
-  // Simple: desc value (no R$ prefix)
   const simpleRe = /^(.+?)\s+(-?\s*[\d.,]+)$/;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line || isNoiseLine(line)) continue;
 
-    // Skip payment/financing lines
     if (/pagamento\s+(em|recebido)/i.test(line)) continue;
     if (/saldo\s+restante/i.test(line)) continue;
     if (/fatura\s+anterior/i.test(line)) continue;
 
-    // Nubank format
     const nubankMatch = line.match(nubankRe);
     if (nubankMatch) {
       const [, dateStr, desc, valStr] = nubankMatch;
       const originalAmount = parseValue(valStr);
       if (originalAmount !== null && desc.trim().length > 2) {
-        // Credit card: invert signs (purchases are expenses = negative)
         txns.push({
           date: dateStr,
           description: desc.trim(),
@@ -253,7 +301,6 @@ function parseCreditCardStatement(text: string): ParsedTransaction[] {
       continue;
     }
 
-    // Generic with R$
     const genericMatch = line.match(genericRe);
     if (genericMatch) {
       const [, desc, valStr] = genericMatch;
@@ -270,7 +317,6 @@ function parseCreditCardStatement(text: string): ParsedTransaction[] {
       continue;
     }
 
-    // Simple pattern (last resort for CC)
     const simpleMatch = line.match(simpleRe);
     if (simpleMatch) {
       const [, desc, valStr] = simpleMatch;
@@ -304,7 +350,7 @@ async function extractTextFromPdf(pdfBuffer: Uint8Array): Promise<string> {
 }
 
 // ── OCR via Lovable AI (Gemini multimodal) ──────────────────────
-async function ocrWithAI(pdfBuffer: Uint8Array): Promise<{ transactions: ParsedTransaction[]; detectedType: DocType }> {
+async function ocrWithAI(pdfBuffer: Uint8Array, attempt = 1): Promise<{ transactions: ParsedTransaction[]; detectedType: DocType }> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) {
     console.error("LOVABLE_API_KEY not available for OCR");
@@ -313,30 +359,25 @@ async function ocrWithAI(pdfBuffer: Uint8Array): Promise<{ transactions: ParsedT
 
   const base64Pdf = uint8ToBase64(pdfBuffer);
 
-  const prompt = `Você é um assistente especializado em extrair transações financeiras de extratos bancários e faturas de cartão de crédito em PDF.
+  const prompt = `Extraia TODAS as transações financeiras deste PDF de extrato bancário ou fatura de cartão.
 
-Analise este documento PDF e extraia TODAS as transações financeiras encontradas.
+Retorne JSON compacto:
+{"type":"bank"|"credit_card","transactions":[{"date":"DD/MM/YYYY","description":"texto","amount":123.45}]}
 
-Para cada transação, retorne:
-- date: a data no formato DD/MM/YYYY (ou null se não houver data visível)
-- description: a descrição da transação
-- amount: o valor numérico (positivo para créditos/entradas, negativo para débitos/saídas)
+Regras:
+- date: formato DD/MM/YYYY ou null
+- amount: positivo=crédito/entrada, negativo=débito/saída
+- Para cartão: compras=negativo, pagamentos=positivo
+- Ignore linhas de saldo, totais, limites
+- Apenas transações reais
+- Responda SOMENTE com o JSON, sem markdown`;
 
-Também classifique o tipo do documento:
-- "bank" para extrato bancário
-- "credit_card" para fatura de cartão de crédito
-
-IMPORTANTE: Para faturas de cartão, INVERTA os sinais (compras devem ser negativas, pagamentos positivos).
-
-Responda APENAS com JSON válido no formato:
-{
-  "type": "bank" | "credit_card",
-  "transactions": [
-    { "date": "DD/MM/YYYY", "description": "texto", "amount": 123.45 }
-  ]
-}`;
+  const MAX_ATTEMPTS = 2;
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90000);
+
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -353,20 +394,64 @@ Responda APENAS com JSON válido no formato:
           ],
         }],
       }),
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
     if (!resp.ok) {
-      console.error("AI OCR request failed:", resp.status, await resp.text());
+      const errText = await resp.text().catch(() => "no body");
+      console.error(`AI OCR request failed: ${resp.status} - ${errText}`);
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`Retrying OCR (attempt ${attempt + 1})...`);
+        return ocrWithAI(pdfBuffer, attempt + 1);
+      }
       return { transactions: [], detectedType: "unknown" };
     }
 
-    const aiResult = await resp.json();
-    const content = aiResult.choices?.[0]?.message?.content || "";
+    // Use text() + manual JSON.parse for resilience
+    const rawBody = await resp.text();
+    if (!rawBody || rawBody.length < 10) {
+      console.error("AI OCR returned empty/tiny body:", rawBody);
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`Retrying OCR (attempt ${attempt + 1})...`);
+        return ocrWithAI(pdfBuffer, attempt + 1);
+      }
+      return { transactions: [], detectedType: "unknown" };
+    }
 
+    let aiResult: any;
+    try {
+      aiResult = JSON.parse(rawBody);
+    } catch (jsonErr) {
+      console.error("Failed to parse AI response JSON:", jsonErr, "Body length:", rawBody.length, "First 200 chars:", rawBody.substring(0, 200));
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`Retrying OCR (attempt ${attempt + 1})...`);
+        return ocrWithAI(pdfBuffer, attempt + 1);
+      }
+      return { transactions: [], detectedType: "unknown" };
+    }
+
+    const content = aiResult.choices?.[0]?.message?.content || "";
+    if (!content) {
+      console.error("AI OCR returned empty content");
+      if (attempt < MAX_ATTEMPTS) return ocrWithAI(pdfBuffer, attempt + 1);
+      return { transactions: [], detectedType: "unknown" };
+    }
+
+    // Extract JSON from possible markdown fences
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
     const jsonStr = (jsonMatch[1] || content).trim();
 
-    const parsed = JSON.parse(jsonStr);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch (innerErr) {
+      console.error("Failed to parse extracted JSON from AI content:", innerErr, "Content preview:", jsonStr.substring(0, 300));
+      if (attempt < MAX_ATTEMPTS) return ocrWithAI(pdfBuffer, attempt + 1);
+      return { transactions: [], detectedType: "unknown" };
+    }
+
     const detectedType: DocType = parsed.type === "credit_card" ? "credit_card" : parsed.type === "bank" ? "bank" : "unknown";
 
     const transactions: ParsedTransaction[] = (parsed.transactions || []).map((t: any, i: number) => ({
@@ -377,9 +462,14 @@ Responda APENAS com JSON válido no formato:
       row_index: i,
     })).filter((t: ParsedTransaction) => t.description.length > 1);
 
+    console.log(`OCR attempt ${attempt} extracted ${transactions.length} transactions`);
     return { transactions, detectedType };
   } catch (e) {
-    console.error("AI OCR parsing failed:", e);
+    console.error(`AI OCR attempt ${attempt} failed:`, e);
+    if (attempt < MAX_ATTEMPTS) {
+      console.log(`Retrying OCR (attempt ${attempt + 1})...`);
+      return ocrWithAI(pdfBuffer, attempt + 1);
+    }
     return { transactions: [], detectedType: "unknown" };
   }
 }
@@ -435,13 +525,17 @@ Deno.serve(async (req) => {
     }
 
     const cleanText = text.replace(/\s+/g, " ").trim();
-    const useOcr = cleanText.length < 100;
+    // Count actual letters to detect garbled/empty extraction
+    const letterCount = (cleanText.match(/[a-zA-ZÀ-ÿ]/g) || []).length;
+    const useOcr = cleanText.length < 100 || letterCount < 50;
 
     let transactions: ParsedTransaction[];
     let detectedType: DocType;
+    let ocrUsed = false;
 
     if (useOcr) {
-      console.log(`Text too short (${cleanText.length} chars), using AI OCR...`);
+      console.log(`Text too short (${cleanText.length} chars, ${letterCount} letters), using AI OCR...`);
+      ocrUsed = true;
       const ocrResult = await ocrWithAI(buffer);
       transactions = ocrResult.transactions;
       detectedType = manualType === "bank" || manualType === "credit_card" ? manualType : ocrResult.detectedType;
@@ -458,7 +552,6 @@ Deno.serve(async (req) => {
       } else if (detectedType === "bank") {
         transactions = parseBankStatement(text);
       } else {
-        // Unknown: try both
         const bankTxns = parseBankStatement(text);
         const ccTxns = parseCreditCardStatement(text);
         if (bankTxns.length >= ccTxns.length && bankTxns.length > 0) {
@@ -475,6 +568,7 @@ Deno.serve(async (req) => {
       // Fallback to OCR if regex found 0 transactions
       if (transactions.length === 0) {
         console.log("Regex found 0 transactions, trying AI OCR as fallback...");
+        ocrUsed = true;
         const ocrResult = await ocrWithAI(buffer);
         transactions = ocrResult.transactions;
         if (ocrResult.detectedType !== "unknown") {
@@ -483,7 +577,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`Final: ${transactions.length} transactions, type=${detectedType}`);
+    console.log(`Final: ${transactions.length} transactions, type=${detectedType}, ocr=${ocrUsed}`);
 
     // Save to storage
     const storagePath = `${user.id}/${uploadId}.pdf`;
@@ -525,7 +619,7 @@ Deno.serve(async (req) => {
     return jsonResponse({
       detected_type: detectedType,
       transactions,
-      ocr_used: useOcr || (transactions.length > 0 && cleanText.length < 100),
+      ocr_used: ocrUsed,
       stats: {
         total_lines: text.split("\n").length,
         valid_transactions: transactions.length,
