@@ -54,7 +54,7 @@ const CARD_BRANDS: CardBrand[] = [
     gradient: "linear-gradient(135deg, #1A6BD4 0%, #3B8EF0 50%, #6BB3FF 100%)",
     textColor: "#fff",
     accentColor: "#4DA6FF",
-    glowColors: ["#4DA6FF", "#82C4FF", "#B8DDFF"],
+    glowColors: ["#2B8FFF", "#4DA6FF", "#82C4FF"],
   },
   {
     id: "banrisul",
