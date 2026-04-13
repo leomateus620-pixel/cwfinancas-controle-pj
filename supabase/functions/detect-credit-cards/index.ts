@@ -51,6 +51,9 @@ const KNOWN_BANKS = [
   "banco do brasil", "bb",
 ];
 
+// Banks that should NEVER be treated as credit card accounts (only regular banking)
+const EXCLUDED_FROM_CC_DETECTION = ["cresol", "CRESOL", "Cresol"];
+
 // Banking patterns that EXCLUDE a line from being a CC merchant transaction
 const BANKING_PATTERNS = [
   /\bpix\b/i, /recebimento/i, /pagamento\s*(pix|titulo|título|boleto)/i,
@@ -98,6 +101,14 @@ function getContaField(t: Transaction): string | null {
 function getBancoField(t: Transaction): string | null {
   const banco = t.raw_data?.Banco || t.raw_data?.banco || t.raw_data?.BANCO;
   return banco ? String(banco).trim() : null;
+}
+
+/** Check if a bank name is excluded from credit card detection */
+function isExcludedFromCCDetection(bancoOrConta: string): boolean {
+  const normalized = bancoOrConta.toLowerCase();
+  return EXCLUDED_FROM_CC_DETECTION.some(excluded => 
+    normalized.includes(excluded.toLowerCase())
+  );
 }
 
 /** Returns grouping key: prefers Conta, falls back to Banco, then "__no_conta__" */
@@ -167,6 +178,13 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
 
   for (const [tabContaKey, txns] of byTabConta) {
     const [tab, conta] = tabContaKey.split("|||", 2);
+    
+    // Skip excluded banks (e.g., CRESOL - regular banking only)
+    if (isExcludedFromCCDetection(conta)) {
+      console.log(`[detect-cc] SKIPPING excluded bank: "${conta}" — treating as regular banking`);
+      continue;
+    }
+    
     txns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
     // ═══ LAYER 1: Explicit "Fatura CC" in Conta field ═══
