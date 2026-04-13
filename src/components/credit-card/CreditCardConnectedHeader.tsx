@@ -89,7 +89,7 @@ export function CreditCardConnectedHeader({
                 {brand.id !== "generic" ? (
                   <>
                     <span
-                      className="animate-cc-shimmer text-2xl font-bold tracking-tight"
+                      className="animate-cc-shimmer font-bold tracking-tight text-3xl font-serif border border-solid rounded-md shadow-2xl opacity-90"
                       style={{
                         background: `linear-gradient(90deg, #ffffffcc, ${(brand.glowColors ?? ["#4A90D9"])[0]}88, #ffffffcc)`,
                         backgroundSize: "200% auto",
