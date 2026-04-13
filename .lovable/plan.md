@@ -1,58 +1,42 @@
 
 
-## Plano: Efeito "WOW" no nome do cartão — Typography Premium
+## Plano: Refinar tipografia "Cartão" + ajustar intensidade da textura Unicred
 
-### Objetivo
+### Problemas
 
-Transformar o título "Cartão **Unicred**" (e todos os outros bancos) em um elemento visual de alto impacto, usando técnicas avançadas de CSS para criar um efeito de texto luminoso, animado e com profundidade.
+1. **"Cartão" está em branco plano** — não acompanha o design premium do nome do banco
+2. **Textura/glow da Unicred muito forte** — as cores claras (`#B8DDFF`) diluem demais; precisa de cores mais saturadas no texto e glow mais suave
+3. **Runtime error** — `const [c1] = brand.glowColors` crasha se `glowColors` for `undefined` (dados antigos em cache); precisa de fallback seguro
 
-### Design
+### Correções
 
-O nome do banco terá:
-1. **Gradiente multi-stop com a paleta da marca** — em vez de um gradiente monotone, usar 3 cores: a accent, uma versão mais clara e uma versão saturada diferente, criando profundidade cromática
-2. **Animação sutil de shimmer** — um brilho que percorre o texto continuamente (como um reflexo de luz passando por metal polido), usando `background-size: 200%` + `@keyframes` de `background-position`
-3. **Múltiplas camadas de glow** — 3 níveis de `drop-shadow` com raios crescentes para simular emissão de luz real
-4. **Pseudo-elemento de reflexo** — um `::after` com blur que simula luz refletida abaixo do texto
-5. **Escala ligeiramente maior** — `text-3xl` para o nome do banco vs `text-2xl` para "Cartão", criando hierarquia
+**Arquivo: `src/components/credit-card/CreditCardConnectedHeader.tsx`**
 
-### Paleta por banco (gradiente do texto)
+**A. Estilizar "Cartão" com shimmer suave**
+- Aplicar ao "Cartão" um gradiente sutil de branco → cor1 do banco → branco, com a mesma animação shimmer mas opacidade/glow reduzidos
+- Isso cria unidade visual entre "Cartão" e o nome do banco sem competir com ele
 
-| Banco | Cor 1 | Cor 2 | Cor 3 |
-|-------|-------|-------|-------|
-| Unicred | `#4DA6FF` | `#82C4FF` | `#B8DDFF` |
-| Nubank | `#B24BF3` | `#D17BFF` | `#E8A8FF` |
-| Sicredi | `#00D47E` | `#4AE8A5` | `#7AFFCA` |
-| BB | `#FFCD00` | `#FFE04D` | `#FFF099` |
-| Banrisul | `#4DA6FF` | `#78C0FF` | `#A8D8FF` |
+**B. Reduzir intensidade do glow/reflexo**
+- Drop-shadow: reduzir opacidades de `99/66/33` → `66/44/22`
+- Reflexo abaixo: reduzir opacity de `0.35` → `0.2`
+- Isso resolve o excesso de textura na Unicred e em todos os bancos
 
-Cada marca terá um campo `glowColors: [string, string, string]` no `CardBrand` para alimentar o gradiente animado.
+**C. Adicionar fallback seguro para `glowColors`**
+- `const [c1, c2, c3] = brand.glowColors ?? ["#4A90D9", "#6BB3FF", "#A8D8FF"]` em ambos os pontos de destructuring (linha 28 e 67)
 
-### Implementação
+**Arquivo: `src/lib/cardCatalog.ts`**
 
-**Arquivo 1: `src/lib/cardCatalog.ts`**
-- Adicionar campo `glowColors: [string, string, string]` à interface `CardBrand`
-- Preencher para cada banco com as 3 cores do gradiente
-
-**Arquivo 2: `src/components/credit-card/CreditCardConnectedHeader.tsx`**
-- Substituir o `<span>` do nome do banco por um componente `<BrandTitle>` com:
-  - `background: linear-gradient(90deg, cor1, cor2, cor3, cor1)` + `background-size: 200% auto`
-  - `animation: shimmer 3s linear infinite`
-  - `WebkitBackgroundClip: text` + `WebkitTextFillColor: transparent`
-  - 3 camadas de `drop-shadow` com a cor primária em opacidades decrescentes
-  - Um `<span>` absoluto posicionado abaixo com `blur(12px)` e `opacity(0.4)` como reflexo
-
-**Arquivo 3: `src/index.css`**
-- Adicionar `@keyframes shimmer` para animação do gradiente
+**D. Ajustar Unicred `glowColors` para cores mais saturadas**
+- Trocar `["#4DA6FF", "#82C4FF", "#B8DDFF"]` → `["#2B8FFF", "#4DA6FF", "#82C4FF"]`
+- Cores mais profundas = texto mais legível, glow menos "lavado"
 
 ### Resultado esperado
-
-O nome do banco terá um efeito de texto luminoso e animado que parece "vivo" — como letras de neon ou metal cromado iluminado — mantendo a identidade de cor de cada banco. O efeito é sutil e elegante, não agressivo.
-
-### Arquivos
+- "Cartão Unicred" com ambas as palavras em design premium harmonizado
+- Glow mais contido e elegante
+- Sem crash por dados antigos
 
 | Ação | Arquivo |
 |------|---------|
-| Editar | `src/lib/cardCatalog.ts` |
 | Editar | `src/components/credit-card/CreditCardConnectedHeader.tsx` |
-| Editar | `src/index.css` |
+| Editar | `src/lib/cardCatalog.ts` |
 
