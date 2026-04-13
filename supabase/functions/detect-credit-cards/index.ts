@@ -95,6 +95,20 @@ function getContaField(t: Transaction): string | null {
   return conta ? String(conta).trim() : null;
 }
 
+function getBancoField(t: Transaction): string | null {
+  const banco = t.raw_data?.Banco || t.raw_data?.banco || t.raw_data?.BANCO;
+  return banco ? String(banco).trim() : null;
+}
+
+/** Returns grouping key: prefers Conta, falls back to Banco, then "__no_conta__" */
+function getGroupKey(t: Transaction): string {
+  const conta = getContaField(t);
+  if (conta) return conta;
+  const banco = getBancoField(t);
+  if (banco) return `__banco__${banco}`;
+  return "__no_conta__";
+}
+
 function hasInstallment(desc: string): boolean {
   return INSTALLMENT_RE.test(desc) || PARC_RE.test(desc);
 }
@@ -109,10 +123,12 @@ function computeRowHash(t: Transaction): string {
   return Math.abs(hash).toString(36);
 }
 
-function extractCardLabel(conta: string): string {
-  const lower = conta.toLowerCase();
+function extractCardLabel(groupKey: string): string {
+  // Strip __banco__ prefix if present
+  const raw = groupKey.startsWith("__banco__") ? groupKey.slice(9) : groupKey;
+  const lower = raw.toLowerCase();
   if (/fatura\s*cc/i.test(lower)) {
-    const match = conta.match(/fatura\s*cc\s+(.+)/i);
+    const match = raw.match(/fatura\s*cc\s+(.+)/i);
     if (match) {
       const bankName = match[1].trim();
       return `Cartão ${bankName.charAt(0).toUpperCase() + bankName.slice(1)}`;
@@ -126,7 +142,7 @@ function extractCardLabel(conta: string): string {
   if (lower.includes("itau") || lower.includes("itaú")) return "Cartão Itaú";
   if (lower.includes("bradesco")) return "Cartão Bradesco";
   if (lower.includes("inter")) return "Cartão Inter";
-  return `Cartão ${conta}`;
+  return `Cartão ${raw}`;
 }
 
 // ─── 3-Layer Block Detection ───
@@ -138,8 +154,8 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
 
   for (const t of transactions) {
     const tab = t.source_tab || "__unknown__";
-    const conta = getContaField(t) || "__no_conta__";
-    const key = `${tab}|||${conta}`;
+    const gk = getGroupKey(t);
+    const key = `${tab}|||${gk}`;
     if (!byTabConta.has(key)) byTabConta.set(key, []);
     byTabConta.get(key)!.push(t);
   }
@@ -194,7 +210,9 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
     }
 
     // Skip contas that don't look like they could contain CC data
+    // Skip only if there's truly no grouping key (no Conta AND no Banco)
     if (conta === "__no_conta__") continue;
+    // Groups with __banco__ prefix are valid — they came from the Banco field fallback
 
     // ═══ Analyze this account's transaction distribution ═══
     const byDate = new Map<string, Transaction[]>();
