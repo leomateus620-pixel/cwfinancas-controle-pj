@@ -47,9 +47,9 @@ const CARD_BRANDS: CardBrand[] = [
     name: "Unicred",
     aliases: ["unicred"],
     asset: unicredImg,
-    gradient: "linear-gradient(135deg, #003366 0%, #0066CC 50%, #4DA6FF 100%)",
+    gradient: "linear-gradient(135deg, #1A6BD4 0%, #3B8EF0 50%, #6BB3FF 100%)",
     textColor: "#fff",
-    accentColor: "#003366",
+    accentColor: "#4DA6FF",
   },
   {
     id: "banrisul",

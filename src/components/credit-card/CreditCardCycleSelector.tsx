@@ -24,6 +24,14 @@ function formatMonthLabel(periodKey: string) {
   }
 }
 
+/** Normalize grouping key — always use due_date month to avoid mismatches */
+function getMonthKey(cycle: Cycle): string {
+  if (cycle.due_date && cycle.due_date.length >= 7) {
+    return cycle.due_date.substring(0, 7);
+  }
+  return cycle.period_key || "unknown";
+}
+
 interface MonthGroup {
   periodKey: string;
   label: string;
@@ -36,7 +44,7 @@ function ChipDot({ color, active }: { color: string; active: boolean }) {
       className="w-2.5 h-2.5 rounded-full shrink-0 transition-all duration-300"
       style={{
         background: active ? "#fff" : color,
-        boxShadow: active ? `0 0 12px ${color}, 0 0 5px ${color}` : `0 0 6px ${color}66`,
+        boxShadow: active ? `0 0 14px ${color}, 0 0 6px ${color}` : `0 0 8px ${color}88`,
       }}
     />
   );
@@ -73,15 +81,15 @@ function CycleChip({
       style={
         active
            ? {
-               background: `linear-gradient(135deg, ${ac}55 0%, ${ac}35 100%)`,
-               borderColor: `${ac}90`,
-               boxShadow: `0 4px 24px ${ac}50, inset 0 1px 0 rgba(255,255,255,0.15)`,
+               background: `linear-gradient(135deg, ${ac}99 0%, ${ac}55 100%)`,
+               borderColor: `${ac}BB`,
+               boxShadow: `0 4px 28px ${ac}66, 0 0 0 1px ${ac}44, inset 0 1px 0 rgba(255,255,255,0.2)`,
              }
            : {
-               background: hovered ? `${ac}20` : "rgba(255,255,255,0.04)",
-               borderColor: hovered ? `${ac}40` : "rgba(255,255,255,0.06)",
+               background: hovered ? `${ac}25` : "rgba(255,255,255,0.04)",
+               borderColor: hovered ? `${ac}50` : "rgba(255,255,255,0.08)",
                boxShadow: hovered
-                 ? `0 2px 16px ${ac}25, inset 0 1px 0 rgba(255,255,255,0.08)`
+                 ? `0 2px 16px ${ac}30, inset 0 1px 0 rgba(255,255,255,0.08)`
                  : "inset 0 1px 0 rgba(255,255,255,0.04)",
              }
       }
@@ -99,7 +107,7 @@ export function CreditCardCycleSelector({ cycles, selectedId, onSelect }: Props)
   const months: MonthGroup[] = [];
   const monthMap = new Map<string, Cycle[]>();
   for (const c of cycles) {
-    const pk = c.period_key || c.due_date?.substring(0, 7) || "unknown";
+    const pk = getMonthKey(c);
     if (!monthMap.has(pk)) monthMap.set(pk, []);
     monthMap.get(pk)!.push(c);
   }
@@ -112,7 +120,7 @@ export function CreditCardCycleSelector({ cycles, selectedId, onSelect }: Props)
   const allActive = selectedId === "all";
 
   return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+    <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-none px-1">
       {months.map((month) => {
         if (month.cycles.length === 1) {
           const c = month.cycles[0];
@@ -133,9 +141,9 @@ export function CreditCardCycleSelector({ cycles, selectedId, onSelect }: Props)
             key={month.periodKey}
             className="flex items-center gap-0.5 rounded-xl overflow-hidden backdrop-blur-md border transition-all duration-300"
             style={{
-              borderColor: anyActive ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.06)",
+              borderColor: anyActive ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.08)",
               boxShadow: anyActive
-                ? "0 4px 16px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.08)"
+                ? "0 4px 20px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1)"
                 : "inset 0 1px 0 rgba(255,255,255,0.04)",
             }}
           >
@@ -160,7 +168,7 @@ export function CreditCardCycleSelector({ cycles, selectedId, onSelect }: Props)
         );
       })}
 
-      {/* "Todos" button — neutral glass */}
+      {/* "Todos" button */}
       <button
         onClick={() => onSelect("all")}
         onMouseEnter={() => setAllHovered(true)}
@@ -173,13 +181,13 @@ export function CreditCardCycleSelector({ cycles, selectedId, onSelect }: Props)
         style={
           allActive
             ? {
-                background: "linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.08) 100%)",
-                borderColor: "rgba(255,255,255,0.25)",
-                boxShadow: "0 4px 20px rgba(255,255,255,0.08), inset 0 1px 0 rgba(255,255,255,0.15)",
+                background: "linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 100%)",
+                borderColor: "rgba(255,255,255,0.30)",
+                boxShadow: "0 4px 24px rgba(255,255,255,0.10), 0 0 0 1px rgba(255,255,255,0.12), inset 0 1px 0 rgba(255,255,255,0.18)",
               }
             : {
-                background: allHovered ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.04)",
-                borderColor: allHovered ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.06)",
+                background: allHovered ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
+                borderColor: allHovered ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.08)",
                 boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
               }
         }
@@ -223,20 +231,20 @@ function CycleChipInner({
         ${active ? "text-white" : "text-muted-foreground hover:text-foreground"}
       `}
       style={{
-        borderLeftColor: hasBorder ? "rgba(255,255,255,0.06)" : undefined,
+        borderLeftColor: hasBorder ? "rgba(255,255,255,0.08)" : undefined,
         ...(active
            ? {
-               background: `linear-gradient(135deg, ${ac}55 0%, ${ac}35 100%)`,
-               boxShadow: `0 2px 16px ${ac}40, inset 0 1px 0 rgba(255,255,255,0.12)`,
+               background: `linear-gradient(135deg, ${ac}99 0%, ${ac}55 100%)`,
+               boxShadow: `0 2px 20px ${ac}55, inset 0 1px 0 rgba(255,255,255,0.15)`,
              }
            : {
-               background: hovered ? `${ac}20` : "rgba(255,255,255,0.04)",
+               background: hovered ? `${ac}25` : "rgba(255,255,255,0.04)",
              }),
       }}
     >
       <ChipDot color={ac} active={active} />
       <span className="hidden sm:inline">{label}</span>
-      <span className="text-xs opacity-60">{brandName.split(" ").pop()}</span>
+      <span className="text-xs opacity-70 font-semibold">{brandName.split(" ").pop()}</span>
     </button>
   );
 }
