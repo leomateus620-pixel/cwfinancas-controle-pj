@@ -1,85 +1,76 @@
 
 
-## Plano: Correção do parser PDF + OCR automático + Redesign Liquid Glass Premium
+## Plano: Correção end-to-end do Conversor de Extratos
 
-### Diagnóstico do erro
+### Problemas diagnosticados
 
-**Causa raiz confirmada**: A biblioteca `pdf-parse@1.1.1` importada via `esm.sh` usa internamente `Deno.readFileSync` (confirmado nos logs da edge function), que é incompatível com o runtime async do Deno Edge Functions e causa crash silencioso, resultando no erro 422 "Não foi possível ler o PDF".
+1. **Regex bancário (`BANK_LINE_RE`) muito restritivo**: Exige data no formato `DD/MM/YYYY`, mas Banrisul usa apenas número do dia (`30`, `31`, `01`). Nenhuma linha é capturada.
 
-### O que será feito
+2. **Regex de cartão (`CC_LINE_RE`) muito genérico**: Nubank inclui `R$` antes dos valores e tem layout multi-coluna com número do cartão (`.... 3801`). O regex não captura.
 
-#### 1. Substituir engine de leitura de PDF (Edge Function)
+3. **`btoa(String.fromCharCode(...pdfBuffer))` causa stack overflow**: O spread operator (`...`) em Uint8Arrays grandes (>50KB) excede o limite da call stack. O fallback OCR crasha silenciosamente, retornando 0 transações.
 
-Trocar `pdf-parse` por `unpdf` (biblioteca serverless-first, compatível com Deno):
+4. **Classificação incorreta do Banrisul**: Palavras "limite", "encargos" pontuam para credit_card, causando parsing com regex errado.
 
+### Correções na Edge Function (`parse-pdf-statement/index.ts`)
+
+**A. Novos padrões de regex bancário**
+
+Adicionar múltiplos padrões para capturar formatos comuns:
+- `DD/MM/YYYY desc valor` (atual, manter)
+- `DD desc doc valor` (Banrisul: `30 VERO DEB BLF 322356 49,50`)
+- `DD desc valor-` (Banrisul: `PAGAMENTO TITULO 680924 82,97-`)
+- Linhas com `PIX RECEBIDO/ENVIADO` seguidas de valor
+
+**B. Novo parser de cartão Nubank**
+
+Capturar linhas no formato:
+- `DD MMM .... NNNN Descrição R$ valor` (ex: `05 MAR .... 3801 Porto Seguro R$ 147,47`)
+- Remover prefixo `R$`, ignorar colunas de data e cartão, extrair apenas descrição + valor
+- Aplicar inversão de sinal conforme regra de negócio
+
+**C. Corrigir base64 para OCR**
+
+Substituir `btoa(String.fromCharCode(...pdfBuffer))` por loop seguro:
 ```typescript
-import { extractText, getDocumentProxy } from "https://esm.sh/unpdf@0.12.1";
-
-const pdf = await getDocumentProxy(new Uint8Array(buffer));
-const { text } = await extractText(pdf, { mergePages: true });
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 ```
 
-Se `unpdf` também falhar no esm.sh, usar o fallback `npm:pdf-parse/lib/pdf-parse.js` (importação Deno nativa).
+**D. Melhorar classificação**
 
-#### 2. OCR automático para PDFs escaneados
+Adicionar keywords específicos:
+- Banco: `"movimentos da conta"`, `"saldo ant"`, `"pix recebido"`, `"pix enviado"`, `"aplicacao automatica"`, `"resgate automatico"`, `"banrisul"`, `"banco do brasil"`
+- Cartão: `"fatura"`, `"compras nacionais"`, `"nubank"`, `"pagamento mínimo"`, `"rotativo"`
+- Remover "encargos" e "anuidade" dos keywords de cartão (são ambíguos)
 
-Quando o texto extraído for insuficiente (< 100 caracteres úteis), fazer fallback para OCR via Lovable AI (Gemini 2.5 Flash com capacidade multimodal):
+**E. Melhorar o fallback: tentar sempre OCR quando regex retorna 0**
 
-- Converter o PDF para base64
-- Enviar ao Lovable AI Gateway com prompt estruturado para extração de transações
-- Parsear a resposta JSON estruturada com as transações
+Atualmente o fallback OCR já existe para `unknown`, mas para tipo `bank` ou `credit_card` detectado, se regex retorna 0, não há fallback. Adicionar fallback para todos os tipos.
 
-```typescript
-// Fallback OCR via Lovable AI
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-  method: "POST",
-  headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-  body: JSON.stringify({
-    model: "google/gemini-2.5-flash",
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: "Extraia todas as transações deste extrato PDF..." },
-        { type: "image_url", image_url: { url: `data:application/pdf;base64,${base64Pdf}` } }
-      ]
-    }],
-  }),
-});
-```
+### Validação esperada com os PDFs de teste
 
-#### 3. Redesign completo da página — Liquid Glass Premium
+**Banrisul (`banri_conta_18_3.pdf`)**:
+- Tipo: `bank`
+- Transações esperadas: ~30+ (VERO DEB, PIX RECEBIDO, PAGAMENTO TITULO, CHEQUE COMPENSADO, etc.)
+- Formato saída: Data | Descrição | Valor
 
-O design atual usa inline styles com fundo escuro (`rgba(15,23,42,...)`) que não combina com o design system do projeto (light liquid glass). Será reescrito para usar as classes CSS existentes do projeto:
+**Nubank (`fatura_Nubank_GR_1.pdf`)**:
+- Tipo: `credit_card`
+- Transações esperadas: ~47 (Porto Seguro, Zp *Rota77, Facebk, Adobe, etc.)
+- Formato saída: Descrição | Valor (com sinais invertidos)
 
-**Header**: Usar `liquid-glass-caixa` com ícone em cápsula translúcida, padrão das outras páginas (ex: ForecastsPage).
-
-**Upload Zone**: `liquid-glass` com `border-2 border-dashed`, animação de drag-and-drop suave, ícone centralizado em cápsula `bg-primary/10`.
-
-**Lista de arquivos**: Cards `liquid-glass-compact` com badges coloridos para tipo (bancário=emerald, cartão=violet, desconhecido=amber) e status (processando=amber, concluído=emerald, erro=red).
-
-**Pré-visualização**: Container `liquid-glass-caixa` com tabela estilizada usando `bg-muted/20` nos headers, cores de texto `text-foreground` padrão.
-
-**Exportação**: Botões com estilo consistente do projeto (`Button` padrão + variante outline).
-
-**Orbes decorativos**: Adicionar orbes translúcidos no fundo da página (padrão usado em AccountsPage, DREPage) dentro de container `absolute pointer-events-none`.
-
-#### 4. Melhorias funcionais
-
-- Carregar uploads anteriores do banco ao montar a página (SELECT de `pdf_statement_uploads` + `pdf_parsed_transactions`)
-- Seleção manual do tipo antes do upload (botão "Bancário" / "Cartão" no card de erro ou no card "unknown")
-- Mensagens de erro mais claras e específicas
-- Indicador visual de progresso durante OCR ("Processando com OCR inteligente...")
-
-### Arquivos a criar/editar
+### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Reescrever | `supabase/functions/parse-pdf-statement/index.ts` (unpdf + OCR fallback) |
-| Reescrever | `src/pages/StatementConverterPage.tsx` (liquid glass + carregar histórico) |
+| Reescrever | `supabase/functions/parse-pdf-statement/index.ts` |
 
-### Escopo restrito
-- 2 arquivos
-- Sem novas tabelas ou migrações
-- Sem alterações em rota ou sidebar (já existem)
+### Sem alterações no frontend
+A página `StatementConverterPage.tsx` já está funcional — o problema é exclusivamente no parser backend.
 
