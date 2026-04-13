@@ -51,6 +51,9 @@ const KNOWN_BANKS = [
   "banco do brasil", "bb",
 ];
 
+// Banks that should NEVER be treated as credit card accounts (only regular banking)
+const EXCLUDED_FROM_CC_DETECTION = ["cresol", "CRESOL", "Cresol"];
+
 // Banking patterns that EXCLUDE a line from being a CC merchant transaction
 const BANKING_PATTERNS = [
   /\bpix\b/i, /recebimento/i, /pagamento\s*(pix|titulo|título|boleto)/i,
