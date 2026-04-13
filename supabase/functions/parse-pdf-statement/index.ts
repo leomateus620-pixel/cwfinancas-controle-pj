@@ -85,7 +85,7 @@ const NOISE_PATTERNS = [
   /saldo\s*inicial/i,
   /taxa\s*de\s*juros/i,
   /custo\s*efetivo/i,
-  /banricompras/i,
+  /^banricompras\s+a\s+prazo\s+em/i,
   /cdb\s*automatico/i,
   /tarifa\s*economica/i,
   /^\s*NOME:/i,
