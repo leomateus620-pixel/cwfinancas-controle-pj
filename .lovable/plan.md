@@ -1,76 +1,52 @@
 
 
-## Plano: Correção end-to-end do Conversor de Extratos
+## Plano: Suporte ao formato Banco do Brasil + correção OCR
 
 ### Problemas diagnosticados
 
-1. **Regex bancário (`BANK_LINE_RE`) muito restritivo**: Exige data no formato `DD/MM/YYYY`, mas Banrisul usa apenas número do dia (`30`, `31`, `01`). Nenhuma linha é capturada.
+1. **`unpdf` retorna 1 caractere** para este PDF do BB — extração de texto falha silenciosamente
+2. **OCR falha com `SyntaxError: Unexpected end of JSON input`** — o `resp.json()` do gateway AI retorna resposta truncada/vazia e o catch não trata adequadamente
+3. **`parseValue()` não entende `(+)` / `(-)`** — formato exclusivo do Banco do Brasil (ex: `6.151,75 (+)`)
+4. **Regex não captura formato BB** — as linhas BB têm formato tabular multi-coluna com lote/documento que nenhum padrão atual reconhece
 
-2. **Regex de cartão (`CC_LINE_RE`) muito genérico**: Nubank inclui `R$` antes dos valores e tem layout multi-coluna com número do cartão (`.... 3801`). O regex não captura.
+### Correções na Edge Function
 
-3. **`btoa(String.fromCharCode(...pdfBuffer))` causa stack overflow**: O spread operator (`...`) em Uint8Arrays grandes (>50KB) excede o limite da call stack. O fallback OCR crasha silenciosamente, retornando 0 transações.
+**A. Suporte ao formato `(+)` / `(-)` no `parseValue()`**
 
-4. **Classificação incorreta do Banrisul**: Palavras "limite", "encargos" pontuam para credit_card, causando parsing com regex errado.
+Adicionar detecção de `(+)` e `(-)` como marcadores de crédito/débito antes de limpar o valor.
 
-### Correções na Edge Function (`parse-pdf-statement/index.ts`)
+**B. Novo parser para formato Banco do Brasil**
 
-**A. Novos padrões de regex bancário**
-
-Adicionar múltiplos padrões para capturar formatos comuns:
-- `DD/MM/YYYY desc valor` (atual, manter)
-- `DD desc doc valor` (Banrisul: `30 VERO DEB BLF 322356 49,50`)
-- `DD desc valor-` (Banrisul: `PAGAMENTO TITULO 680924 82,97-`)
-- Linhas com `PIX RECEBIDO/ENVIADO` seguidas de valor
-
-**B. Novo parser de cartão Nubank**
-
-Capturar linhas no formato:
-- `DD MMM .... NNNN Descrição R$ valor` (ex: `05 MAR .... 3801 Porto Seguro R$ 147,47`)
-- Remover prefixo `R$`, ignorar colunas de data e cartão, extrair apenas descrição + valor
-- Aplicar inversão de sinal conforme regra de negócio
-
-**C. Corrigir base64 para OCR**
-
-Substituir `btoa(String.fromCharCode(...pdfBuffer))` por loop seguro:
-```typescript
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
-}
+Adicionar regex para capturar linhas no formato:
 ```
+DD/MM/YYYY  lote  documento  Descrição  valor (+/-)
+```
+Extraído pelo `unpdf`/OCR como texto corrido: `02/03/2026 14397 10752029872392 Pix - Recebido 6.151,75 (+)`
 
-**D. Melhorar classificação**
+Também capturar linhas com descrição multi-linha (BB quebra histórico em 2 linhas).
 
-Adicionar keywords específicos:
-- Banco: `"movimentos da conta"`, `"saldo ant"`, `"pix recebido"`, `"pix enviado"`, `"aplicacao automatica"`, `"resgate automatico"`, `"banrisul"`, `"banco do brasil"`
-- Cartão: `"fatura"`, `"compras nacionais"`, `"nubank"`, `"pagamento mínimo"`, `"rotativo"`
-- Remover "encargos" e "anuidade" dos keywords de cartão (são ambíguos)
+**C. Melhorar OCR — tratamento de resposta vazia/truncada**
 
-**E. Melhorar o fallback: tentar sempre OCR quando regex retorna 0**
+- Verificar `resp.ok` antes de chamar `resp.json()`
+- Usar `resp.text()` + `JSON.parse()` manual com try/catch mais granular
+- Logar o conteúdo bruto quando parsing falha para diagnóstico
+- Adicionar timeout no fetch para evitar respostas pendentes
 
-Atualmente o fallback OCR já existe para `unknown`, mas para tipo `bank` ou `credit_card` detectado, se regex retorna 0, não há fallback. Adicionar fallback para todos os tipos.
+**D. Fallback de extração: se `unpdf` retorna < 50 chars, tentar enviar direto para OCR com instruções mais específicas**
 
-### Validação esperada com os PDFs de teste
+O prompt de OCR já funciona para extrair transações — o problema é que a resposta JSON está sendo truncada. Melhorar o prompt para pedir resposta mais compacta e adicionar retry.
 
-**Banrisul (`banri_conta_18_3.pdf`)**:
-- Tipo: `bank`
-- Transações esperadas: ~30+ (VERO DEB, PIX RECEBIDO, PAGAMENTO TITULO, CHEQUE COMPENSADO, etc.)
-- Formato saída: Data | Descrição | Valor
-
-**Nubank (`fatura_Nubank_GR_1.pdf`)**:
-- Tipo: `credit_card`
-- Transações esperadas: ~47 (Porto Seguro, Zp *Rota77, Facebk, Adobe, etc.)
-- Formato saída: Descrição | Valor (com sinais invertidos)
+**E. Adicionar `"banco do brasil"`, `"transferência enviada"`, `"pix - agendamento"`, `"pagamento de boleto"`, `"tarifa modulo"` aos BANK_KEYWORDS**
 
 ### Arquivos
 
 | Ação | Arquivo |
 |------|---------|
-| Reescrever | `supabase/functions/parse-pdf-statement/index.ts` |
+| Editar | `supabase/functions/parse-pdf-statement/index.ts` |
 
-### Sem alterações no frontend
-A página `StatementConverterPage.tsx` já está funcional — o problema é exclusivamente no parser backend.
+### Resultado esperado com o PDF do BB
+
+- Tipo: `bank`
+- ~25 transações reais (excluindo "Saldo do dia", "Saldo Anterior", "S A L D O")
+- Formato: Data DD/MM/YYYY | Descrição | Valor com sinal correto
 
