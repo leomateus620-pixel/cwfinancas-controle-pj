@@ -103,6 +103,14 @@ function getBancoField(t: Transaction): string | null {
   return banco ? String(banco).trim() : null;
 }
 
+/** Check if a bank name is excluded from credit card detection */
+function isExcludedFromCCDetection(bancoOrConta: string): boolean {
+  const normalized = bancoOrConta.toLowerCase();
+  return EXCLUDED_FROM_CC_DETECTION.some(excluded => 
+    normalized.includes(excluded.toLowerCase())
+  );
+}
+
 /** Returns grouping key: prefers Conta, falls back to Banco, then "__no_conta__" */
 function getGroupKey(t: Transaction): string {
   const conta = getContaField(t);
