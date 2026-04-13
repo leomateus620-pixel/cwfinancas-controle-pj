@@ -1,71 +1,54 @@
 
 
-## Plano: Corrigir detecção de cartão Unicred (campo Conta ausente)
+## Plano: Correção de bugs UI/UX no menu Cartão de Crédito
 
-### Diagnóstico
+### Problemas identificados
 
-O problema está na linha 197 da edge function `detect-credit-cards`:
+1. **Meses duplicados no seletor de ciclos**: "jan de 2026" aparece duas vezes como chips separados (Unicred + Cartão genérico) em vez de agrupados. Causa provável: `period_key` diferente entre ciclos do mesmo mês, ou um deles com `period_key` nulo — o fallback usa `due_date.substring(0,7)` que pode gerar chave diferente.
 
-```typescript
-if (conta === "__no_conta__") continue;
-```
+2. **Cor accent da Unicred muito escura** (`#003366`): Navy profundo fica invisível contra fundo escuro do tema. O dot, o texto do header e o glow do chip selecionado ficam imperceptíveis.
 
-As transações da Unicred não possuem o campo `raw_data.Conta` — usam `raw_data.Banco` com valor "UNICRED". Como `Conta` é null, todas são agrupadas sob `__no_conta__` e **descartadas antes de chegar às Layers 2 e 3**.
+3. **Chip selecionado sem contraste suficiente**: O estado ativo usa `${ac}55` (alpha hex) que com cores escuras fica praticamente transparente. O chip "jan de 2026 Cartão" na screenshot 3-4 tem borda quase invisível.
 
-**Dados confirmados:**
-- Março dia 23: 30 transações, 28 são merchant (CC real), 2 são PIX/TED
-- Março dia 10: 32 transações, apenas 6 merchant (atividade bancária)
-- Layer 3 funcionaria perfeitamente se as transações não fossem descartadas — dia 23 formaria 1 bloco candidato com 28+ merchant lines
+4. **Header "Cartão Unicred"**: O texto com gradient + drop-shadow usando `#003366` resulta em texto ilegível sobre fundo escuro.
 
-### Correção
+5. **Ícones dos MiniKPIs genéricos**: Os 4 KPIs no header usam ícones repetidos (2x ReceiptText) e cores estáticas sem relação com o brand.
 
-**Arquivo:** `supabase/functions/detect-credit-cards/index.ts`
+### Correções planejadas
 
-**A. Usar `raw_data.Banco` como fallback para agrupamento**
+**A. Corrigir agrupamento de meses no `CreditCardCycleSelector`**
 
-Alterar a função de agrupamento para usar `raw_data.Banco` quando `raw_data.Conta` não existe:
+Normalizar o `period_key` usando sempre `due_date.substring(0,7)` como chave de agrupamento, ignorando o `period_key` do banco que pode variar entre cards. Isso garante que dois ciclos com vencimento em janeiro se agrupem no mesmo chip.
 
-```typescript
-function getGroupKey(t: Transaction): string {
-  const conta = getContaField(t);
-  if (conta) return conta;
-  const banco = t.raw_data?.Banco || t.raw_data?.banco || t.raw_data?.BANCO;
-  if (banco) return String(banco).trim();
-  return "__no_conta__";
-}
-```
+**B. Atualizar accent color da Unicred no `cardCatalog.ts`**
 
-**B. Remover skip cego de `__no_conta__`**
+Trocar `#003366` → `#4DA6FF` (azul claro vibrante) para garantir visibilidade em tema escuro. Ajustar o gradient para manter coerência.
 
-Trocar o `if (conta === "__no_conta__") continue;` por permitir que grupos sem Conta mas com Banco válido prossigam para Layer 2/3. Manter o skip apenas para `__no_conta__` real (sem Banco também).
+**C. Melhorar contraste do chip ativo no `CreditCardCycleSelector`**
 
-**C. Expandir `extractCardLabel` para usar campo Banco**
+- Aumentar opacidade do background ativo: `${ac}55` → `${ac}88`
+- Aumentar brilho do boxShadow
+- Adicionar `ring-1` sutil para reforçar borda
+- No chip "Todos", aumentar opacidade do background ativo
 
-Quando o label vem do campo Banco (não Conta), usar o nome do banco diretamente:
+**D. Melhorar header `CreditCardConnectedHeader`**
 
-```typescript
-// Se o grupo veio do campo Banco
-if (groupSource === "banco") return `Cartão ${banco}`;
-```
+- Usar `filter: brightness(1.5)` no texto do brand quando accent é escuro
+- Garantir que o drop-shadow tenha opacidade visível
+- Diversificar ícones dos MiniKPIs (usar `CreditCard`, `TrendingDown`, `ArrowUpRight`, `Hash`)
 
-**D. Nenhuma alteração de threshold necessária**
+**E. Ajustar alinhamento geral**
 
-A Layer 3 já funcionará corretamente:
-- Dia 23: 28 merchant lines ≥ 10 → bloco candidato ✓
-- Dia 10: ~6 merchant lines < 10 → descartado ✓
-- candidateBlocks.length === 1 → aceito ✓
+- Cards de categorias e ciclos: garantir `items-stretch` no grid para alturas iguais
+- Espaçamento consistente entre header, seletor e cards
+- Melhorar padding do cycle selector container
 
-### Resultado esperado
+### Arquivos a editar
 
-- Unicred Março: ~28 transações detectadas como CC
-- Fevereiro (80 no dia 23): ~70+ transações CC
-- Card label: "Cartão UNICRED" ou "Cartão Unicred"
-
-### Escopo
-
-| Ação | Arquivo |
-|------|---------|
-| Editar | `supabase/functions/detect-credit-cards/index.ts` |
-
-Apenas a lógica de agrupamento e o skip — sem alterações no frontend.
+| Arquivo | Mudança |
+|---------|---------|
+| `src/lib/cardCatalog.ts` | Unicred accentColor mais clara |
+| `src/components/credit-card/CreditCardCycleSelector.tsx` | Fix agrupamento + melhorar contraste ativo |
+| `src/components/credit-card/CreditCardConnectedHeader.tsx` | Fix visibilidade header + ícones MiniKPIs |
+| `src/pages/CreditCardPage.tsx` | Ajustes de alinhamento e grid |
 
