@@ -242,7 +242,7 @@ export default function CreditCardPage() {
       )}
 
       {/* Categories + Cycle Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
         {/* Categories – 3D Donut */}
         <GlassCard className="p-6 space-y-4 min-h-[360px]">
           <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
