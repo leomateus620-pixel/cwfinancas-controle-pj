@@ -1,54 +1,58 @@
 
 
-## Plano: Correção de bugs UI/UX no menu Cartão de Crédito
+## Plano: Efeito "WOW" no nome do cartão — Typography Premium
 
-### Problemas identificados
+### Objetivo
 
-1. **Meses duplicados no seletor de ciclos**: "jan de 2026" aparece duas vezes como chips separados (Unicred + Cartão genérico) em vez de agrupados. Causa provável: `period_key` diferente entre ciclos do mesmo mês, ou um deles com `period_key` nulo — o fallback usa `due_date.substring(0,7)` que pode gerar chave diferente.
+Transformar o título "Cartão **Unicred**" (e todos os outros bancos) em um elemento visual de alto impacto, usando técnicas avançadas de CSS para criar um efeito de texto luminoso, animado e com profundidade.
 
-2. **Cor accent da Unicred muito escura** (`#003366`): Navy profundo fica invisível contra fundo escuro do tema. O dot, o texto do header e o glow do chip selecionado ficam imperceptíveis.
+### Design
 
-3. **Chip selecionado sem contraste suficiente**: O estado ativo usa `${ac}55` (alpha hex) que com cores escuras fica praticamente transparente. O chip "jan de 2026 Cartão" na screenshot 3-4 tem borda quase invisível.
+O nome do banco terá:
+1. **Gradiente multi-stop com a paleta da marca** — em vez de um gradiente monotone, usar 3 cores: a accent, uma versão mais clara e uma versão saturada diferente, criando profundidade cromática
+2. **Animação sutil de shimmer** — um brilho que percorre o texto continuamente (como um reflexo de luz passando por metal polido), usando `background-size: 200%` + `@keyframes` de `background-position`
+3. **Múltiplas camadas de glow** — 3 níveis de `drop-shadow` com raios crescentes para simular emissão de luz real
+4. **Pseudo-elemento de reflexo** — um `::after` com blur que simula luz refletida abaixo do texto
+5. **Escala ligeiramente maior** — `text-3xl` para o nome do banco vs `text-2xl` para "Cartão", criando hierarquia
 
-4. **Header "Cartão Unicred"**: O texto com gradient + drop-shadow usando `#003366` resulta em texto ilegível sobre fundo escuro.
+### Paleta por banco (gradiente do texto)
 
-5. **Ícones dos MiniKPIs genéricos**: Os 4 KPIs no header usam ícones repetidos (2x ReceiptText) e cores estáticas sem relação com o brand.
+| Banco | Cor 1 | Cor 2 | Cor 3 |
+|-------|-------|-------|-------|
+| Unicred | `#4DA6FF` | `#82C4FF` | `#B8DDFF` |
+| Nubank | `#B24BF3` | `#D17BFF` | `#E8A8FF` |
+| Sicredi | `#00D47E` | `#4AE8A5` | `#7AFFCA` |
+| BB | `#FFCD00` | `#FFE04D` | `#FFF099` |
+| Banrisul | `#4DA6FF` | `#78C0FF` | `#A8D8FF` |
 
-### Correções planejadas
+Cada marca terá um campo `glowColors: [string, string, string]` no `CardBrand` para alimentar o gradiente animado.
 
-**A. Corrigir agrupamento de meses no `CreditCardCycleSelector`**
+### Implementação
 
-Normalizar o `period_key` usando sempre `due_date.substring(0,7)` como chave de agrupamento, ignorando o `period_key` do banco que pode variar entre cards. Isso garante que dois ciclos com vencimento em janeiro se agrupem no mesmo chip.
+**Arquivo 1: `src/lib/cardCatalog.ts`**
+- Adicionar campo `glowColors: [string, string, string]` à interface `CardBrand`
+- Preencher para cada banco com as 3 cores do gradiente
 
-**B. Atualizar accent color da Unicred no `cardCatalog.ts`**
+**Arquivo 2: `src/components/credit-card/CreditCardConnectedHeader.tsx`**
+- Substituir o `<span>` do nome do banco por um componente `<BrandTitle>` com:
+  - `background: linear-gradient(90deg, cor1, cor2, cor3, cor1)` + `background-size: 200% auto`
+  - `animation: shimmer 3s linear infinite`
+  - `WebkitBackgroundClip: text` + `WebkitTextFillColor: transparent`
+  - 3 camadas de `drop-shadow` com a cor primária em opacidades decrescentes
+  - Um `<span>` absoluto posicionado abaixo com `blur(12px)` e `opacity(0.4)` como reflexo
 
-Trocar `#003366` → `#4DA6FF` (azul claro vibrante) para garantir visibilidade em tema escuro. Ajustar o gradient para manter coerência.
+**Arquivo 3: `src/index.css`**
+- Adicionar `@keyframes shimmer` para animação do gradiente
 
-**C. Melhorar contraste do chip ativo no `CreditCardCycleSelector`**
+### Resultado esperado
 
-- Aumentar opacidade do background ativo: `${ac}55` → `${ac}88`
-- Aumentar brilho do boxShadow
-- Adicionar `ring-1` sutil para reforçar borda
-- No chip "Todos", aumentar opacidade do background ativo
+O nome do banco terá um efeito de texto luminoso e animado que parece "vivo" — como letras de neon ou metal cromado iluminado — mantendo a identidade de cor de cada banco. O efeito é sutil e elegante, não agressivo.
 
-**D. Melhorar header `CreditCardConnectedHeader`**
+### Arquivos
 
-- Usar `filter: brightness(1.5)` no texto do brand quando accent é escuro
-- Garantir que o drop-shadow tenha opacidade visível
-- Diversificar ícones dos MiniKPIs (usar `CreditCard`, `TrendingDown`, `ArrowUpRight`, `Hash`)
-
-**E. Ajustar alinhamento geral**
-
-- Cards de categorias e ciclos: garantir `items-stretch` no grid para alturas iguais
-- Espaçamento consistente entre header, seletor e cards
-- Melhorar padding do cycle selector container
-
-### Arquivos a editar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `src/lib/cardCatalog.ts` | Unicred accentColor mais clara |
-| `src/components/credit-card/CreditCardCycleSelector.tsx` | Fix agrupamento + melhorar contraste ativo |
-| `src/components/credit-card/CreditCardConnectedHeader.tsx` | Fix visibilidade header + ícones MiniKPIs |
-| `src/pages/CreditCardPage.tsx` | Ajustes de alinhamento e grid |
+| Ação | Arquivo |
+|------|---------|
+| Editar | `src/lib/cardCatalog.ts` |
+| Editar | `src/components/credit-card/CreditCardConnectedHeader.tsx` |
+| Editar | `src/index.css` |
 
