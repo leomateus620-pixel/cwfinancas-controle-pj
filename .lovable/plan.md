@@ -1,52 +1,71 @@
 
 
-## Plano: Suporte ao formato Banco do Brasil + correção OCR
+## Plano: Corrigir detecção de cartão Unicred (campo Conta ausente)
 
-### Problemas diagnosticados
+### Diagnóstico
 
-1. **`unpdf` retorna 1 caractere** para este PDF do BB — extração de texto falha silenciosamente
-2. **OCR falha com `SyntaxError: Unexpected end of JSON input`** — o `resp.json()` do gateway AI retorna resposta truncada/vazia e o catch não trata adequadamente
-3. **`parseValue()` não entende `(+)` / `(-)`** — formato exclusivo do Banco do Brasil (ex: `6.151,75 (+)`)
-4. **Regex não captura formato BB** — as linhas BB têm formato tabular multi-coluna com lote/documento que nenhum padrão atual reconhece
+O problema está na linha 197 da edge function `detect-credit-cards`:
 
-### Correções na Edge Function
-
-**A. Suporte ao formato `(+)` / `(-)` no `parseValue()`**
-
-Adicionar detecção de `(+)` e `(-)` como marcadores de crédito/débito antes de limpar o valor.
-
-**B. Novo parser para formato Banco do Brasil**
-
-Adicionar regex para capturar linhas no formato:
+```typescript
+if (conta === "__no_conta__") continue;
 ```
-DD/MM/YYYY  lote  documento  Descrição  valor (+/-)
+
+As transações da Unicred não possuem o campo `raw_data.Conta` — usam `raw_data.Banco` com valor "UNICRED". Como `Conta` é null, todas são agrupadas sob `__no_conta__` e **descartadas antes de chegar às Layers 2 e 3**.
+
+**Dados confirmados:**
+- Março dia 23: 30 transações, 28 são merchant (CC real), 2 são PIX/TED
+- Março dia 10: 32 transações, apenas 6 merchant (atividade bancária)
+- Layer 3 funcionaria perfeitamente se as transações não fossem descartadas — dia 23 formaria 1 bloco candidato com 28+ merchant lines
+
+### Correção
+
+**Arquivo:** `supabase/functions/detect-credit-cards/index.ts`
+
+**A. Usar `raw_data.Banco` como fallback para agrupamento**
+
+Alterar a função de agrupamento para usar `raw_data.Banco` quando `raw_data.Conta` não existe:
+
+```typescript
+function getGroupKey(t: Transaction): string {
+  const conta = getContaField(t);
+  if (conta) return conta;
+  const banco = t.raw_data?.Banco || t.raw_data?.banco || t.raw_data?.BANCO;
+  if (banco) return String(banco).trim();
+  return "__no_conta__";
+}
 ```
-Extraído pelo `unpdf`/OCR como texto corrido: `02/03/2026 14397 10752029872392 Pix - Recebido 6.151,75 (+)`
 
-Também capturar linhas com descrição multi-linha (BB quebra histórico em 2 linhas).
+**B. Remover skip cego de `__no_conta__`**
 
-**C. Melhorar OCR — tratamento de resposta vazia/truncada**
+Trocar o `if (conta === "__no_conta__") continue;` por permitir que grupos sem Conta mas com Banco válido prossigam para Layer 2/3. Manter o skip apenas para `__no_conta__` real (sem Banco também).
 
-- Verificar `resp.ok` antes de chamar `resp.json()`
-- Usar `resp.text()` + `JSON.parse()` manual com try/catch mais granular
-- Logar o conteúdo bruto quando parsing falha para diagnóstico
-- Adicionar timeout no fetch para evitar respostas pendentes
+**C. Expandir `extractCardLabel` para usar campo Banco**
 
-**D. Fallback de extração: se `unpdf` retorna < 50 chars, tentar enviar direto para OCR com instruções mais específicas**
+Quando o label vem do campo Banco (não Conta), usar o nome do banco diretamente:
 
-O prompt de OCR já funciona para extrair transações — o problema é que a resposta JSON está sendo truncada. Melhorar o prompt para pedir resposta mais compacta e adicionar retry.
+```typescript
+// Se o grupo veio do campo Banco
+if (groupSource === "banco") return `Cartão ${banco}`;
+```
 
-**E. Adicionar `"banco do brasil"`, `"transferência enviada"`, `"pix - agendamento"`, `"pagamento de boleto"`, `"tarifa modulo"` aos BANK_KEYWORDS**
+**D. Nenhuma alteração de threshold necessária**
 
-### Arquivos
+A Layer 3 já funcionará corretamente:
+- Dia 23: 28 merchant lines ≥ 10 → bloco candidato ✓
+- Dia 10: ~6 merchant lines < 10 → descartado ✓
+- candidateBlocks.length === 1 → aceito ✓
+
+### Resultado esperado
+
+- Unicred Março: ~28 transações detectadas como CC
+- Fevereiro (80 no dia 23): ~70+ transações CC
+- Card label: "Cartão UNICRED" ou "Cartão Unicred"
+
+### Escopo
 
 | Ação | Arquivo |
 |------|---------|
-| Editar | `supabase/functions/parse-pdf-statement/index.ts` |
+| Editar | `supabase/functions/detect-credit-cards/index.ts` |
 
-### Resultado esperado com o PDF do BB
-
-- Tipo: `bank`
-- ~25 transações reais (excluindo "Saldo do dia", "Saldo Anterior", "S A L D O")
-- Formato: Data DD/MM/YYYY | Descrição | Valor com sinal correto
+Apenas a lógica de agrupamento e o skip — sem alterações no frontend.
 
