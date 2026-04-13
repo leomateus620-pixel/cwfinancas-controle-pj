@@ -1,35 +1,34 @@
 
 
-## Plano: Mini KPIs em cards Liquid Glass dedicados com identidade por banco
+## Plano: "Cartão" com design premium adaptado à cor de cada banco
 
-### Problema atual
+### Problema
 
-Os 4 indicadores (Fatura Líquida, Despesas Brutas, Reembolsos, Lançamentos) estão soltos como texto simples dentro do header — sem separação visual, sem profundidade, sem contraste adequado com os dados.
+O "Cartão" está com classes genéricas (`bg-primary-foreground`, `text-[#3f40a2]`, `border-2`, `font-serif`) que não combinam com o design Liquid Glass do projeto e não se adaptam à identidade visual de cada banco.
 
 ### Solução
 
-Cada KPI ganha seu próprio card `liquid-glass` com:
-1. **Ícone em cápsula colorida** — círculo translúcido com a cor do KPI (azul, vermelho, verde, sky) como fundo, ícone branco dentro
-2. **Label em texto muted** + **valor em destaque bold** com hierarquia clara
-3. **Borda lateral sutil** com a cor accent do banco (via `brand.glowColors[0]`) para unificar com a identidade da planilha
-4. **Orbe decorativo micro** — um glow sutil no canto do card usando a cor do banco, criando o efeito Liquid Glass adaptado
-5. **Grid responsivo** — `grid-cols-2 sm:grid-cols-4` com `gap-3` para alinhamento consistente
+Transformar "Cartão" num elemento que usa a **cor mais forte/escura do banco** (via `accentColor` do catálogo), com o mesmo estilo shimmer do `BrandTitle` mas numa tonalidade mais intensa — criando contraste hierárquico onde "Cartão" é mais forte e o nome do banco é mais luminoso.
 
-### Mudanças
+### Mudanças em `CreditCardConnectedHeader.tsx`
 
-**Arquivo: `src/components/credit-card/CreditCardConnectedHeader.tsx`**
+**Substituir o `<span>` do "Cartão" (linha 91-93)** por um componente inline com:
+- Gradiente shimmer usando `accentColor` como cor dominante (mais escura/saturada que as `glowColors`)
+- Mesmo `animate-cc-shimmer`, `WebkitBackgroundClip: text`, `WebkitTextFillColor: transparent`
+- Drop-shadow sutil com `accentColor` para glow coerente
+- Classes: `text-3xl font-extrabold tracking-tight` — sem `font-serif`, sem `border`, sem `bg-primary-foreground`
+- Resultado: visual idêntico ao `BrandTitle` mas com cor mais forte/densa
 
-- Refatorar `MiniKPI` para renderizar dentro de um container `liquid-glass rounded-xl` com padding `p-4`
-- Adicionar prop `accentColor` (string hex do banco) ao `MiniKPI` para:
-  - Borda esquerda colorida (`border-l-2` com `borderColor: accentColor`)
-  - Micro orbe decorativo (`absolute`, `blur-2xl`, `opacity-10`, cor do banco)
-- Ícone envolvido em cápsula: `<div>` com `rounded-full p-1.5` e `background: ${color}20` (translúcido)
-- Valor com `text-lg font-bold` para maior destaque
-- Passar `c1` (cor primária do banco) como `accentColor` para cada `MiniKPI`
+**Lógica de cor**: usar `brand.accentColor` (que é a cor mais forte de cada marca — amarelo BB, roxo Nubank, verde Sicredi, azul Unicred/Banrisul) como base do gradiente do "Cartão", misturando com branco nas pontas para o shimmer.
 
-### Resultado
+```typescript
+// Exemplo do gradiente para "Cartão":
+background: `linear-gradient(90deg, ${accent}cc, ${accent}, #ffffffcc, ${accent}, ${accent}cc)`
+```
 
-4 cards glass individuais, alinhados em grid, cada um com ícone encapsulado, borda accent do banco, e micro glow — visual premium consistente com o design system Liquid Glass do app.
+### Resultado esperado
+
+"Cartão" aparece em cor forte/saturada do banco, "Unicred" aparece em tons mais claros/luminosos — hierarquia visual clara, design unificado, adaptado por banco.
 
 | Ação | Arquivo |
 |------|---------|
