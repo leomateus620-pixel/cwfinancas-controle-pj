@@ -88,7 +88,16 @@ export function CreditCardConnectedHeader({
               <h1 className="text-2xl font-bold flex items-center gap-2 leading-tight">
                 {brand.id !== "generic" ? (
                   <>
-                    <span className="animate-cc-shimmer font-bold tracking-tight text-3xl font-serif border-solid shadow-2xl opacity-90 bg-primary-foreground border-2 rounded-md text-[#3f40a2]">
+                    <span
+                      className="relative z-10 text-3xl font-extrabold tracking-tight animate-cc-shimmer"
+                      style={{
+                        background: `linear-gradient(90deg, ${brand.accentColor}cc, ${brand.accentColor}, #ffffffcc, ${brand.accentColor}, ${brand.accentColor}cc)`,
+                        backgroundSize: "200% auto",
+                        WebkitBackgroundClip: "text",
+                        WebkitTextFillColor: "transparent",
+                        filter: `drop-shadow(0 0 8px ${brand.accentColor}44)`,
+                      }}
+                    >
                       Cartão
                     </span>
                     <BrandTitle brand={brand} />
