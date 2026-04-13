@@ -178,6 +178,13 @@ function detectBlocks(transactions: Transaction[]): { blocks: DetectedBlock[]; d
 
   for (const [tabContaKey, txns] of byTabConta) {
     const [tab, conta] = tabContaKey.split("|||", 2);
+    
+    // Skip excluded banks (e.g., CRESOL - regular banking only)
+    if (isExcludedFromCCDetection(conta)) {
+      console.log(`[detect-cc] SKIPPING excluded bank: "${conta}" — treating as regular banking`);
+      continue;
+    }
+    
     txns.sort((a, b) => (a.source_row_number || 0) - (b.source_row_number || 0));
 
     // ═══ LAYER 1: Explicit "Fatura CC" in Conta field ═══
