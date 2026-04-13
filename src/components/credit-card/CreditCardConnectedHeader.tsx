@@ -115,30 +115,38 @@ export function CreditCardConnectedHeader({
           </div>
 
           {/* Mini KPIs */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <MiniKPI
               icon={<CreditCard className="h-4 w-4" />}
               label="Fatura Líquida"
               value={formatCurrencyBR(netAmount)}
+              iconBg="rgba(99,102,241,0.15)"
               color="text-primary"
+              accentColor={c1}
             />
             <MiniKPI
               icon={<TrendingDown className="h-4 w-4" />}
               label="Despesas Brutas"
               value={formatCurrencyBR(grossAmount)}
+              iconBg="rgba(248,113,113,0.15)"
               color="text-red-400"
+              accentColor={c1}
             />
             <MiniKPI
               icon={<ArrowUpRight className="h-4 w-4" />}
               label="Reembolsos"
               value={formatCurrencyBR(reimbursementAmount)}
+              iconBg="rgba(52,211,153,0.15)"
               color="text-emerald-400"
+              accentColor={c1}
             />
             <MiniKPI
               icon={<Hash className="h-4 w-4" />}
               label="Lançamentos"
               value={String(transactionCount)}
+              iconBg="rgba(56,189,248,0.15)"
               color="text-sky-400"
+              accentColor={c1}
             />
           </div>
         </div>
@@ -147,14 +155,28 @@ export function CreditCardConnectedHeader({
   );
 }
 
-function MiniKPI({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
+function MiniKPI({ icon, label, value, color, iconBg, accentColor }: {
+  icon: React.ReactNode; label: string; value: string; color: string; iconBg: string; accentColor: string;
+}) {
   return (
-    <div className="space-y-1">
-      <div className={`flex items-center gap-1.5 text-xs text-muted-foreground`}>
-        <span className={color}>{icon}</span>
-        {label}
+    <div
+      className="liquid-glass rounded-xl p-4 relative overflow-hidden border-l-2"
+      style={{ borderLeftColor: accentColor }}
+    >
+      {/* Micro orbe decorativo */}
+      <div
+        className="absolute -right-3 -top-3 w-14 h-14 rounded-full blur-2xl opacity-10 pointer-events-none"
+        style={{ background: accentColor }}
+      />
+      <div className="relative z-10 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="rounded-full p-1.5" style={{ background: iconBg }}>
+            <span className={color}>{icon}</span>
+          </div>
+          <span className="text-xs text-muted-foreground">{label}</span>
+        </div>
+        <p className="text-lg font-bold text-foreground tabular-nums">{value}</p>
       </div>
-      <p className="text-base font-bold text-foreground tabular-nums">{value}</p>
     </div>
   );
 }
