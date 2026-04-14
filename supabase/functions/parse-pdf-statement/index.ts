@@ -92,7 +92,7 @@ const NOISE_PATTERNS = [
   /^banricompras\s+a\s+prazo\s+em/i,
   /cdb\s*automatico/i,
   /tarifa\s*economica/i,
-  /^\s*NOME:/i,
+  /^\s*NOME:\s*$/i,
   /^s\s*a\s*l\s*d\s*o$/i,
 ];
 
