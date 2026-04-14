@@ -218,8 +218,8 @@ function parseBankStatement(text: string, filename?: string | null): ParsedTrans
   // Pattern Banrisul: DD HISTORICO DOCUMENTO VALOR
   const banrisulRe = /^(\d{2})?\s*(.+?)\s+(\d{3,})\s+([\d.,]+[-]?)$/;
 
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
     if (!line || isNoiseLine(line)) continue;
 
     // Skip "Saldo do dia", "Saldo Anterior", "S A L D O" lines
@@ -227,17 +227,34 @@ function parseBankStatement(text: string, filename?: string | null): ParsedTrans
     if (/s\s+a\s+l\s+d\s+o/i.test(line)) continue;
     if (/^00\/00\/0000/.test(line)) continue;
 
+    // Helper: peek next non-empty line for NOME: and consume it
+    const peekNome = (): string | null => {
+      for (let j = i + 1; j < lines.length && j <= i + 3; j++) {
+        const next = lines[j].trim();
+        if (!next) continue;
+        const nomeMatch = next.match(/^\s*NOME:\s*(.+)/i);
+        if (nomeMatch) {
+          i = j; // consume the line
+          return nomeMatch[1].trim();
+        }
+        break; // non-empty, non-NOME line → stop
+      }
+      return null;
+    };
+
     // Try BB pattern first (most specific)
     const bbMatch = line.match(bbRe);
     if (bbMatch) {
       const [, dateStr, desc, valStr, signChar] = bbMatch;
       const cleanDesc = desc.replace(/\d{2}\/\d{2}\s+\d{2}:\d{2}\s+.*$/, "").trim();
-      const finalDesc = cleanDesc || desc.trim();
+      let finalDesc = cleanDesc || desc.trim();
       if (isNoiseLine(finalDesc)) continue;
       const num = parseValue(valStr);
       if (num !== null && finalDesc.length > 1) {
         const sign = signChar === "+" ? 1 : -1;
         const amount = Math.abs(num) * sign;
+        const nome = peekNome();
+        if (nome) finalDesc += ` - ${nome}`;
         txns.push({ date: dateStr, description: finalDesc, amount, original_amount: Math.abs(num), row_index: idx++ });
       }
       continue;
@@ -248,12 +265,14 @@ function parseBankStatement(text: string, filename?: string | null): ParsedTrans
     if (bbNoDocMatch) {
       const [, dateStr, desc, valStr, signChar] = bbNoDocMatch;
       const cleanDesc = desc.replace(/\d{2}\/\d{2}\s+\d{2}:\d{2}\s+.*$/, "").trim();
-      const finalDesc = cleanDesc || desc.trim();
+      let finalDesc = cleanDesc || desc.trim();
       if (isNoiseLine(finalDesc)) continue;
       const num = parseValue(valStr);
       if (num !== null && finalDesc.length > 1) {
         const sign = signChar === "+" ? 1 : -1;
         const amount = Math.abs(num) * sign;
+        const nome = peekNome();
+        if (nome) finalDesc += ` - ${nome}`;
         txns.push({ date: dateStr, description: finalDesc, amount, original_amount: Math.abs(num), row_index: idx++ });
       }
       continue;
@@ -265,7 +284,10 @@ function parseBankStatement(text: string, filename?: string | null): ParsedTrans
       const [, dateStr, desc, valStr] = fullMatch;
       const amount = parseValue(valStr);
       if (amount !== null && desc.trim().length > 1 && !isNoiseLine(desc)) {
-        txns.push({ date: dateStr, description: desc.trim(), amount, original_amount: Math.abs(amount), row_index: idx++ });
+        let finalDesc = desc.trim();
+        const nome = peekNome();
+        if (nome) finalDesc += ` - ${nome}`;
+        txns.push({ date: dateStr, description: finalDesc, amount, original_amount: Math.abs(amount), row_index: idx++ });
       }
       continue;
     }
@@ -283,11 +305,15 @@ function parseBankStatement(text: string, filename?: string | null): ParsedTrans
     const banriMatch = line.match(banrisulRe);
     if (banriMatch) {
       const dayStr = banriMatch[1] || currentDay;
-      const desc = banriMatch[2].trim();
+      let desc = banriMatch[2].trim();
       const valStr = banriMatch[4];
       const amount = parseValue(valStr);
 
       if (amount !== null && desc.length > 2 && !isNoiseLine(desc)) {
+        // Peek for NOME: line
+        const nome = peekNome();
+        if (nome) desc += ` - ${nome}`;
+
         // Compose full date using header context
         let fullDate: string | null = null;
         if (dayStr && headerCtx) {
