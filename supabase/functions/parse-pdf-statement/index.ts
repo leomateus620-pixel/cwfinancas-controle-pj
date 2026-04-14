@@ -448,6 +448,7 @@ Regras:
 - Para cartão: compras=negativo, pagamentos=positivo
 - Ignore linhas de saldo, totais, limites
 - Linhas que começam com "NOME:" após uma transação PIX contêm o nome do pagador/recebedor. Inclua esse nome na descrição da transação, separado por " - ". Exemplo: "PIX ENVIADO - MERCADO RAMBO E WEBER LTDA"
+- Transações com prefixo VERO (VERO ANT BLF, VERO DEB BLF, VERO CRE BLF, VERO BANRICOMPRAS) são recebimentos via maquininha de cartão POS — devem ter amount POSITIVO (crédito/entrada).
 - Apenas transações reais
 - Responda SOMENTE com o JSON, sem markdown`;
 
@@ -665,6 +666,14 @@ Deno.serve(async (req) => {
             t.date = `${t.date.trim().padStart(2, "0")}/${ctx.month}/${ctx.year}`;
           }
         }
+      }
+    }
+
+    // Post-process: VERO (POS/maquininha) transactions are always positive income
+    const VERO_POSITIVE_RE = /^VERO\s+(ANT|DEB|CRE|BANRICOMPRAS)/i;
+    for (const t of transactions) {
+      if (VERO_POSITIVE_RE.test(t.description) && t.amount < 0) {
+        t.amount = Math.abs(t.amount);
       }
     }
 
