@@ -629,6 +629,18 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Post-process OCR results: fix incomplete dates (day-only)
+    if (ocrUsed && transactions.length > 0) {
+      const ctx = extractHeaderMonthYear(text) || extractMonthYearFromFilename(file?.name ?? null);
+      if (ctx) {
+        for (const t of transactions) {
+          if (t.date && /^\d{1,2}$/.test(t.date.trim())) {
+            t.date = `${t.date.trim().padStart(2, "0")}/${ctx.month}/${ctx.year}`;
+          }
+        }
+      }
+    }
+
     console.log(`Final: ${transactions.length} transactions, type=${detectedType}, ocr=${ocrUsed}`);
 
     // Save to storage
