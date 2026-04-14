@@ -1,36 +1,47 @@
 
 
-## Plano: "Cartão" com design premium adaptado à cor de cada banco
+## Plano: Corrigir datas incompletas no extrato Banrisul (e similares)
 
 ### Problema
 
-O "Cartão" está com classes genéricas (`bg-primary-foreground`, `text-[#3f40a2]`, `border-2`, `font-serif`) que não combinam com o design Liquid Glass do projeto e não se adaptam à identidade visual de cada banco.
+O extrato Banrisul usa um formato onde o mês/ano aparece uma vez no cabeçalho (`MOVIMENTOS ABR/2026`) e as transações mostram apenas o dia (`06`, `07`, etc.). O parser atual captura somente o dia, gerando datas como `"06"` em vez de `"06/04/2026"`.
+
+Além disso, o regex não encontrou transações (0 matches) e caiu no OCR via IA, que também pode retornar datas incompletas.
+
+### Causa raiz
+
+1. **`parseBankStatement()`** nunca extrai mês/ano das linhas de cabeçalho como `MOVIMENTOS ABR/2026` ou `SALDO ANT EM 02/04/2026`
+2. As transações Banrisul (`banrisulRe`) salvam `date: dayStr` — apenas o número do dia
+3. No fallback OCR, o prompt pede `DD/MM/YYYY` mas não fornece contexto do mês quando o PDF só mostra dias
 
 ### Solução
 
-Transformar "Cartão" num elemento que usa a **cor mais forte/escura do banco** (via `accentColor` do catálogo), com o mesmo estilo shimmer do `BrandTitle` mas numa tonalidade mais intensa — criando contraste hierárquico onde "Cartão" é mais forte e o nome do banco é mais luminoso.
+**Arquivo: `supabase/functions/parse-pdf-statement/index.ts`**
 
-### Mudanças em `CreditCardConnectedHeader.tsx`
+#### 1. Extrair mês/ano do cabeçalho Banrisul
+Antes do loop de parsing, escanear o texto por padrões como:
+- `MOVIMENTOS ABR/2026` → mês=04, ano=2026
+- `SALDO ANT EM DD/MM/YYYY` → extrair MM/YYYY
+- Header do PDF: `14/04/2026` (data de emissão)
 
-**Substituir o `<span>` do "Cartão" (linha 91-93)** por um componente inline com:
-- Gradiente shimmer usando `accentColor` como cor dominante (mais escura/saturada que as `glowColors`)
-- Mesmo `animate-cc-shimmer`, `WebkitBackgroundClip: text`, `WebkitTextFillColor: transparent`
-- Drop-shadow sutil com `accentColor` para glow coerente
-- Classes: `text-3xl font-extrabold tracking-tight` — sem `font-serif`, sem `border`, sem `bg-primary-foreground`
-- Resultado: visual idêntico ao `BrandTitle` mas com cor mais forte/densa
+Criar um mapa de mês abreviado → número (`JAN→01, FEV→02, MAR→03, ABR→04...`)
 
-**Lógica de cor**: usar `brand.accentColor` (que é a cor mais forte de cada marca — amarelo BB, roxo Nubank, verde Sicredi, azul Unicred/Banrisul) como base do gradiente do "Cartão", misturando com branco nas pontas para o shimmer.
+#### 2. Compor data completa nas transações Banrisul
+Quando `banrisulRe` captura apenas o dia (`06`), combinar com o mês/ano extraído do cabeçalho para formar `06/04/2026`.
 
-```typescript
-// Exemplo do gradiente para "Cartão":
-background: `linear-gradient(90deg, ${accent}cc, ${accent}, #ffffffcc, ${accent}, ${accent}cc)`
-```
+#### 3. Pós-processamento para datas incompletas
+Após o parsing (tanto regex quanto OCR), verificar transações onde `date` tem apenas 1-2 dígitos (dia sem mês). Tentar completar usando:
+- O mês/ano detectado do cabeçalho
+- A data do filename (se disponível)
+- A data de criação do PDF
+
+#### 4. Melhorar prompt OCR para Banrisul
+Adicionar ao prompt de OCR uma instrução explícita: "Se o PDF mostrar apenas o dia nas transações, procure o mês/ano no cabeçalho (ex: MOVIMENTOS ABR/2026) e componha a data completa DD/MM/YYYY."
 
 ### Resultado esperado
-
-"Cartão" aparece em cor forte/saturada do banco, "Unicred" aparece em tons mais claros/luminosos — hierarquia visual clara, design unificado, adaptado por banco.
+Todas as transações terão datas completas no formato `DD/MM/YYYY`, independente do banco ou formato do PDF.
 
 | Ação | Arquivo |
 |------|---------|
-| Editar | `src/components/credit-card/CreditCardConnectedHeader.tsx` |
+| Editar | `supabase/functions/parse-pdf-statement/index.ts` |
 
