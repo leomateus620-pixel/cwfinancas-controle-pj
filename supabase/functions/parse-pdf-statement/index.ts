@@ -161,22 +161,58 @@ function parseValue(raw: string): number | null {
   return Math.round(num * sign * 100) / 100;
 }
 
+// ── Month abbreviation map (PT-BR) ─────────────────────────────
+const MONTH_MAP: Record<string, string> = {
+  JAN: "01", FEV: "02", MAR: "03", ABR: "04", MAI: "05", JUN: "06",
+  JUL: "07", AGO: "08", SET: "09", OUT: "10", NOV: "11", DEZ: "12",
+};
+
+/** Extract month/year context from header lines like "MOVIMENTOS ABR/2026" or "SALDO ANT EM 02/04/2026" */
+function extractHeaderMonthYear(text: string): { month: string; year: string } | null {
+  // Pattern: MOVIMENTOS ABR/2026
+  const movMatch = text.match(/MOVIMENTOS\s+([A-Z]{3})\/(\d{4})/i);
+  if (movMatch) {
+    const m = MONTH_MAP[movMatch[1].toUpperCase()];
+    if (m) return { month: m, year: movMatch[2] };
+  }
+
+  // Pattern: SALDO ANT EM DD/MM/YYYY
+  const saldoMatch = text.match(/SALDO\s+ANT(?:ERIOR)?\s+EM\s+\d{2}\/(\d{2})\/(\d{4})/i);
+  if (saldoMatch) return { month: saldoMatch[1], year: saldoMatch[2] };
+
+  // Pattern: any DD/MM/YYYY in the first 500 chars (header area)
+  const header = text.substring(0, 500);
+  const dateMatch = header.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (dateMatch) return { month: dateMatch[2], year: dateMatch[3] };
+
+  return null;
+}
+
+/** Try to extract month/year from filename like Extrato_20260414.pdf */
+function extractMonthYearFromFilename(filename: string | null): { month: string; year: string } | null {
+  if (!filename) return null;
+  const m = filename.match(/(\d{4})(\d{2})(\d{2})/);
+  if (m) return { month: m[2], year: m[1] };
+  return null;
+}
+
 // ── Bank statement parser ───────────────────────────────────────
-function parseBankStatement(text: string): ParsedTransaction[] {
+function parseBankStatement(text: string, filename?: string | null): ParsedTransaction[] {
   const lines = text.split("\n");
   const txns: ParsedTransaction[] = [];
   let idx = 0;
   let currentDay: string | null = null;
 
+  // Extract month/year context from headers
+  const headerCtx = extractHeaderMonthYear(text) || extractMonthYearFromFilename(filename ?? null);
+
   // Pattern 1: DD/MM/YYYY desc valor (generic)
   const fullDateRe = /^(\d{2}\/\d{2}\/\d{2,4})\s+(.+?)\s+(-?\s*[\d.,]+(?:\s*[CDcd]|\s*\(\+\)|\s*\(-\))?)$/;
 
   // Pattern BB: DD/MM/YYYY ... valor (+/-) — Banco do Brasil
-  // The text from unpdf often comes as: "02/03/2026 14397 10752029872392 Pix - Recebido 6.151,75 (+)"
-  // or: "02/03/2026 99021 612817000998200 Transferência enviada 10.000,00 (-)"
   const bbRe = /^(\d{2}\/\d{2}\/\d{4})\s+\d+\s+\d+\s+(.+?)\s+([\d.,]+)\s*\(([+-])\)$/;
 
-  // Pattern BB variant: DD/MM/YYYY lote desc valor (+/-)  (no document number)
+  // Pattern BB variant: DD/MM/YYYY lote desc valor (+/-)
   const bbNoDocRe = /^(\d{2}\/\d{2}\/\d{4})\s+\d+\s+(.+?)\s+([\d.,]+)\s*\(([+-])\)$/;
 
   // Pattern Banrisul: DD HISTORICO DOCUMENTO VALOR
@@ -189,7 +225,6 @@ function parseBankStatement(text: string): ParsedTransaction[] {
     // Skip "Saldo do dia", "Saldo Anterior", "S A L D O" lines
     if (/saldo\s*(do\s*dia|anterior|final)/i.test(line)) continue;
     if (/s\s+a\s+l\s+d\s+o/i.test(line)) continue;
-    // Skip lines with date 00/00/0000 (BB "saldo do dia" rows)
     if (/^00\/00\/0000/.test(line)) continue;
 
     // Try BB pattern first (most specific)
@@ -253,13 +288,30 @@ function parseBankStatement(text: string): ParsedTransaction[] {
       const amount = parseValue(valStr);
 
       if (amount !== null && desc.length > 2 && !isNoiseLine(desc)) {
+        // Compose full date using header context
+        let fullDate: string | null = null;
+        if (dayStr && headerCtx) {
+          fullDate = `${dayStr}/${headerCtx.month}/${headerCtx.year}`;
+        } else if (dayStr) {
+          fullDate = dayStr; // fallback: day only
+        }
+
         txns.push({
-          date: dayStr || null,
+          date: fullDate,
           description: desc,
           amount,
           original_amount: Math.abs(amount),
           row_index: idx++,
         });
+      }
+    }
+  }
+
+  // Post-process: fix any remaining incomplete dates (1-2 digit day only)
+  if (headerCtx) {
+    for (const t of txns) {
+      if (t.date && /^\d{1,2}$/.test(t.date)) {
+        t.date = `${t.date.padStart(2, "0")}/${headerCtx.month}/${headerCtx.year}`;
       }
     }
   }
@@ -365,7 +417,7 @@ Retorne JSON compacto:
 {"type":"bank"|"credit_card","transactions":[{"date":"DD/MM/YYYY","description":"texto","amount":123.45}]}
 
 Regras:
-- date: formato DD/MM/YYYY ou null
+- date: SEMPRE no formato DD/MM/YYYY completo. Se o PDF mostrar apenas o dia (ex: "06", "07") nas linhas de transação, procure o mês e ano no cabeçalho do extrato (ex: "MOVIMENTOS ABR/2026", "SALDO ANT EM 02/04/2026", ou a data de emissão) e componha a data completa.
 - amount: positivo=crédito/entrada, negativo=débito/saída
 - Para cartão: compras=negativo, pagamentos=positivo
 - Ignore linhas de saldo, totais, limites
@@ -550,9 +602,9 @@ Deno.serve(async (req) => {
       if (detectedType === "credit_card") {
         transactions = parseCreditCardStatement(text);
       } else if (detectedType === "bank") {
-        transactions = parseBankStatement(text);
+        transactions = parseBankStatement(text, file.name);
       } else {
-        const bankTxns = parseBankStatement(text);
+        const bankTxns = parseBankStatement(text, file.name);
         const ccTxns = parseCreditCardStatement(text);
         if (bankTxns.length >= ccTxns.length && bankTxns.length > 0) {
           transactions = bankTxns;
@@ -573,6 +625,18 @@ Deno.serve(async (req) => {
         transactions = ocrResult.transactions;
         if (ocrResult.detectedType !== "unknown") {
           detectedType = ocrResult.detectedType;
+        }
+      }
+    }
+
+    // Post-process OCR results: fix incomplete dates (day-only)
+    if (ocrUsed && transactions.length > 0) {
+      const ctx = extractHeaderMonthYear(text) || extractMonthYearFromFilename(file?.name ?? null);
+      if (ctx) {
+        for (const t of transactions) {
+          if (t.date && /^\d{1,2}$/.test(t.date.trim())) {
+            t.date = `${t.date.trim().padStart(2, "0")}/${ctx.month}/${ctx.year}`;
+          }
         }
       }
     }
