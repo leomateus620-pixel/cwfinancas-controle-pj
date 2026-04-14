@@ -447,6 +447,7 @@ Regras:
 - amount: positivo=crédito/entrada, negativo=débito/saída
 - Para cartão: compras=negativo, pagamentos=positivo
 - Ignore linhas de saldo, totais, limites
+- Linhas que começam com "NOME:" após uma transação PIX contêm o nome do pagador/recebedor. Inclua esse nome na descrição da transação, separado por " - ". Exemplo: "PIX ENVIADO - MERCADO RAMBO E WEBER LTDA"
 - Apenas transações reais
 - Responda SOMENTE com o JSON, sem markdown`;
 
