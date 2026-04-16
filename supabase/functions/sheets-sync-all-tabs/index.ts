@@ -2221,7 +2221,7 @@ Deno.serve(async (req) => {
 
       // ===== PAGINATED READ =====
       const allRows = xlsxWorkbook
-        ? xlsxSheetToRows(xlsxWorkbook, tab.title)
+        ? getCachedXlsxRows(tab.title)
         : await readTabPaginated(accessToken!, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
 
       if (allRows.length < 2) {
@@ -2556,7 +2556,7 @@ Deno.serve(async (req) => {
 
         // Read tab data
         const aprRows = xlsxWorkbook
-          ? xlsxSheetToRows(xlsxWorkbook, aprTab.title)
+          ? getCachedXlsxRows(aprTab.title)
           : await readTabPaginated(accessToken!, connection.spreadsheet_id, aprTab.title, aprTab.rowCount || 1000, requestId);
 
         if (aprRows.length < 2) {
