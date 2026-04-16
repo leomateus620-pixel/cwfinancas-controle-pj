@@ -16,7 +16,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const INTERNAL_TIMEOUT_MS = 110_000;
 const STALE_HEARTBEAT_MS = 2 * 60 * 1000;
 const BATCH_READ_SIZE = 500;
-const BATCH_UPSERT_SIZE = 50;
+const BATCH_UPSERT_SIZE = 200;
 
 // ============ Tab Router ============
 
@@ -1004,13 +1004,20 @@ async function reconcileAndUpsert(
     }
   }
 
-  // Execute UPDATEs individually (by id)
-  for (const row of toUpdate) {
-    const { id, ...data } = row;
-    const { error } = await supabase.from("transactions")
-      .update(data).eq("id", id);
-    if (error) errors.push({ row: data.source_row_number, error: error.message });
-    else updated++;
+  // Execute UPDATEs in batches via upsert with onConflict
+  for (const chunk of chunks(toUpdate, BATCH_UPSERT_SIZE)) {
+    const { error } = await supabase.from("transactions").upsert(chunk, { onConflict: "id" });
+    if (error) {
+      console.warn(`[${requestId}] Batch update failed (${chunk.length} rows), falling back: ${error.message}`);
+      for (const row of chunk) {
+        const { id, ...data } = row;
+        const { error: e } = await supabase.from("transactions").update(data).eq("id", id);
+        if (e) errors.push({ row: data.source_row_number, error: e.message });
+        else updated++;
+      }
+    } else {
+      updated += chunk.length;
+    }
   }
 
   return { inserted, updated, noOps, errors };
@@ -2089,10 +2096,19 @@ Deno.serve(async (req) => {
     let spreadsheetTitle: string;
     let allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }>;
 
+    // Cache for xlsx sheet rows to avoid re-reading the same sheet multiple times
+    const xlsxRowCache = new Map<string, string[][]>();
+    function getCachedXlsxRows(sheetName: string): string[][] {
+      if (xlsxRowCache.has(sheetName)) return xlsxRowCache.get(sheetName)!;
+      const rows = xlsxSheetToRows(xlsxWorkbook, sheetName);
+      xlsxRowCache.set(sheetName, rows);
+      return rows;
+    }
+
     if (xlsxWorkbook) {
       spreadsheetTitle = fileInfo.name || "";
       allSheets = xlsxWorkbook.SheetNames.map((name: string, idx: number) => {
-        const sheetRows = xlsxSheetToRows(xlsxWorkbook, name);
+        const sheetRows = getCachedXlsxRows(name);
         return {
           properties: {
             title: name,
