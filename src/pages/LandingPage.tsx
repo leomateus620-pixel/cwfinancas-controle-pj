@@ -42,7 +42,7 @@ const highlights = [
   {
     icon: FileText,
     title: "DRE Inteligente",
-    description: "Modelos LCF, Standard e Matricial com validação automática",
+    description: "Resultado financeiro consolidado com validação automática e visão por núcleo de negócio",
     accent: "hsl(262 83% 58%)",
     isNew: false,
   },
