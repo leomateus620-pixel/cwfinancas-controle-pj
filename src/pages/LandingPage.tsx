@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   LogIn,
@@ -83,7 +83,124 @@ const highlights = [
   },
 ];
 
-// Dados do gráfico (Jul-Dez)
+/* ── Highlights Carousel ── */
+const HighlightsCarousel = () => {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const goTo = useCallback((idx: number) => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
+    setTimeout(() => {
+      setActiveIndex(idx);
+      setIsTransitioning(false);
+    }, 400);
+  }, [isTransitioning]);
+
+  const advance = useCallback(() => {
+    goTo((activeIndex + 1) % highlights.length);
+  }, [activeIndex, goTo]);
+
+  useEffect(() => {
+    if (isPaused) return;
+    timerRef.current = setInterval(advance, 4000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [advance, isPaused]);
+
+  const h = highlights[activeIndex];
+
+  return (
+    <div
+      className="opacity-0 animate-fade-in-up"
+      style={{ animationDelay: "400ms", animationFillMode: "forwards" }}
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+    >
+      {/* Card */}
+      <div
+        className="relative rounded-2xl p-[1px] min-h-[120px]"
+        style={{
+          background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.5)")}, transparent 60%, ${h.accent.replace(")", " / 0.25)")})`,
+        }}
+      >
+        <div
+          className="liquid-glass-compact !rounded-2xl px-5 py-5 flex items-start gap-4 relative overflow-hidden"
+          style={{
+            opacity: isTransitioning ? 0 : 1,
+            transform: isTransitioning
+              ? "translateY(20px) scale(0.95)"
+              : "translateY(0) scale(1)",
+            filter: isTransitioning ? "blur(4px)" : "blur(0)",
+            transition: isTransitioning
+              ? "opacity 0.4s ease-in, transform 0.4s ease-in, filter 0.4s ease-in"
+              : "opacity 0.5s cubic-bezier(0.34,1.56,0.64,1), transform 0.5s cubic-bezier(0.34,1.56,0.64,1), filter 0.5s ease-out",
+          }}
+        >
+          {/* Ambient glow */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `radial-gradient(circle at top right, ${h.accent.replace(")", " / 0.1)")}, transparent 70%)`,
+            }}
+          />
+          {/* Icon */}
+          <div
+            className="relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+            style={{
+              background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.2)")}, ${h.accent.replace(")", " / 0.06)")})`,
+              boxShadow: `0 6px 20px -6px ${h.accent.replace(")", " / 0.5)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.25)")}`,
+            }}
+          >
+            <h.icon className="w-6 h-6" style={{ color: h.accent }} />
+          </div>
+          {/* Text */}
+          <div className="text-left min-w-0 flex-1 relative">
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-base font-bold text-foreground leading-tight">{h.title}</p>
+              {h.isNew && (
+                <span
+                  className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0"
+                  style={{
+                    background: `${h.accent.replace(")", " / 0.15)")}`,
+                    color: h.accent,
+                    border: `1px solid ${h.accent.replace(")", " / 0.3)")}`,
+                  }}
+                >
+                  Novo
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">{h.description}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation dots */}
+      <div className="flex items-center justify-center gap-2 mt-3">
+        {highlights.map((item, i) => (
+          <button
+            key={item.title}
+            onClick={() => goTo(i)}
+            className="transition-all duration-300 rounded-full"
+            style={{
+              width: i === activeIndex ? 24 : 8,
+              height: 8,
+              background: i === activeIndex
+                ? item.accent
+                : `${item.accent.replace(")", " / 0.25)")}`,
+              opacity: i === activeIndex ? 1 : 0.6,
+            }}
+            aria-label={`Ver ${item.title}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
 const chartMonths = ["Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 const revenueData = [62, 70, 58, 78, 85, 92]; // % normalizado
 const expenseData = [48, 52, 45, 58, 60, 65];
@@ -189,60 +306,8 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Highlights — Premium Grid 2x3 */}
-            <div
-              className="grid grid-cols-1 sm:grid-cols-2 gap-3 opacity-0 animate-fade-in-up"
-              style={{ animationDelay: "400ms", animationFillMode: "forwards" }}
-            >
-              {highlights.map((h, i) => (
-                <div
-                  key={h.title}
-                  className="group relative rounded-2xl p-[1px] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.02]"
-                  style={{
-                    background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.4)")}, transparent 60%, ${h.accent.replace(")", " / 0.2)")})`,
-                    animationDelay: `${500 + i * 80}ms`,
-                  }}
-                >
-                  <div className="liquid-glass-compact !rounded-2xl px-3.5 py-3 flex items-start gap-3 relative overflow-hidden h-full">
-                    {/* Hover glow */}
-                    <div
-                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-                      style={{
-                        background: `radial-gradient(circle at top right, ${h.accent.replace(")", " / 0.12)")}, transparent 70%)`,
-                      }}
-                    />
-                    {/* Icon container */}
-                    <div
-                      className="relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3"
-                      style={{
-                        background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.18)")}, ${h.accent.replace(")", " / 0.06)")})`,
-                        boxShadow: `0 4px 14px -4px ${h.accent.replace(")", " / 0.4)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.2)")}`,
-                      }}
-                    >
-                      <h.icon className="w-[18px] h-[18px]" style={{ color: h.accent }} />
-                    </div>
-                    <div className="text-left min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <p className="text-[13px] font-bold text-foreground leading-tight truncate">{h.title}</p>
-                        {h.isNew && (
-                          <span
-                            className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0"
-                            style={{
-                              background: `${h.accent.replace(")", " / 0.15)")}`,
-                              color: h.accent,
-                              border: `1px solid ${h.accent.replace(")", " / 0.3)")}`,
-                            }}
-                          >
-                            Novo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-snug">{h.description}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {/* Highlights — Animated Single-Card Carousel */}
+            <HighlightsCarousel />
 
             {/* CTAs */}
             <div
