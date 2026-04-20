@@ -189,60 +189,8 @@ export default function LandingPage() {
               </p>
             </div>
 
-            {/* Highlights — Premium Grid 2x3 */}
-            <div
-              className="grid grid-cols-1 sm:grid-cols-2 gap-3 opacity-0 animate-fade-in-up"
-              style={{ animationDelay: "400ms", animationFillMode: "forwards" }}
-            >
-              {highlights.map((h, i) => (
-                <div
-                  key={h.title}
-                  className="group relative rounded-2xl p-[1px] transition-all duration-500 hover:-translate-y-1 hover:scale-[1.02]"
-                  style={{
-                    background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.4)")}, transparent 60%, ${h.accent.replace(")", " / 0.2)")})`,
-                    animationDelay: `${500 + i * 80}ms`,
-                  }}
-                >
-                  <div className="liquid-glass-compact !rounded-2xl px-3.5 py-3 flex items-start gap-3 relative overflow-hidden h-full">
-                    {/* Hover glow */}
-                    <div
-                      className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-                      style={{
-                        background: `radial-gradient(circle at top right, ${h.accent.replace(")", " / 0.12)")}, transparent 70%)`,
-                      }}
-                    />
-                    {/* Icon container */}
-                    <div
-                      className="relative w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3"
-                      style={{
-                        background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.18)")}, ${h.accent.replace(")", " / 0.06)")})`,
-                        boxShadow: `0 4px 14px -4px ${h.accent.replace(")", " / 0.4)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.2)")}`,
-                      }}
-                    >
-                      <h.icon className="w-[18px] h-[18px]" style={{ color: h.accent }} />
-                    </div>
-                    <div className="text-left min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <p className="text-[13px] font-bold text-foreground leading-tight truncate">{h.title}</p>
-                        {h.isNew && (
-                          <span
-                            className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full shrink-0"
-                            style={{
-                              background: `${h.accent.replace(")", " / 0.15)")}`,
-                              color: h.accent,
-                              border: `1px solid ${h.accent.replace(")", " / 0.3)")}`,
-                            }}
-                          >
-                            Novo
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-snug">{h.description}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {/* Highlights — Animated Single-Card Carousel */}
+            <HighlightsCarousel />
 
             {/* CTAs */}
             <div
