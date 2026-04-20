@@ -535,6 +535,25 @@
   animation: count-emphasis 0.6s ease-out;
 }
 
+@keyframes icon-pop {
+  0% { opacity: 0; transform: scale(0.6) rotateY(-30deg) translateZ(20px); }
+  60% { opacity: 1; transform: scale(1.1) rotateY(5deg) translateZ(20px); }
+  100% { opacity: 1; transform: scale(1) rotateY(0deg) translateZ(20px); }
+}
+
+@keyframes icon-float {
+  0%, 100% { transform: translateZ(20px) translateY(0); }
+  50% { transform: translateZ(20px) translateY(-2px); }
+}
+
+.animate-icon-pop {
+  animation: icon-pop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-icon-float {
+  animation: icon-float 3.5s ease-in-out infinite;
+}
+
 /* Duration utilities */
 .duration-400 {
   transition-duration: 400ms;
