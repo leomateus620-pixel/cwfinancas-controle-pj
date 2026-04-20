@@ -1,49 +1,82 @@
 
 
-## Plano: Resolver erro "CPU Time exceeded" na sincronização
+## Plano: Mockup 3D + Highlights Premium na Landing
 
-### Problema
+### Anexo 1 — Mockup do app em 3D com gráfico real
 
-A Edge Function `sheets-sync-all-tabs` está excedendo o limite de CPU ao processar a aba Abr2026 (1021 linhas). O erro `WORKER_RESOURCE_LIMIT` ocorre porque:
+**Arquivo:** `src/pages/LandingPage.tsx` (lado direito do hero)
 
-1. **Updates individuais**: A função `reconcileAndUpsert` faz UPDATE um a um (1 query por linha alterada) — com centenas de linhas isso consome toda a cota de CPU
-2. **Reconciliação pesada**: Para cada aba, busca todos os registros existentes do banco e faz matching O(n) por `stable_key` e `content_hash`
-3. **Leitura desnecessária de dados xlsx**: Mesmo abas com fingerprint inalterado passam por `xlsxSheetToRows()` antes da verificação de fingerprint
-
-### Solução
-
-**Arquivo: `supabase/functions/sheets-sync-all-tabs/index.ts`**
-
-#### 1. Batch UPDATEs via RPC ou upsert com onConflict
-Substituir os updates individuais (loop na linha 1008-1014) por upsert em lotes usando `onConflict: "id"`. Isso reduz ~500 queries individuais para ~10 queries em batch de 50.
-
-```typescript
-// ANTES (lento): update individual por id
-for (const row of toUpdate) {
-  await supabase.from("transactions").update(data).eq("id", id);
-}
-
-// DEPOIS (rápido): upsert em lotes com onConflict no id
-for (const chunk of chunks(toUpdate, BATCH_UPSERT_SIZE)) {
-  await supabase.from("transactions").upsert(chunk, { onConflict: "id" });
-}
+#### 1. Perspectiva 3D no mock window
+Envolver o `liquid-glass` (linha 179) num wrapper com `perspective: 1200px` e aplicar transform 3D no card:
+```css
+transform: rotateY(-12deg) rotateX(6deg) rotateZ(-1deg);
+transformStyle: preserve-3d;
 ```
+- Sombra projetada inclinada à direita para reforçar profundidade
+- Reflexo/glow ampliado embaixo
+- Hover sutil: reduz rotação para `-6deg/3deg` (efeito "approach")
+- Brilho de glare diagonal sobre a janela (gradiente branco translúcido fixo)
 
-#### 2. Cache de leitura xlsx por aba
-Evitar chamar `xlsxSheetToRows()` duas vezes para a mesma aba (uma na classificação e outra no processamento). Criar um cache `Map<string, string[][]>` para reutilizar.
+#### 2. Atualização do menu (sidebar) com itens reais do sistema
+Substituir/expandir a lista `features` para refletir o sistema atual:
+- Home, Dashboard, Receitas, Despesas, **Cartão de Crédito** (novo), Fluxo de Caixa, DRE, Contas a Pagar/Receber, Previsões, **Insights IA** (novo), **Minha Empresa** (novo)
+- Animação de entrada escalonada mantida, ícones com leve `translateZ(20px)` para parecer flutuando sobre a sidebar
 
-#### 3. Mover fingerprint check ANTES da leitura completa (xlsx)
-Para arquivos xlsx, computar o fingerprint usando apenas as primeiras 51 linhas da aba sem ler todas as linhas primeiro. Se fingerprint for igual, pular sem processar.
+#### 3. Novo gráfico real em "Evolução Mensal" (substituir barras fake)
+Substituir o array de barras por um **gráfico SVG composto**:
+- Área degradê (azul→transparente) com path suavizado (curva `Q`/`T`)
+- Linha de receita (verde) + linha de despesa (vermelha) sobrepostas
+- 3 dots destacados nos picos com pulse glow
+- Animação `stroke-dashoffset` para desenhar as linhas (similar ao `FinanceIntroAnimation`)
+- Eixo X minimalista com 6 labels de mês (Jul–Dez)
+- Tooltip estático no último ponto: "Dez · R$ 31.4k"
 
-#### 4. Aumentar BATCH_UPSERT_SIZE
-Subir de 50 para 200 para reduzir número de roundtrips ao banco.
+#### 4. Animação aprimorada dos ícones do menu
+- Entrada: `scale(0.6) + rotateY(-30deg) → scale(1) + rotateY(0)` com cubic-bezier tipo "back-out"
+- Hover: `translateZ(8px) + scale(1.15)` no ícone, glow colorido pulsando
+- Adicionar microanimação contínua suave (float infinito, delay variado por item)
 
-### Resultado esperado
-- Redução de ~90% nas queries de UPDATE (de N individuais para N/200 em lote)
-- Processamento dentro do limite de CPU para abas com até ~2000 linhas
-- Sem impacto funcional — mesma lógica de reconciliação, apenas execução mais eficiente
+#### 5. KPIs com efeito 3D leve
+Pequena `translateZ` nos cards de Receitas/Despesas/Lucro + sombra colorida abaixo de cada um.
+
+---
+
+### Anexo 2 — Highlights "DRE", "Previsões", "Dados" com upgrade
+
+**Arquivo:** `src/pages/LandingPage.tsx` (array `highlights` linhas 34-50 + render linhas 121-134)
+
+#### 1. Atualizar conteúdo (refletindo novidades do sistema)
+Expandir de 3 para **6 highlights** em grid 2x3 (ou carrossel horizontal de pills):
+1. **DRE Inteligente** — Múltiplos modelos (LCF, Standard, Matricial) com validação automática
+2. **Previsões com IA** — Cenários Conservador/Base/Otimista, projeção de 12 meses
+3. **Cartão de Crédito** — Detecção automática de faturas e reembolsos
+4. **Conversor de Extratos** — PDFs viram CSVs prontos via OCR
+5. **Insights Premium** — 4 pilares analíticos (Saúde, Riscos, Oportunidades, Anomalias)
+6. **Dados Protegidos** — RLS + criptografia + LGPD compliant
+
+#### 2. Redesign visual de cada pill
+- Trocar `liquid-glass-compact px-4 py-3` por um card maior com:
+  - Gradiente de borda colorido (cor por categoria)
+  - Ícone num container 11x11 com **gradient + ring colorido + sombra projetada**
+  - Título mais destacado (text-sm font-bold)
+  - Descrição em 2 linhas com leading confortável
+  - Hover: leve `-translate-y-1 + scale-[1.02]` + brilho na borda
+  - Pequena tag/chip "Novo" nos itens recém-adicionados (Cartão, Conversor, Insights)
+
+#### 3. Layout responsivo
+- Mobile: stack vertical
+- Desktop: grid 2 colunas × 3 linhas (compacto, cabe ao lado do mock)
+
+---
+
+### Detalhes Técnicos
 
 | Ação | Arquivo |
 |------|---------|
-| Editar | `supabase/functions/sheets-sync-all-tabs/index.ts` |
+| Editar | `src/pages/LandingPage.tsx` |
+
+- Manter design system Liquid Glass (sem novos componentes)
+- Todas animações via Tailwind classes existentes (`animate-fade-in-up`, `animate-float`, etc.) + inline `transform` para 3D
+- Sem dependências novas — gráfico em SVG puro
+- Sem impacto no resto do sistema (alteração isolada na landing)
 
