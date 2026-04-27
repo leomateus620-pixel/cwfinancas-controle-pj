@@ -131,7 +131,7 @@ const HighlightsCarousel = () => {
     >
       {/* Card */}
       <div
-        className="relative rounded-2xl p-[1px] min-h-[140px]"
+        className="relative rounded-2xl p-[1px] min-h-[170px]"
         style={{
           background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.5)")}, transparent 60%, ${h.accent.replace(")", " / 0.25)")})`,
         }}
@@ -161,8 +161,8 @@ const HighlightsCarousel = () => {
             <div
               className="relative shrink-0"
               style={{
-                width: 132,
-                height: 96,
+                width: 200,
+                height: 150,
               }}
             >
               <AIChipPulse accent={h.accent} active={!isTransitioning} />
