@@ -39,7 +39,16 @@ const features = [
   { icon: Building2, label: "Minha Empresa", color: "hsl(217 91% 60%)" },
 ];
 
-const highlights = [
+type Highlight = {
+  icon: typeof FileText;
+  title: string;
+  description: string;
+  accent: string;
+  isNew: boolean;
+  customVisual?: "ai-chip";
+};
+
+const highlights: Highlight[] = [
   {
     icon: FileText,
     title: "DRE Inteligente",
@@ -74,6 +83,7 @@ const highlights = [
     description: "Saúde, Riscos, Oportunidades e Anomalias por IA",
     accent: "hsl(330 81% 60%)",
     isNew: true,
+    customVisual: "ai-chip",
   },
   {
     icon: ShieldCheck,
