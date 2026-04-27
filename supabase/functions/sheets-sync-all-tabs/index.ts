@@ -129,20 +129,49 @@ async function getFileMimeType(accessToken: string, fileId: string): Promise<{ m
   return res.json();
 }
 
-async function downloadXlsxWorkbook(accessToken: string, fileId: string): Promise<any> {
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+async function downloadXlsxBuffer(accessToken: string, fileId: string): Promise<Uint8Array> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) throw new Error(`Failed to download xlsx: ${res.status}`);
   const buffer = await res.arrayBuffer();
-  return XLSX.read(new Uint8Array(buffer), { type: "array" });
+  return new Uint8Array(buffer);
 }
 
-function xlsxSheetToRows(workbook: any, sheetName?: string): string[][] {
-  const target = sheetName || workbook.SheetNames[0];
-  const ws = workbook.Sheets[target];
-  if (!ws) return [];
-  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
+// Light parse: only sheet names (no cell data). Very low CPU even on large workbooks.
+function readXlsxSheetNames(buffer: Uint8Array): string[] {
+  try {
+    const wb = XLSX.read(buffer, { type: "array", bookSheets: true });
+    return wb.SheetNames || [];
+  } catch (err) {
+    console.warn(`[xlsx] readXlsxSheetNames failed: ${err instanceof Error ? err.message : "unknown"}`);
+    return [];
+  }
+}
+
+// Targeted parse: read ONE sheet only, stripping formulas/styles/dates to save CPU.
+function readXlsxSheet(buffer: Uint8Array, sheetName: string): string[][] {
+  try {
+    const wb = XLSX.read(buffer, {
+      type: "array",
+      sheets: [sheetName],
+      cellFormula: false,
+      cellHTML: false,
+      cellStyles: false,
+      cellDates: false,
+      bookDeps: false,
+      bookFiles: false,
+      bookProps: false,
+      bookVBA: false,
+      bookSheets: false,
+    });
+    const ws = wb.Sheets[sheetName];
+    if (!ws) return [];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true }) as string[][];
+  } catch (err) {
+    console.warn(`[xlsx] readXlsxSheet failed for "${sheetName}": ${err instanceof Error ? err.message : "unknown"}`);
+    return [];
+  }
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_at: string }> {
