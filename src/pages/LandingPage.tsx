@@ -156,16 +156,28 @@ const HighlightsCarousel = () => {
               background: `radial-gradient(circle at top right, ${h.accent.replace(")", " / 0.1)")}, transparent 70%)`,
             }}
           />
-          {/* Icon */}
-          <div
-            className="relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.2)")}, ${h.accent.replace(")", " / 0.06)")})`,
-              boxShadow: `0 6px 20px -6px ${h.accent.replace(")", " / 0.5)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.25)")}`,
-            }}
-          >
-            <h.icon className="w-6 h-6" style={{ color: h.accent }} />
-          </div>
+          {/* Visual: animated AI chip for "Insights Premium", icon for everyone else */}
+          {h.customVisual === "ai-chip" ? (
+            <div
+              className="relative shrink-0"
+              style={{
+                width: 132,
+                height: 96,
+              }}
+            >
+              <AIChipPulse accent={h.accent} active={!isTransitioning} />
+            </div>
+          ) : (
+            <div
+              className="relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.2)")}, ${h.accent.replace(")", " / 0.06)")})`,
+                boxShadow: `0 6px 20px -6px ${h.accent.replace(")", " / 0.5)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.25)")}`,
+              }}
+            >
+              <h.icon className="w-6 h-6" style={{ color: h.accent }} />
+            </div>
+          )}
           {/* Text */}
           <div className="text-left min-w-0 flex-1 relative">
             <div className="flex items-center gap-2 mb-1">
