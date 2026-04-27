@@ -2112,10 +2112,14 @@ Deno.serve(async (req) => {
     // ===== Detect file type =====
     const fileInfo = await getFileMimeType(accessToken!, connection.spreadsheet_id);
     const isXlsx = fileInfo.mimeType === XLSX_MIME;
-    let xlsxWorkbook: any = null;
+    let xlsxBuffer: Uint8Array | null = null;
+    let xlsxSheetNames: string[] = [];
     if (isXlsx) {
-      console.log(`[${requestId}] File is .xlsx, downloading and parsing...`);
-      xlsxWorkbook = await downloadXlsxWorkbook(accessToken!, connection.spreadsheet_id);
+      console.log(`[${requestId}] File is .xlsx, downloading buffer (lazy parse mode)...`);
+      xlsxBuffer = await downloadXlsxBuffer(accessToken!, connection.spreadsheet_id);
+      console.log(`[${requestId}] Downloaded xlsx buffer: ${xlsxBuffer.byteLength} bytes`);
+      xlsxSheetNames = readXlsxSheetNames(xlsxBuffer);
+      console.log(`[${requestId}] xlsx sheet names (light parse): ${xlsxSheetNames.length} sheets`);
     }
 
     // ===== STEP: listTabs with metadata (rowCount) =====
@@ -2125,28 +2129,28 @@ Deno.serve(async (req) => {
     let spreadsheetTitle: string;
     let allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }>;
 
-    // Cache for xlsx sheet rows to avoid re-reading the same sheet multiple times
+    // Cache for xlsx sheet rows to avoid re-parsing the same sheet multiple times
     const xlsxRowCache = new Map<string, string[][]>();
     function getCachedXlsxRows(sheetName: string): string[][] {
       if (xlsxRowCache.has(sheetName)) return xlsxRowCache.get(sheetName)!;
-      const rows = xlsxSheetToRows(xlsxWorkbook, sheetName);
+      if (!xlsxBuffer) return [];
+      const rows = readXlsxSheet(xlsxBuffer, sheetName);
       xlsxRowCache.set(sheetName, rows);
       return rows;
     }
 
-    if (xlsxWorkbook) {
+    if (xlsxBuffer) {
       spreadsheetTitle = fileInfo.name || "";
-      allSheets = xlsxWorkbook.SheetNames.map((name: string, idx: number) => {
-        const sheetRows = getCachedXlsxRows(name);
-        return {
-          properties: {
-            title: name,
-            sheetId: idx,
-            index: idx,
-            gridProperties: { rowCount: sheetRows.length || 100 },
-          },
-        };
-      });
+      // IMPORTANT: do NOT parse each sheet here — that would explode CPU on large workbooks.
+      // Use a high default rowCount; the actual row count is discovered when the sheet is read on demand.
+      allSheets = xlsxSheetNames.map((name: string, idx: number) => ({
+        properties: {
+          title: name,
+          sheetId: idx,
+          index: idx,
+          gridProperties: { rowCount: 10000 },
+        },
+      }));
     } else {
       const metaResponse = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.title,sheets.properties`,
