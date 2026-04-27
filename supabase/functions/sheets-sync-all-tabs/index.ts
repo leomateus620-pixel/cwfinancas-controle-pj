@@ -2253,7 +2253,7 @@ Deno.serve(async (req) => {
       });
 
       // ===== PAGINATED READ =====
-      const allRows = xlsxWorkbook
+      const allRows = xlsxBuffer
         ? getCachedXlsxRows(tab.title)
         : await readTabPaginated(accessToken!, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
 
@@ -2502,9 +2502,9 @@ Deno.serve(async (req) => {
         console.log(`[${requestId}] [bank-balance] tab=${tab.title} txCols=${txCols}`);
 
         let bankBalanceRows: string[][] = [];
-        if (!xlsxWorkbook && accessToken) {
+        if (!xlsxBuffer && accessToken) {
           bankBalanceRows = await readBankBalanceRange(accessToken!, connection.spreadsheet_id, tab.title, requestId);
-        } else if (xlsxWorkbook) {
+        } else if (xlsxBuffer) {
           // For xlsx: try G-I columns (indices 6-8) first, then H-J (indices 7-9)
           const giRows = allRows.map(r => [safeStr(r[6]), safeStr(r[7]), safeStr(r[8])]).filter(r => r[0] || r[1] || r[2]);
           const hjRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]).filter(r => r[0] || r[1] || r[2]);
@@ -2588,7 +2588,7 @@ Deno.serve(async (req) => {
         });
 
         // Read tab data
-        const aprRows = xlsxWorkbook
+        const aprRows = xlsxBuffer
           ? getCachedXlsxRows(aprTab.title)
           : await readTabPaginated(accessToken!, connection.spreadsheet_id, aprTab.title, aprTab.rowCount || 1000, requestId);
 
