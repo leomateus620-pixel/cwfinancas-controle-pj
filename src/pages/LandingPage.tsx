@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoFull from "@/assets/logo-full.png";
+import { AIChipPulse } from "@/components/landing/AIChipPulse";
 
 const features = [
   { icon: Home, label: "Home", color: "hsl(221 85% 53%)" },
