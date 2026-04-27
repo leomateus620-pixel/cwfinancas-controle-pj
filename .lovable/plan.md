@@ -1,87 +1,72 @@
 
-# Plano — Card "Insights Premium" com Chip de IA + Veias Pulsantes
+# Plano — Upgrade "AI Chip" para versão Premium dimensional
+
+## Diagnóstico
+
+Hoje o chip está pequeno (slot 132×96) com viewBox 240×120, sem profundidade visual e sem hierarquia de elementos. Compete em tamanho com o ícone Lucide dos outros slides ao invés de ser uma cena cinematográfica.
 
 ## O que muda
 
-Apenas o **slide "Insights Premium"** do carrossel `HighlightsCarousel` em `src/pages/LandingPage.tsx` ganha uma representação visual completamente nova no lugar do ícone estático `Sparkles`. Os outros 5 slides continuam usando o layout atual com ícone Lucide (preserva consistência do carrossel).
+### 1. Redesenho do chip — `src/components/landing/AIChipPulse.tsx`
 
-A nova cena ocupa o mesmo "slot" do ícone (área 56x56), mas se expande visualmente para preencher o card inteiro com uma rede de veias sutis ao fundo, mantendo o título/descrição/badge "Novo" intactos à direita.
+Reescrita do componente para um visual **2x maior, dimensional e premium**, mantendo a mesma API (`accent`, `active`).
 
-## Conceito visual
+**Chip central (escala 2.5x maior):**
+- Corpo 60×60 (antes 30×30) com cantos rx=11, ocupando posição dominante
+- **Bevel highlight** (gradiente vertical claro→escuro) simulando topo iluminado
+- **Painel interno embutido** mais escuro com leve sheen radial diagonal
+- **Traços de circuito** ornamentais nos 4 cantos do painel
+- **16 pinos longos** (4 por lado, antes eram 12 curtos) com sheen metálico em cada pino
+- **"AI" tipografado** no centro em fonte black, branco luminoso com `drop-shadow` colorido — substitui o ícone sparkle anterior
+- Sparkle largo desbotado **atrás** do texto AI como auréola
+- Marcador de orientação (ponto branco no canto sup-esquerdo)
+- Sombra projetada abaixo do chip
 
-Inspiração: um coração anatômico, traduzido em linguagem fintech/IA.
+**Halo e glow em camadas:**
+- **Halo atmosférico externo** (radial gradient, ~80px de raio, blur forte) que pulsa suavemente
+- **Glow interno** próximo ao chip que pulsa intensamente na sístole
+- Texto "AI" tem brilho próprio que aumenta no batimento
 
-```text
-   ╭─ veias finas saem do chip e se ramificam ─╮
-   │   ·  ·    ·          ·   ·                │
-   │     \   /    chip    \  /                 │
-   │      \ /  ┌────────┐  \/                  │
-   │   ────●───│  IA ✦  │───●────              │
-   │      / \  │ pulsa  │  /\                  │
-   │     /   \ └────────┘ /  \                 │
-   │   ·    ·    ·     ·    · ·                │
-   ╰─ pulsos de luz percorrem cada veia ──────╯
-```
+**Anel orbital:**
+- Círculo tracejado em volta do chip (raio 50) com 3 marcadores luminosos rotacionando lentamente — sensação de "sistema vivo"
 
-- **Chip central**: quadrado arredondado com gradiente rosa→magenta (mantém o `accent` `hsl(330 81% 60%)` do slide), pinos laterais como num CI real, símbolo `✦` no centro. Ele **pulsa** com sístole/diástole (ritmo ~70bpm).
-- **Veias**: 6–8 paths SVG saindo do chip em direções variadas, com curvas Bézier orgânicas (não retas), ramificando-se em "capilares" mais finos nas pontas. Stroke fino com gradiente do accent.
-- **Pulsos de luz**: pequenos círculos brilhantes que percorrem cada veia do chip até a ponta, sincronizados com o batimento. Quando o chip "bate" (sístole), N novos pulsos são emitidos; eles viajam pela veia com easing acelerado (física: como sangue jorrando), desbotam ao chegar.
-- **Glow ambiente**: o chip emite uma onda de luz radial a cada batimento (igual ECG), que se expande e desbota.
-- **Partículas atmosféricas**: 4–5 pontos de luz flutuando sutilmente no fundo do card, dão profundidade.
+**Linha de ECG:**
+- Trace estilo eletrocardiograma na parte inferior do canvas que "rola" continuamente, com opacidade pulsando junto ao batimento
 
-## Física aplicada (sem libs externas)
+**Veias enriquecidas (10 paths):**
+- 6 veias principais (stroke 1.8) + 4 capilares (stroke 1.2)
+- Distribuídas em **todas as direções** (incluindo loops superior/inferior e tendrils à esquerda) — não mais só para a direita
+- Cada batimento dispara **2 pulsos por veia principal** (antes 1) — densidade visual muito maior
+- Total de até **32 pulsos simultâneos** percorrendo a rede
 
-Tudo feito com `requestAnimationFrame` + matemática simples:
+**Shockwaves duplas:**
+- Dois anéis (um colorido, um branco) expandindo com 110ms de defasagem — efeito tipo "lub-dub" visual sincronizado com o batimento
 
-- **Batimento cardíaco**: ciclo de 850ms (≈70bpm) com curva dupla — uma sístole forte (escala chip 1.0 → 1.12 em 120ms com spring overshoot) seguida de uma sístole secundária menor (1.0 → 1.05) e diástole longa (relax). Implementado como soma de dois pulsos Gaussianos no tempo.
-- **Pulsos nas veias**: cada veia tem `pathLength` medido via `getTotalLength()`. A cada sístole, 1 pulso é injetado em cada veia com `progress = 0`. Ele avança com `velocity = base + jitter`, sofre desaceleração leve (drag) para simular resistência, e some quando `progress > 1`. Posição calculada com `path.getPointAtLength(progress * length)`.
-- **Brilho do chip**: intensidade do glow segue a derivada do batimento (mais intenso no momento da sístole), criando a sensação de "energia liberada".
-- **Onda de choque**: a cada sístole nasce um anel SVG no centro com `r=8 → 60` em 600ms, opacidade `0.6 → 0`, easing `ease-out`.
-- Tudo é **frame-based via rAF** — performático, sem CSS animations conflitantes, pausa quando o slide não está ativo (economia de CPU).
+**Partículas atmosféricas:**
+- 10 pontos de luz flutuando (antes 6), tamanhos variados, distribuídos por todo o canvas
 
-## Implementação técnica
+### 2. Slot maior no card — `src/pages/LandingPage.tsx`
 
-### Arquivo novo
+- Aumentar o slot da cena de **132×96 para 200×150**
+- Aumentar `min-h` do card de **140px para 170px** (afeta todos os slides para evitar saltos no carrossel)
+- ViewBox do SVG passa de 240×120 para **280×200** (mais espaço para veias respirarem)
 
-**`src/components/landing/AIChipPulse.tsx`** — componente isolado, props mínimas:
-```ts
-interface AIChipPulseProps {
-  accent: string;       // ex: "hsl(330 81% 60%)"
-  active: boolean;      // pausa rAF quando false (slide não visível)
-}
-```
+## Física preservada
 
-Estrutura interna:
-- `<svg viewBox="0 0 320 120">` ocupando o lado esquerdo do card (substitui o quadrado 56x56 do ícone, expande para ~140x110 com overflow visível para as veias se estenderem por baixo do texto sem competir).
-- Refs para cada `<path>` das veias para chamar `getTotalLength()` / `getPointAtLength()`.
-- Estado de pulsos guardado em `useRef<Pulse[]>` (não em state — evita re-renders por frame); aplicação direta via `ref.current.setAttribute('cx', ...)`.
-- `useEffect` inicia o `rAF`, limpa no unmount ou quando `active=false`.
-- `prefers-reduced-motion`: respeitado — quando ativo, mostra cena estática (chip + veias sem pulsos).
-
-### Edição em `LandingPage.tsx`
-
-1. Importar `AIChipPulse`.
-2. Adicionar campo opcional `customVisual?: 'ai-chip'` no objeto do slide "Insights Premium".
-3. No render do carrossel, condicionalmente: se `h.customVisual === 'ai-chip'`, renderizar `<AIChipPulse accent={h.accent} active={!isTransitioning} />` no lugar do bloco do ícone, com layout ajustado (a cena ocupa ~40% da largura do card, texto fica à direita). Os outros slides continuam idênticos.
-4. Aumentar levemente o `min-h` do card para acomodar a cena (de 120px para ~140px) — isso afeta todos os slides igualmente para evitar saltos de layout durante a transição.
-
-### Detalhes visuais
-
-- Veias: `<linearGradient>` SVG do accent (opacidade 0.7 perto do chip → 0.1 nas pontas), `stroke-width: 1.5px`, `stroke-linecap: round`, `filter: blur(0.3px)` para suavidade orgânica.
-- Pulsos: círculos `r=2.5` com `fill` branco luminoso + `filter: drop-shadow(0 0 6px accent)`; trail simulado renderizando 3 círculos por pulso em posições escalonadas com opacidade decrescente.
-- Chip: `<rect>` 32×32 arredondado com gradiente, 4 "perninhas" (rect 4×2) em cada lado, símbolo central `<text>✦</text>` ou ícone `Sparkles` SVG inline.
-- Cor de fundo das veias passa a transparente para se misturar com o `liquid-glass-compact` existente.
+Todo o sistema de física (gaussiana dupla para o batimento, drag nos pulsos, easing cúbico nas shockwaves, sort por novidade para priorizar pulsos brilhantes) é mantido e refinado:
+- Período do batimento: 880ms (~68bpm, ligeiramente mais cinematográfico que 70bpm)
+- Stagger de pulsos dentro de uma mesma veia para criar trilha
+- `prefers-reduced-motion` continua respeitado (cena estática elegante)
 
 ## Não muda
 
-- Estrutura geral do carrossel, dots de navegação, auto-advance, pausar no hover.
-- Outros 5 slides (DRE, Previsões, Cartão, Conversor, Dados Protegidos).
-- Estilo do título "Insights Premium", descrição e badge "Novo".
-- Paleta accent rosa do slide.
+- API do componente (`accent`, `active`)
+- Lógica do carrossel, dots, auto-advance
+- Outros 5 slides do carrossel
+- Texto "Insights Premium" e badge "Novo"
 
 ## Validação
 
-- Verificar visualmente o carrossel girando (passar pelo slide "Insights Premium" e voltar).
-- Confirmar que a animação **pausa** quando o slide não está visível (`active=false`) para não desperdiçar CPU.
-- Testar `prefers-reduced-motion` (cena estática).
-- Garantir que o card mantém boa legibilidade do texto à direita (veias não devem invadir a área do texto com opacidade alta).
+- Comparar visualmente com slides irmãos: o chip deve ser claramente o **elemento mais rico do carrossel**, justificando o badge "Novo"
+- Verificar que o card mantém legibilidade do texto à direita
+- Confirmar que `active=false` (durante transição) ainda pausa o rAF
