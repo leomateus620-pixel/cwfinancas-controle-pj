@@ -143,30 +143,82 @@ async function handleXlsxFile(accessToken: string, fileId: string, fileName: str
 
   const arrayBuffer = await response.arrayBuffer();
   const data = new Uint8Array(arrayBuffer);
-  const workbook = XLSX.read(data, { type: "array" });
 
-  const sheets = workbook.SheetNames.map((name: string, index: number) => ({
+  // PASS 1 — Read only sheet names (no cell content) to avoid CPU exhaustion on large workbooks.
+  let sheetNames: string[] = [];
+  try {
+    const wbMeta = XLSX.read(data, { type: "array", bookSheets: true });
+    sheetNames = wbMeta.SheetNames || [];
+  } catch (err) {
+    console.error("[handleXlsxFile] PASS 1 (bookSheets) failed:", (err as Error)?.message);
+    throw new Error(`Falha ao ler estrutura do arquivo .xlsx: ${(err as Error)?.message ?? "erro desconhecido"}`);
+  }
+
+  const sheets = sheetNames.map((name: string, index: number) => ({
     sheet_id: index,
     title: name,
     index,
   }));
 
-  const targetSheet = sheetName || workbook.SheetNames[0] || "Sheet1";
-  const worksheet = workbook.Sheets[targetSheet];
+  const targetSheet = sheetName || sheetNames[0] || "";
 
+  // PASS 2 — Parse ONLY the target sheet, limited to first 20 rows. Skip formulas / styles / dates.
   let previewValues: string[][] = [];
-  if (worksheet) {
-    const jsonRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-    previewValues = jsonRows.slice(0, 20).map((row: any[]) =>
-      row.slice(0, 26).map((cell: any) => (cell != null ? String(cell) : ""))
-    );
+  if (targetSheet) {
+    try {
+      const wb = XLSX.read(data, {
+        type: "array",
+        sheets: [targetSheet],
+        sheetRows: 20,
+        cellFormula: false,
+        cellHTML: false,
+        cellStyles: false,
+        cellDates: false,
+        cellNF: false,
+        bookDeps: false,
+        bookFiles: false,
+        bookProps: false,
+        bookVBA: false,
+      } as any);
+
+      const worksheet = wb.Sheets[targetSheet];
+      if (worksheet && worksheet["!ref"]) {
+        // Limit range to A1:Z20 to keep sheet_to_json bounded.
+        try {
+          const decoded = XLSX.utils.decode_range(worksheet["!ref"]);
+          decoded.s.r = 0;
+          decoded.s.c = 0;
+          decoded.e.r = Math.min(decoded.e.r, 19);
+          decoded.e.c = Math.min(decoded.e.c, 25);
+          worksheet["!ref"] = XLSX.utils.encode_range(decoded);
+        } catch {
+          /* keep original ref if decode fails */
+        }
+
+        const jsonRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: "",
+          blankrows: false,
+        });
+        previewValues = jsonRows.slice(0, 20).map((row: any[]) =>
+          (row || []).slice(0, 26).map((cell: any) => (cell != null ? String(cell) : ""))
+        );
+      }
+    } catch (err) {
+      // Don't fail the whole request — list of tabs is the critical payload.
+      console.error(
+        `[handleXlsxFile] PASS 2 (preview of "${targetSheet}") failed:`,
+        (err as Error)?.message
+      );
+      previewValues = [];
+    }
   }
 
   return {
     spreadsheetName: fileName || "Sem nome",
     sheets,
     previewValues,
-    usedRange: `'${targetSheet}'!A1:Z20`,
+    usedRange: targetSheet ? `'${targetSheet}'!A1:Z20` : "",
   };
 }
 
