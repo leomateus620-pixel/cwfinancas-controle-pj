@@ -2146,12 +2146,34 @@ Deno.serve(async (req) => {
     const isXlsx = fileInfo.mimeType === XLSX_MIME;
     let xlsxBuffer: Uint8Array | null = null;
     let xlsxSheetNames: string[] = [];
+    // Cache for xlsx sheet rows. Pre-populated by the fast path; lazily populated on fallback.
+    const xlsxRowCache = new Map<string, string[][]>();
+    let xlsxFastPathOk = false;
+
     if (isXlsx) {
-      console.log(`[${requestId}] File is .xlsx, downloading buffer (lazy parse mode)...`);
+      const tDl = Date.now();
+      console.log(`[${requestId}] File is .xlsx, downloading buffer...`);
       xlsxBuffer = await downloadXlsxBuffer(accessToken!, connection.spreadsheet_id);
-      console.log(`[${requestId}] Downloaded xlsx buffer: ${xlsxBuffer.byteLength} bytes`);
-      xlsxSheetNames = readXlsxSheetNames(xlsxBuffer);
-      console.log(`[${requestId}] xlsx sheet names (light parse): ${xlsxSheetNames.length} sheets`);
+      console.log(`[${requestId}] Downloaded xlsx buffer: ${xlsxBuffer.byteLength} bytes in ${Date.now() - tDl}ms`);
+
+      // === FAST PATH: parse the entire workbook once and cache every sheet ===
+      try {
+        const tParse = Date.now();
+        const full = readXlsxWorkbookFull(xlsxBuffer);
+        xlsxSheetNames = full.sheetNames;
+        for (const [name, rows] of Object.entries(full.sheets)) {
+          xlsxRowCache.set(name, rows);
+        }
+        xlsxFastPathOk = true;
+        console.log(`[${requestId}] [xlsx] full parse OK in ${Date.now() - tParse}ms (${xlsxSheetNames.length} sheets cached)`);
+      } catch (err) {
+        // === FALLBACK: workbook too large for full parse → use lazy per-sheet parse ===
+        console.warn(
+          `[${requestId}] [xlsx] full parse failed (${err instanceof Error ? err.message : "unknown"}), falling back to lazy mode`
+        );
+        xlsxSheetNames = readXlsxSheetNames(xlsxBuffer);
+        console.log(`[${requestId}] [xlsx] lazy mode: ${xlsxSheetNames.length} sheets discovered`);
+      }
     }
 
     // ===== STEP: listTabs with metadata (rowCount) =====
@@ -2161,10 +2183,9 @@ Deno.serve(async (req) => {
     let spreadsheetTitle: string;
     let allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }>;
 
-    // Cache for xlsx sheet rows to avoid re-parsing the same sheet multiple times
-    const xlsxRowCache = new Map<string, string[][]>();
     function getCachedXlsxRows(sheetName: string): string[][] {
       if (xlsxRowCache.has(sheetName)) return xlsxRowCache.get(sheetName)!;
+      // Only triggered on fallback path (fast path pre-populates the cache).
       if (!xlsxBuffer) return [];
       const rows = readXlsxSheet(xlsxBuffer, sheetName);
       xlsxRowCache.set(sheetName, rows);
@@ -2173,16 +2194,19 @@ Deno.serve(async (req) => {
 
     if (xlsxBuffer) {
       spreadsheetTitle = fileInfo.name || "";
-      // IMPORTANT: do NOT parse each sheet here — that would explode CPU on large workbooks.
-      // Use a high default rowCount; the actual row count is discovered when the sheet is read on demand.
-      allSheets = xlsxSheetNames.map((name: string, idx: number) => ({
-        properties: {
-          title: name,
-          sheetId: idx,
-          index: idx,
-          gridProperties: { rowCount: 10000 },
-        },
-      }));
+      // On fast path the actual rowCount is known; on fallback we use a high default.
+      allSheets = xlsxSheetNames.map((name: string, idx: number) => {
+        const cached = xlsxRowCache.get(name);
+        const rowCount = cached ? cached.length : 10000;
+        return {
+          properties: {
+            title: name,
+            sheetId: idx,
+            index: idx,
+            gridProperties: { rowCount },
+          },
+        };
+      });
     } else {
       const metaResponse = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.title,sheets.properties`,
