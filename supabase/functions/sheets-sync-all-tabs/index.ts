@@ -129,20 +129,49 @@ async function getFileMimeType(accessToken: string, fileId: string): Promise<{ m
   return res.json();
 }
 
-async function downloadXlsxWorkbook(accessToken: string, fileId: string): Promise<any> {
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+async function downloadXlsxBuffer(accessToken: string, fileId: string): Promise<Uint8Array> {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) throw new Error(`Failed to download xlsx: ${res.status}`);
   const buffer = await res.arrayBuffer();
-  return XLSX.read(new Uint8Array(buffer), { type: "array" });
+  return new Uint8Array(buffer);
 }
 
-function xlsxSheetToRows(workbook: any, sheetName?: string): string[][] {
-  const target = sheetName || workbook.SheetNames[0];
-  const ws = workbook.Sheets[target];
-  if (!ws) return [];
-  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as string[][];
+// Light parse: only sheet names (no cell data). Very low CPU even on large workbooks.
+function readXlsxSheetNames(buffer: Uint8Array): string[] {
+  try {
+    const wb = XLSX.read(buffer, { type: "array", bookSheets: true });
+    return wb.SheetNames || [];
+  } catch (err) {
+    console.warn(`[xlsx] readXlsxSheetNames failed: ${err instanceof Error ? err.message : "unknown"}`);
+    return [];
+  }
+}
+
+// Targeted parse: read ONE sheet only, stripping formulas/styles/dates to save CPU.
+function readXlsxSheet(buffer: Uint8Array, sheetName: string): string[][] {
+  try {
+    const wb = XLSX.read(buffer, {
+      type: "array",
+      sheets: [sheetName],
+      cellFormula: false,
+      cellHTML: false,
+      cellStyles: false,
+      cellDates: false,
+      bookDeps: false,
+      bookFiles: false,
+      bookProps: false,
+      bookVBA: false,
+      bookSheets: false,
+    });
+    const ws = wb.Sheets[sheetName];
+    if (!ws) return [];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true }) as string[][];
+  } catch (err) {
+    console.warn(`[xlsx] readXlsxSheet failed for "${sheetName}": ${err instanceof Error ? err.message : "unknown"}`);
+    return [];
+  }
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_at: string }> {
@@ -2083,10 +2112,14 @@ Deno.serve(async (req) => {
     // ===== Detect file type =====
     const fileInfo = await getFileMimeType(accessToken!, connection.spreadsheet_id);
     const isXlsx = fileInfo.mimeType === XLSX_MIME;
-    let xlsxWorkbook: any = null;
+    let xlsxBuffer: Uint8Array | null = null;
+    let xlsxSheetNames: string[] = [];
     if (isXlsx) {
-      console.log(`[${requestId}] File is .xlsx, downloading and parsing...`);
-      xlsxWorkbook = await downloadXlsxWorkbook(accessToken!, connection.spreadsheet_id);
+      console.log(`[${requestId}] File is .xlsx, downloading buffer (lazy parse mode)...`);
+      xlsxBuffer = await downloadXlsxBuffer(accessToken!, connection.spreadsheet_id);
+      console.log(`[${requestId}] Downloaded xlsx buffer: ${xlsxBuffer.byteLength} bytes`);
+      xlsxSheetNames = readXlsxSheetNames(xlsxBuffer);
+      console.log(`[${requestId}] xlsx sheet names (light parse): ${xlsxSheetNames.length} sheets`);
     }
 
     // ===== STEP: listTabs with metadata (rowCount) =====
@@ -2096,28 +2129,28 @@ Deno.serve(async (req) => {
     let spreadsheetTitle: string;
     let allSheets: Array<{ properties: { title: string; sheetId: number; index: number; gridProperties?: { rowCount?: number } } }>;
 
-    // Cache for xlsx sheet rows to avoid re-reading the same sheet multiple times
+    // Cache for xlsx sheet rows to avoid re-parsing the same sheet multiple times
     const xlsxRowCache = new Map<string, string[][]>();
     function getCachedXlsxRows(sheetName: string): string[][] {
       if (xlsxRowCache.has(sheetName)) return xlsxRowCache.get(sheetName)!;
-      const rows = xlsxSheetToRows(xlsxWorkbook, sheetName);
+      if (!xlsxBuffer) return [];
+      const rows = readXlsxSheet(xlsxBuffer, sheetName);
       xlsxRowCache.set(sheetName, rows);
       return rows;
     }
 
-    if (xlsxWorkbook) {
+    if (xlsxBuffer) {
       spreadsheetTitle = fileInfo.name || "";
-      allSheets = xlsxWorkbook.SheetNames.map((name: string, idx: number) => {
-        const sheetRows = getCachedXlsxRows(name);
-        return {
-          properties: {
-            title: name,
-            sheetId: idx,
-            index: idx,
-            gridProperties: { rowCount: sheetRows.length || 100 },
-          },
-        };
-      });
+      // IMPORTANT: do NOT parse each sheet here — that would explode CPU on large workbooks.
+      // Use a high default rowCount; the actual row count is discovered when the sheet is read on demand.
+      allSheets = xlsxSheetNames.map((name: string, idx: number) => ({
+        properties: {
+          title: name,
+          sheetId: idx,
+          index: idx,
+          gridProperties: { rowCount: 10000 },
+        },
+      }));
     } else {
       const metaResponse = await fetch(
         `https://sheets.googleapis.com/v4/spreadsheets/${connection.spreadsheet_id}?fields=properties.title,sheets.properties`,
@@ -2220,7 +2253,7 @@ Deno.serve(async (req) => {
       });
 
       // ===== PAGINATED READ =====
-      const allRows = xlsxWorkbook
+      const allRows = xlsxBuffer
         ? getCachedXlsxRows(tab.title)
         : await readTabPaginated(accessToken!, connection.spreadsheet_id, tab.title, tab.rowCount || 1000, requestId);
 
@@ -2469,9 +2502,9 @@ Deno.serve(async (req) => {
         console.log(`[${requestId}] [bank-balance] tab=${tab.title} txCols=${txCols}`);
 
         let bankBalanceRows: string[][] = [];
-        if (!xlsxWorkbook && accessToken) {
+        if (!xlsxBuffer && accessToken) {
           bankBalanceRows = await readBankBalanceRange(accessToken!, connection.spreadsheet_id, tab.title, requestId);
-        } else if (xlsxWorkbook) {
+        } else if (xlsxBuffer) {
           // For xlsx: try G-I columns (indices 6-8) first, then H-J (indices 7-9)
           const giRows = allRows.map(r => [safeStr(r[6]), safeStr(r[7]), safeStr(r[8])]).filter(r => r[0] || r[1] || r[2]);
           const hjRows = allRows.map(r => [safeStr(r[7]), safeStr(r[8]), safeStr(r[9])]).filter(r => r[0] || r[1] || r[2]);
@@ -2555,7 +2588,7 @@ Deno.serve(async (req) => {
         });
 
         // Read tab data
-        const aprRows = xlsxWorkbook
+        const aprRows = xlsxBuffer
           ? getCachedXlsxRows(aprTab.title)
           : await readTabPaginated(accessToken!, connection.spreadsheet_id, aprTab.title, aprTab.rowCount || 1000, requestId);
 
