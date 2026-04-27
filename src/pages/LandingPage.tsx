@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoFull from "@/assets/logo-full.png";
+import { AIChipPulse } from "@/components/landing/AIChipPulse";
 
 const features = [
   { icon: Home, label: "Home", color: "hsl(221 85% 53%)" },
@@ -38,7 +39,16 @@ const features = [
   { icon: Building2, label: "Minha Empresa", color: "hsl(217 91% 60%)" },
 ];
 
-const highlights = [
+type Highlight = {
+  icon: typeof FileText;
+  title: string;
+  description: string;
+  accent: string;
+  isNew: boolean;
+  customVisual?: "ai-chip";
+};
+
+const highlights: Highlight[] = [
   {
     icon: FileText,
     title: "DRE Inteligente",
@@ -73,6 +83,7 @@ const highlights = [
     description: "Saúde, Riscos, Oportunidades e Anomalias por IA",
     accent: "hsl(330 81% 60%)",
     isNew: true,
+    customVisual: "ai-chip",
   },
   {
     icon: ShieldCheck,
@@ -120,7 +131,7 @@ const HighlightsCarousel = () => {
     >
       {/* Card */}
       <div
-        className="relative rounded-2xl p-[1px] min-h-[120px]"
+        className="relative rounded-2xl p-[1px] min-h-[140px]"
         style={{
           background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.5)")}, transparent 60%, ${h.accent.replace(")", " / 0.25)")})`,
         }}
@@ -145,16 +156,28 @@ const HighlightsCarousel = () => {
               background: `radial-gradient(circle at top right, ${h.accent.replace(")", " / 0.1)")}, transparent 70%)`,
             }}
           />
-          {/* Icon */}
-          <div
-            className="relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
-            style={{
-              background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.2)")}, ${h.accent.replace(")", " / 0.06)")})`,
-              boxShadow: `0 6px 20px -6px ${h.accent.replace(")", " / 0.5)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.25)")}`,
-            }}
-          >
-            <h.icon className="w-6 h-6" style={{ color: h.accent }} />
-          </div>
+          {/* Visual: animated AI chip for "Insights Premium", icon for everyone else */}
+          {h.customVisual === "ai-chip" ? (
+            <div
+              className="relative shrink-0"
+              style={{
+                width: 132,
+                height: 96,
+              }}
+            >
+              <AIChipPulse accent={h.accent} active={!isTransitioning} />
+            </div>
+          ) : (
+            <div
+              className="relative w-14 h-14 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.2)")}, ${h.accent.replace(")", " / 0.06)")})`,
+                boxShadow: `0 6px 20px -6px ${h.accent.replace(")", " / 0.5)")}, inset 0 1px 0 ${h.accent.replace(")", " / 0.25)")}`,
+              }}
+            >
+              <h.icon className="w-6 h-6" style={{ color: h.accent }} />
+            </div>
+          )}
           {/* Text */}
           <div className="text-left min-w-0 flex-1 relative">
             <div className="flex items-center gap-2 mb-1">
