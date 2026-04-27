@@ -131,7 +131,7 @@ const HighlightsCarousel = () => {
     >
       {/* Card */}
       <div
-        className="relative rounded-2xl p-[1px] min-h-[120px]"
+        className="relative rounded-2xl p-[1px] min-h-[140px]"
         style={{
           background: `linear-gradient(135deg, ${h.accent.replace(")", " / 0.5)")}, transparent 60%, ${h.accent.replace(")", " / 0.25)")})`,
         }}
