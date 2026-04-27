@@ -150,6 +150,7 @@ function readXlsxSheetNames(buffer: Uint8Array): string[] {
 }
 
 // Targeted parse: read ONE sheet only, stripping formulas/styles/dates to save CPU.
+// Used as FALLBACK when full workbook parse fails (e.g. extremely large workbooks).
 function readXlsxSheet(buffer: Uint8Array, sheetName: string): string[][] {
   try {
     const wb = XLSX.read(buffer, {
@@ -172,6 +173,37 @@ function readXlsxSheet(buffer: Uint8Array, sheetName: string): string[][] {
     console.warn(`[xlsx] readXlsxSheet failed for "${sheetName}": ${err instanceof Error ? err.message : "unknown"}`);
     return [];
   }
+}
+
+// Fast path: parse the ENTIRE workbook once with stripped flags, then convert each
+// sheet to a 2D array. This avoids re-decompressing the .xlsx ZIP container per tab,
+// which used to add ~2s per tab (40s+ on a 20-tab workbook).
+function readXlsxWorkbookFull(
+  buffer: Uint8Array
+): { sheetNames: string[]; sheets: Record<string, string[][]> } {
+  const wb = XLSX.read(buffer, {
+    type: "array",
+    cellFormula: false,
+    cellHTML: false,
+    cellStyles: false,
+    cellDates: false,
+    bookDeps: false,
+    bookFiles: false,
+    bookProps: false,
+    bookVBA: false,
+    bookSheets: false,
+  });
+  const sheetNames = wb.SheetNames || [];
+  const sheets: Record<string, string[][]> = {};
+  for (const name of sheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws) {
+      sheets[name] = [];
+      continue;
+    }
+    sheets[name] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true }) as string[][];
+  }
+  return { sheetNames, sheets };
 }
 
 async function refreshAccessToken(refreshToken: string): Promise<{ access_token: string; expires_at: string }> {

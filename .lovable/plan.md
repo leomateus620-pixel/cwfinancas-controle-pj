@@ -1,82 +1,48 @@
 ## Problema
 
-A sincronização da planilha `Financeiro SAH 2026.xlsx` falhou com **`CPU Time exceeded`** na Edge Function `sheets-sync-all-tabs` logo após o início:
-
-```
-[f29e7bad] File is .xlsx, downloading and parsing...
-[f29e7bad] CPU Time exceeded
-```
+Após a refatoração para "lazy parsing" (uma aba por vez), a sincronização de planilhas `.xlsx` ficou **muito lenta**. Os logs mostram ~2 segundos por aba só na fase de leitura de saldos. Para 20 abas, são 40+ segundos apenas re-descompactando o ZIP do `.xlsx`.
 
 ### Causa raiz
 
-A função faz parsing pesado do workbook inteiro de uma só vez:
+A função `readXlsxSheet(buffer, sheetName)` chama `XLSX.read(buffer, { sheets: [name] })` para CADA aba. O XLSX é um arquivo ZIP — mesmo passando `sheets: [name]`, a biblioteca **descompacta o container inteiro** a cada chamada. O cache de linhas (`xlsxRowCache`) ajuda quando a mesma aba é lida 2x, mas não evita o trabalho repetido entre abas diferentes.
 
-1. `XLSX.read(buffer, { type: "array" })` — carrega **TODAS** as abas com fórmulas, estilos, datas, etc.
-2. Em seguida, `xlsxSheetToRows()` chama `XLSX.utils.sheet_to_json()` para **cada aba** (incluindo abas que nem serão importadas) só para descobrir o `rowCount` no passo de listagem.
-3. Para uma planilha com 20+ abas mensais densas, isso estoura o budget de CPU do Deno antes de processar qualquer linha.
+A versão "lazy" foi criada para resolver o erro de CPU exceeded em workbooks gigantes, mas penaliza o caso comum (workbooks pequenos/médios com muitas abas).
 
-A função `google-read-sheet-preview` já foi otimizada com a mesma técnica (two-pass + sheetRows). O sync precisa do mesmo tratamento, **mas mantendo a capacidade de ler todas as linhas das abas selecionadas**.
+## Solução: Parse único + corte por aba
 
-## Solução
+Voltar a fazer **um único `XLSX.read` do workbook completo** (rápido) e extrair as linhas de cada aba a partir do objeto já parseado em memória, **mantendo as flags de stripping** que evitam o estouro de CPU (sem fórmulas, sem styles, sem datas, sem props).
 
-**Arquivo:** `supabase/functions/sheets-sync-all-tabs/index.ts`
+Para workbooks realmente gigantes, adicionar um **fallback automático**: se o parse completo falhar (timeout/CPU), cair para o modo lazy aba-por-aba que já existe.
 
-### 1. Parsing leve do workbook (passo 1 — apenas metadados)
+### Mudanças em `supabase/functions/sheets-sync-all-tabs/index.ts`
 
-Substituir `downloadXlsxWorkbook` por duas funções:
+1. **Nova função `readXlsxWorkbookFull(buffer)`** — parseia uma única vez o workbook inteiro com flags leves (`cellFormula:false`, `cellStyles:false`, `cellDates:false`, `bookProps:false`, `bookFiles:false`, `bookVBA:false`). Retorna `{ sheetNames, sheets: Record<string, string[][]> }` já com todas as abas convertidas para arrays.
 
-- `downloadXlsxBuffer(accessToken, fileId)` — baixa apenas o `ArrayBuffer` do Drive (sem parsear).
-- `readXlsxSheetNames(buffer)` — `XLSX.read(buffer, { type: "array", bookSheets: true })` retorna só os nomes das abas. Custo de CPU mínimo.
+2. **Refatorar bloco de download/leitura (linhas ~2117-2153)**:
+   - Após `downloadXlsxBuffer`, tentar `readXlsxWorkbookFull(buffer)` dentro de um `try/catch`.
+   - Se sucesso: popular `xlsxRowCache` com TODAS as abas de uma vez (zero re-parse depois) e usar `sheetNames` para `xlsxSheetNames`.
+   - Se falhar (workbook gigante / CPU exceeded): cair para o caminho atual (`readXlsxSheetNames` + `getCachedXlsxRows` lazy aba por aba), logando `[xlsx] full parse failed, falling back to lazy mode`.
 
-### 2. Parsing sob demanda por aba (passo 2 — somente quando necessário)
+3. **`getCachedXlsxRows` permanece** como está. No caminho rápido ele só faz lookup no Map (já populado). No fallback, mantém o comportamento atual de parse sob demanda.
 
-Refatorar `getCachedXlsxRows(sheetName)` para parsear **uma aba por vez**, somente quando ela for de fato lida:
+4. **Manter o release do buffer** após processamento para liberar memória (`xlsxBuffer = null` ao fim, antes da fase de upsert pesada).
 
-```ts
-function readXlsxSheet(buffer, sheetName): string[][] {
-  const wb = XLSX.read(buffer, {
-    type: "array",
-    sheets: [sheetName],
-    cellFormula: false,
-    cellStyles: false,
-    cellHTML: false,
-    cellDates: false,
-    bookDeps: false,
-    bookFiles: false,
-    bookProps: false,
-    bookVBA: false,
-  });
-  const ws = wb.Sheets[sheetName];
-  if (!ws) return [];
-  return XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true }) as string[][];
-}
-```
-
-Cache continua existindo (`xlsxRowCache`) para evitar reparser em chamadas repetidas (ex: APR + bank balance da mesma aba).
-
-### 3. Listagem de abas sem leitura completa
-
-Na seção `if (xlsxWorkbook) { ... allSheets = xlsxWorkbook.SheetNames.map(...) }` (linha ~2108), **não** chamar `getCachedXlsxRows(name)` para descobrir `rowCount`. Em vez disso, usar um `rowCount` padrão alto (ex: 10000), igual ao fallback usado no Google Sheets quando `gridProperties` não vem. O `sheet_to_json` posterior naturalmente retorna o número real de linhas quando a aba for lida.
-
-### 4. Substituir referências a `xlsxWorkbook` 
-
-A variável `xlsxWorkbook: any` passa a ser `xlsxBuffer: Uint8Array | null`. Todos os `if (xlsxWorkbook)` viram `if (xlsxBuffer)` e `getCachedXlsxRows(name)` passa a usar `xlsxBuffer` internamente.
-
-### 5. Resiliência
-
-- `try/catch` em `readXlsxSheet`: se uma aba específica falhar no parse, logar warning e retornar `[]` (a aba é pulada, mas o sync continua).
-- Manter o timeout interno (`INTERNAL_TIMEOUT_MS`) já existente — a otimização libera CPU para que ele raramente seja atingido.
+5. **Logging adicional** para medir: tempo de download, tempo de parse completo, número de abas, bytes do buffer. Facilita diagnóstico futuro.
 
 ### Resultado esperado
 
-- Workbooks grandes (>5 MB, 20+ abas) sincronizam sem `CPU Time exceeded`.
-- Apenas as abas selecionadas pelo usuário são parseadas (não todas).
-- Comportamento idêntico para usuários (mesmas abas mensais + APR + bank balances).
-- Arquivos Google Sheets nativos não são afetados (caminho `xlsxBuffer === null`).
+- Workbooks pequenos/médios (caso comum): 1 parse só → sincronização **5-10x mais rápida** que o estado atual.
+- Workbooks gigantes que estouravam CPU: continuam funcionando via fallback lazy (sem regressão).
+- Sem mudanças no contrato da função, no schema do banco, ou nos hooks do front-end.
+
+### Validação
+
+Após o deploy:
+- Reabrir o modal e sincronizar a planilha "Financeiro SAH 2026.xlsx" (a do screenshot).
+- Confirmar pelos logs do Edge Function que o parse completo é usado (linha `[xlsx] full parse OK in Xms`).
+- Confirmar que a barra de progresso avança rapidamente entre abas, sem o delay de ~2s por aba.
 
 | Ação | Arquivo |
 |------|---------|
-| Editar `downloadXlsxWorkbook` → `downloadXlsxBuffer` + `readXlsxSheetNames` + `readXlsxSheet` | `supabase/functions/sheets-sync-all-tabs/index.ts` |
-| Refatorar uso de `xlsxWorkbook` → `xlsxBuffer` | `supabase/functions/sheets-sync-all-tabs/index.ts` |
-| Remover leitura ansiosa de todas as abas no passo `listTabs` | `supabase/functions/sheets-sync-all-tabs/index.ts` |
-| Deploy automático da função | (automático) |
+| Editar | `supabase/functions/sheets-sync-all-tabs/index.ts` |
+| Deploy | `sheets-sync-all-tabs` |
