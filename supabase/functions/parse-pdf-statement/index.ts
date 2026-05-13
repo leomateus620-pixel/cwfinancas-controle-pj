@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -554,6 +555,119 @@ Regras:
   }
 }
 
+// ── Excel statement parser ──────────────────────────────────────
+const DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
+const INSTALLMENT_RE = /^\d{1,2}\/\d{1,2}$/;
+const EXCEL_NOISE_RE = /^(total|resumo|despesas no|cartão:|cartao:|histórico|historico|extrato|associado|cooperativa|conta corrente|valor total|pagamento m[ií]nimo|situação|data de vencimento|n[aã]o existem|encargos|pagamentos\s*\/|cabeçalho|valor \(us|valor \(r|data\b|descri[cç][aã]o|parcela)/i;
+
+function isExcelNoise(cells: string[]): boolean {
+  const joined = cells.filter(Boolean).join(" ").trim();
+  if (!joined) return true;
+  if (EXCEL_NOISE_RE.test(joined)) return true;
+  // Header rows: only contains "Data", "Descrição", "Valor", "Parcela"
+  return false;
+}
+
+function cellToString(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number") return String(v);
+  return String(v).trim();
+}
+
+function parseExcelStatement(rows: string[][], type: DocType): ParsedTransaction[] {
+  const out: ParsedTransaction[] = [];
+  let rowIdx = 0;
+  let currentCardHolder = "";
+
+  for (const rawRow of rows) {
+    const cells = rawRow.map(cellToString);
+    const joined = cells.filter(Boolean).join(" | ").trim();
+
+    // Track current card holder for context (Sicredi format)
+    const cardMatch = joined.match(/cart[aã]o:\s*([\d.X]+)\s*-\s*(.+?)(?:\s*\||$)/i);
+    if (cardMatch) {
+      currentCardHolder = cardMatch[2].trim();
+      continue;
+    }
+
+    if (isExcelNoise(cells)) continue;
+
+    // Find date cell
+    let dateIso: string | null = null;
+    let dateIdx = -1;
+    for (let i = 0; i < cells.length; i++) {
+      const m = cells[i].match(DATE_RE);
+      if (m) {
+        const dd = m[1].padStart(2, "0");
+        const mm = m[2].padStart(2, "0");
+        const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+        dateIso = `${yyyy}-${mm}-${dd}`;
+        dateIdx = i;
+        break;
+      }
+    }
+
+    // Find a numeric/currency cell as the amount (prefer last non-empty cell)
+    let amount: number | null = null;
+    let amountIdx = -1;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const c = cells[i];
+      if (!c) continue;
+      if (i === dateIdx) continue;
+      if (INSTALLMENT_RE.test(c)) continue;
+      // Must contain at least one digit and look numeric
+      if (!/\d/.test(c)) continue;
+      // skip cells that look like dates already handled or pure text
+      if (DATE_RE.test(c)) continue;
+      const v = parseValue(c);
+      if (v !== null && Math.abs(v) > 0.001) {
+        amount = v;
+        amountIdx = i;
+        break;
+      }
+    }
+
+    if (amount === null || !dateIso) continue;
+
+    // Build description from remaining cells
+    const descParts: string[] = [];
+    for (let i = 0; i < cells.length; i++) {
+      if (i === dateIdx || i === amountIdx) continue;
+      const c = cells[i];
+      if (!c) continue;
+      if (INSTALLMENT_RE.test(c)) {
+        descParts.push(c);
+        continue;
+      }
+      descParts.push(c);
+    }
+    let description = descParts.join(" ").replace(/\s+/g, " ").trim();
+    if (!description && currentCardHolder) description = currentCardHolder;
+    if (!description) continue;
+    if (description.length < 2) continue;
+
+    // For credit card: skip the "Pagamento" rows? No — keep them as negatives (they are credits to invoice)
+    out.push({
+      date: dateIso,
+      description: currentCardHolder && type === "credit_card"
+        ? `${description} [${currentCardHolder}]`
+        : description,
+      amount,
+      original_amount: Math.abs(amount),
+      row_index: rowIdx++,
+    });
+  }
+
+  return out;
+}
+
+function isExcelFile(filename: string, mime: string): boolean {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return true;
+  if (mime.includes("spreadsheetml") || mime.includes("ms-excel")) return true;
+  return false;
+}
+
 // ── Main handler ────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -583,8 +697,12 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Arquivo e upload_id são obrigatórios" }, 400);
     }
 
-    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
-      return jsonResponse({ error: "Apenas arquivos PDF são aceitos" }, 400);
+    const lowerName = file.name.toLowerCase();
+    const isPdf = lowerName.endsWith(".pdf") || file.type === "application/pdf";
+    const isExcel = isExcelFile(file.name, file.type || "");
+
+    if (!isPdf && !isExcel) {
+      return jsonResponse({ error: "Apenas arquivos PDF, XLS ou XLSX são aceitos" }, 400);
     }
 
     await supabase
@@ -595,7 +713,82 @@ Deno.serve(async (req) => {
 
     const buffer = new Uint8Array(await file.arrayBuffer());
 
-    // Try text extraction first
+    // ── Excel branch ─────────────────────────────────────────────
+    if (isExcel) {
+      let transactions: ParsedTransaction[] = [];
+      let detectedType: DocType = "unknown";
+      let joinedText = "";
+      try {
+        const wb = XLSX.read(buffer, { type: "array" });
+        const allRows: string[][] = [];
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
+          for (const r of rows) {
+            allRows.push(r.map((c) => (c === null || c === undefined ? "" : String(c))));
+          }
+          allRows.push([]);
+        }
+        joinedText = allRows.map((r) => r.join(" ")).join("\n");
+        detectedType = manualType === "bank" || manualType === "credit_card"
+          ? manualType
+          : classifyDocument(joinedText);
+        if (detectedType === "unknown") detectedType = "credit_card"; // sane default for cards like Sicredi
+        transactions = parseExcelStatement(allRows, detectedType);
+        console.log(`Excel parsed: ${transactions.length} transactions, type=${detectedType}, sheets=${wb.SheetNames.length}`);
+      } catch (e) {
+        console.error("Excel parse failed:", e);
+        await supabase.from("pdf_statement_uploads").update({
+          status: "error",
+          error_message: "Falha ao ler o arquivo Excel",
+        }).eq("id", uploadId);
+        return jsonResponse({ error: "Falha ao ler o arquivo Excel" }, 500);
+      }
+
+      const ext = lowerName.endsWith(".xlsx") ? "xlsx" : "xls";
+      const storagePath = `${user.id}/${uploadId}.${ext}`;
+      await supabase.storage.from("pdf-uploads").upload(storagePath, buffer, {
+        contentType: file.type || "application/vnd.ms-excel",
+        upsert: true,
+      });
+
+      await supabase.from("pdf_statement_uploads").update({
+        status: transactions.length > 0 ? "done" : "error",
+        detected_type: detectedType,
+        file_path: storagePath,
+        transaction_count: transactions.length,
+        error_message: transactions.length === 0 ? "Nenhuma transação encontrada no Excel" : null,
+      }).eq("id", uploadId);
+
+      if (transactions.length > 0) {
+        const rows = transactions.map((t) => ({
+          upload_id: uploadId,
+          user_id: user.id,
+          row_index: t.row_index,
+          date: t.date,
+          description: t.description,
+          amount: t.amount,
+          original_amount: t.original_amount,
+          is_valid: true,
+        }));
+        for (let i = 0; i < rows.length; i += 500) {
+          await supabase.from("pdf_parsed_transactions").insert(rows.slice(i, i + 500));
+        }
+      }
+
+      return jsonResponse({
+        detected_type: detectedType,
+        transactions,
+        ocr_used: false,
+        stats: {
+          total_lines: joinedText.split("\n").length,
+          valid_transactions: transactions.length,
+          skipped: 0,
+        },
+      });
+    }
+
+    // ── PDF branch (original) ────────────────────────────────────
     let text = "";
     try {
       text = await extractTextFromPdf(buffer);
