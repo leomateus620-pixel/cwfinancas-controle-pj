@@ -752,6 +752,15 @@ Deno.serve(async (req) => {
         upsert: true,
       });
 
+      // Convenção CC: gastos negativos, estornos/pagamentos positivos.
+      if (detectedType === "credit_card") {
+        for (const t of transactions) {
+          if (typeof t.amount === "number" && t.amount !== 0) {
+            t.amount = -t.amount;
+          }
+        }
+      }
+
       await supabase.from("pdf_statement_uploads").update({
         status: transactions.length > 0 ? "done" : "error",
         detected_type: detectedType,
