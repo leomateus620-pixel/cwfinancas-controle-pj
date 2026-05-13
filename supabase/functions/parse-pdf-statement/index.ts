@@ -870,6 +870,16 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Convenção CC: gastos negativos, estornos/pagamentos positivos.
+    // Aplica-se SOMENTE quando o documento foi classificado como credit_card.
+    if (detectedType === "credit_card") {
+      for (const t of transactions) {
+        if (typeof t.amount === "number" && t.amount !== 0) {
+          t.amount = -t.amount;
+        }
+      }
+    }
+
     console.log(`Final: ${transactions.length} transactions, type=${detectedType}, ocr=${ocrUsed}`);
 
     // Save to storage
