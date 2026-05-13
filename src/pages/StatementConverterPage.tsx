@@ -105,8 +105,12 @@ export default function StatementConverterPage() {
 
   // ── Process file ───────────────────────────────────────────
   const processFile = useCallback(async (file: File, manualType?: DocType) => {
-    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
-      toast.error("Apenas arquivos PDF são aceitos");
+    const lower = file.name.toLowerCase();
+    const isPdf = lower.endsWith(".pdf") || file.type === "application/pdf";
+    const isExcel = lower.endsWith(".xlsx") || lower.endsWith(".xls") ||
+      file.type.includes("spreadsheetml") || file.type.includes("ms-excel");
+    if (!isPdf && !isExcel) {
+      toast.error("Apenas arquivos PDF, XLS ou XLSX são aceitos");
       return;
     }
 
