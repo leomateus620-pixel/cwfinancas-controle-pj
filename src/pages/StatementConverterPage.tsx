@@ -304,20 +304,23 @@ export default function StatementConverterPage() {
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
       >
-        <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" multiple className="hidden" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple className="hidden" onChange={handleFileChange} />
         <div className="p-4 rounded-full bg-primary/10 border border-primary/20">
           <Upload className={`w-8 h-8 ${isDragging ? "text-primary animate-bounce" : "text-primary/70"}`} />
         </div>
         <div className="text-center">
-          <p className="text-foreground/80 font-medium">Arraste seu PDF aqui ou clique para selecionar</p>
-          <p className="text-muted-foreground text-sm mt-1">Aceita extratos bancários e faturas de cartão de crédito</p>
+          <p className="text-foreground/80 font-medium">Arraste seu PDF ou Excel aqui ou clique para selecionar</p>
+          <p className="text-muted-foreground text-sm mt-1">Aceita PDF, XLS e XLSX (extratos bancários e faturas de cartão)</p>
         </div>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-2 mt-1 flex-wrap justify-center">
           <Badge variant="outline" className="text-[10px] gap-1 border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
             <Landmark className="w-3 h-3" /> Bancário
           </Badge>
           <Badge variant="outline" className="text-[10px] gap-1 border-violet-500/30 text-violet-600 dark:text-violet-400">
             <CreditCard className="w-3 h-3" /> Cartão
+          </Badge>
+          <Badge variant="outline" className="text-[10px] gap-1 border-blue-500/30 text-blue-600 dark:text-blue-400">
+            <FileText className="w-3 h-3" /> Excel
           </Badge>
           <Badge variant="outline" className="text-[10px] gap-1 border-amber-500/30 text-amber-600 dark:text-amber-400">
             <Sparkles className="w-3 h-3" /> OCR Inteligente
