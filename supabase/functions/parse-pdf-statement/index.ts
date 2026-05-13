@@ -697,8 +697,12 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Arquivo e upload_id são obrigatórios" }, 400);
     }
 
-    if (!file.name.toLowerCase().endsWith(".pdf") && file.type !== "application/pdf") {
-      return jsonResponse({ error: "Apenas arquivos PDF são aceitos" }, 400);
+    const lowerName = file.name.toLowerCase();
+    const isPdf = lowerName.endsWith(".pdf") || file.type === "application/pdf";
+    const isExcel = isExcelFile(file.name, file.type || "");
+
+    if (!isPdf && !isExcel) {
+      return jsonResponse({ error: "Apenas arquivos PDF, XLS ou XLSX são aceitos" }, 400);
     }
 
     await supabase
@@ -709,7 +713,82 @@ Deno.serve(async (req) => {
 
     const buffer = new Uint8Array(await file.arrayBuffer());
 
-    // Try text extraction first
+    // ── Excel branch ─────────────────────────────────────────────
+    if (isExcel) {
+      let transactions: ParsedTransaction[] = [];
+      let detectedType: DocType = "unknown";
+      let joinedText = "";
+      try {
+        const wb = XLSX.read(buffer, { type: "array" });
+        const allRows: string[][] = [];
+        for (const sheetName of wb.SheetNames) {
+          const ws = wb.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" }) as unknown[][];
+          for (const r of rows) {
+            allRows.push(r.map((c) => (c === null || c === undefined ? "" : String(c))));
+          }
+          allRows.push([]);
+        }
+        joinedText = allRows.map((r) => r.join(" ")).join("\n");
+        detectedType = manualType === "bank" || manualType === "credit_card"
+          ? manualType
+          : classifyDocument(joinedText);
+        if (detectedType === "unknown") detectedType = "credit_card"; // sane default for cards like Sicredi
+        transactions = parseExcelStatement(allRows, detectedType);
+        console.log(`Excel parsed: ${transactions.length} transactions, type=${detectedType}, sheets=${wb.SheetNames.length}`);
+      } catch (e) {
+        console.error("Excel parse failed:", e);
+        await supabase.from("pdf_statement_uploads").update({
+          status: "error",
+          error_message: "Falha ao ler o arquivo Excel",
+        }).eq("id", uploadId);
+        return jsonResponse({ error: "Falha ao ler o arquivo Excel" }, 500);
+      }
+
+      const ext = lowerName.endsWith(".xlsx") ? "xlsx" : "xls";
+      const storagePath = `${user.id}/${uploadId}.${ext}`;
+      await supabase.storage.from("pdf-uploads").upload(storagePath, buffer, {
+        contentType: file.type || "application/vnd.ms-excel",
+        upsert: true,
+      });
+
+      await supabase.from("pdf_statement_uploads").update({
+        status: transactions.length > 0 ? "done" : "error",
+        detected_type: detectedType,
+        file_path: storagePath,
+        transaction_count: transactions.length,
+        error_message: transactions.length === 0 ? "Nenhuma transação encontrada no Excel" : null,
+      }).eq("id", uploadId);
+
+      if (transactions.length > 0) {
+        const rows = transactions.map((t) => ({
+          upload_id: uploadId,
+          user_id: user.id,
+          row_index: t.row_index,
+          date: t.date,
+          description: t.description,
+          amount: t.amount,
+          original_amount: t.original_amount,
+          is_valid: true,
+        }));
+        for (let i = 0; i < rows.length; i += 500) {
+          await supabase.from("pdf_parsed_transactions").insert(rows.slice(i, i + 500));
+        }
+      }
+
+      return jsonResponse({
+        detected_type: detectedType,
+        transactions,
+        ocr_used: false,
+        stats: {
+          total_lines: joinedText.split("\n").length,
+          valid_transactions: transactions.length,
+          skipped: 0,
+        },
+      });
+    }
+
+    // ── PDF branch (original) ────────────────────────────────────
     let text = "";
     try {
       text = await extractTextFromPdf(buffer);
