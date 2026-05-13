@@ -1,72 +1,72 @@
 
-# Plano — Upgrade "AI Chip" para versão Premium dimensional
+## Objetivo
 
-## Diagnóstico
+Permitir que o Conversor de Extratos aceite, além de PDFs, arquivos Excel (.xls e .xlsx) — incluindo o formato HTML-disfarçado-de-.xls que a Sicredi exporta — e validar o fluxo com a planilha anexada (fatura Sicredi Visa Empresarial).
 
-Hoje o chip está pequeno (slot 132×96) com viewBox 240×120, sem profundidade visual e sem hierarquia de elementos. Compete em tamanho com o ícone Lucide dos outros slides ao invés de ser uma cena cinematográfica.
+## Mudanças
 
-## O que muda
+### 1. Frontend — `src/pages/StatementConverterPage.tsx`
+- Aceitar `.xls`, `.xlsx` no `<input>` e no drag-and-drop (`accept=".pdf,.xls,.xlsx,..."`).
+- Remover o bloqueio "Apenas arquivos PDF são aceitos" no `processFile` — passar a validar contra a lista expandida (pdf/xls/xlsx).
+- Ajustar textos da zona de upload: "Arraste seu PDF ou Excel aqui…" e adicionar badge "Excel".
+- Ajustar `exportCSV` / `exportExcel` para usar a extensão real do arquivo (substituir `.pdf|.xls|.xlsx` no nome de saída).
+- Storage: salvar Excel no mesmo bucket `pdf-uploads` mantendo o caminho `{user}/{upload_id}.{ext}` — sem alteração de schema.
 
-### 1. Redesenho do chip — `src/components/landing/AIChipPulse.tsx`
+### 2. Backend — `supabase/functions/parse-pdf-statement/index.ts`
+- Aceitar arquivos com extensão `.xls`/`.xlsx` (ou MIME Excel) além de PDF.
+- Detectar tipo do arquivo no início do handler. Se for Excel:
+  - Importar SheetJS via `npm:xlsx@0.18.5` (já compatível com Deno) — lê tanto XLSX binário quanto HTML-as-XLS (caso Sicredi).
+  - Converter cada aba para `sheet_to_json(ws, { header: 1 })` (matriz de células).
+  - Rodar um **parser estruturado dedicado** (`parseExcelStatement`) que:
+    1. Achata todas as linhas em texto para reaproveitar `classifyDocument` (decide bank vs credit_card).
+    2. Em modo `credit_card`: percorre linhas detectando blocos `Cartão: …` (Sicredi); para cada linha tenta extrair `[data DD/MM/YYYY] [descrição] [parcela XX/YY?] [valor]`. Ignora linhas de cabeçalho/total/resumo.
+    3. Em modo `bank`: tenta o mesmo padrão genérico (data, descrição, valor numérico final) por linha.
+    4. Trata negativos (valor com `-` prefixo, sufixo, ou parênteses) — reaproveitar `parseValue` existente.
+  - Se o parser estruturado retornar 0 transações, faz fallback: junta as linhas em texto e roda `parseCreditCardStatement`/`parseBankStatement` existentes.
+- Pular o caminho de OCR-AI quando for Excel (não há páginas para renderizar).
+- Salvar buffer no storage com `contentType` e extensão corretos.
+- `pdf_statement_uploads.file_path` passa a guardar a extensão real.
 
-Reescrita do componente para um visual **2x maior, dimensional e premium**, mantendo a mesma API (`accent`, `active`).
+### 3. Validação com a planilha anexada (Sicredi)
+- Após implementar, rodar manualmente o upload no preview com o `.xls` anexado.
+- Resultado esperado: detecção `credit_card`, ~47 transações extraídas (3 blocos de cartão), com pagamentos negativos preservados (ex.: `Pagamento -4.566,44`) e parcelados marcados na descrição (`02/12`, `06/12` etc.).
+- Conferir via console/network logs e a tabela renderizada na página.
 
-**Chip central (escala 2.5x maior):**
-- Corpo 60×60 (antes 30×30) com cantos rx=11, ocupando posição dominante
-- **Bevel highlight** (gradiente vertical claro→escuro) simulando topo iluminado
-- **Painel interno embutido** mais escuro com leve sheen radial diagonal
-- **Traços de circuito** ornamentais nos 4 cantos do painel
-- **16 pinos longos** (4 por lado, antes eram 12 curtos) com sheen metálico em cada pino
-- **"AI" tipografado** no centro em fonte black, branco luminoso com `drop-shadow` colorido — substitui o ícone sparkle anterior
-- Sparkle largo desbotado **atrás** do texto AI como auréola
-- Marcador de orientação (ponto branco no canto sup-esquerdo)
-- Sombra projetada abaixo do chip
+## Detalhes técnicos
 
-**Halo e glow em camadas:**
-- **Halo atmosférico externo** (radial gradient, ~80px de raio, blur forte) que pulsa suavemente
-- **Glow interno** próximo ao chip que pulsa intensamente na sístole
-- Texto "AI" tem brilho próprio que aumenta no batimento
+```text
+Fluxo Excel (novo)
+─────────────────
+upload (.xls/.xlsx)
+   │
+   ▼
+detectExt → "excel"
+   │
+   ▼
+XLSX.read(buffer)  ← SheetJS (lê HTML-as-xls da Sicredi)
+   │
+   ▼
+sheet_to_json header:1  → string[][]
+   │
+   ├── classifyDocument(joinedText)  → bank | credit_card
+   │
+   └── parseExcelStatement(rows, type)
+         │
+         ▼
+   ParsedTransaction[]   (mesmo shape do PDF)
+         │
+         ▼
+   insert pdf_parsed_transactions  (reuso)
+```
 
-**Anel orbital:**
-- Círculo tracejado em volta do chip (raio 50) com 3 marcadores luminosos rotacionando lentamente — sensação de "sistema vivo"
+Regex chave do parser estruturado (linha de transação Sicredi):
+- Data: `^(\d{2}/\d{2}/\d{4})$`
+- Parcela: `^\d{2}/\d{2}$`
+- Valor: `parseValue` (já existe — suporta `-4.566,44`, `1.979,82`, `(123,45)`).
 
-**Linha de ECG:**
-- Trace estilo eletrocardiograma na parte inferior do canvas que "rola" continuamente, com opacidade pulsando junto ao batimento
+Linhas a ignorar: `Total R$`, `Resumo`, `Despesas no`, `Cartão:`, `Não existem lançamentos`, cabeçalhos `Data/Descrição/Valor`.
 
-**Veias enriquecidas (10 paths):**
-- 6 veias principais (stroke 1.8) + 4 capilares (stroke 1.2)
-- Distribuídas em **todas as direções** (incluindo loops superior/inferior e tendrils à esquerda) — não mais só para a direita
-- Cada batimento dispara **2 pulsos por veia principal** (antes 1) — densidade visual muito maior
-- Total de até **32 pulsos simultâneos** percorrendo a rede
-
-**Shockwaves duplas:**
-- Dois anéis (um colorido, um branco) expandindo com 110ms de defasagem — efeito tipo "lub-dub" visual sincronizado com o batimento
-
-**Partículas atmosféricas:**
-- 10 pontos de luz flutuando (antes 6), tamanhos variados, distribuídos por todo o canvas
-
-### 2. Slot maior no card — `src/pages/LandingPage.tsx`
-
-- Aumentar o slot da cena de **132×96 para 200×150**
-- Aumentar `min-h` do card de **140px para 170px** (afeta todos os slides para evitar saltos no carrossel)
-- ViewBox do SVG passa de 240×120 para **280×200** (mais espaço para veias respirarem)
-
-## Física preservada
-
-Todo o sistema de física (gaussiana dupla para o batimento, drag nos pulsos, easing cúbico nas shockwaves, sort por novidade para priorizar pulsos brilhantes) é mantido e refinado:
-- Período do batimento: 880ms (~68bpm, ligeiramente mais cinematográfico que 70bpm)
-- Stagger de pulsos dentro de uma mesma veia para criar trilha
-- `prefers-reduced-motion` continua respeitado (cena estática elegante)
-
-## Não muda
-
-- API do componente (`accent`, `active`)
-- Lógica do carrossel, dots, auto-advance
-- Outros 5 slides do carrossel
-- Texto "Insights Premium" e badge "Novo"
-
-## Validação
-
-- Comparar visualmente com slides irmãos: o chip deve ser claramente o **elemento mais rico do carrossel**, justificando o badge "Novo"
-- Verificar que o card mantém legibilidade do texto à direita
-- Confirmar que `active=false` (durante transição) ainda pausa o rAF
+## Fora de escopo
+- Não criar tabelas novas, não alterar RLS.
+- Não mudar export (CSV/Excel já existentes seguem iguais, só ajustando nome).
+- Não tocar no detector de cartão de crédito do módulo principal — esta mudança é só do conversor.
