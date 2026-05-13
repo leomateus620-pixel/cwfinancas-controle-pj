@@ -237,7 +237,7 @@ export default function StatementConverterPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = upload.file_name.replace(".pdf", "") + ".csv";
+    a.download = upload.file_name.replace(/\.(pdf|xls|xlsx)$/i, "") + ".csv";
     a.click();
     URL.revokeObjectURL(url);
     toast.success("CSV exportado!");
