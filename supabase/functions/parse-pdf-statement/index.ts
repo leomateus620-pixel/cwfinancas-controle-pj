@@ -627,7 +627,7 @@ function parseExcelStatement(rows: string[][], type: DocType): ParsedTransaction
       }
     }
 
-    if (amount === null) continue;
+    if (amount === null || !dateIso) continue;
 
     // Build description from remaining cells
     const descParts: string[] = [];
