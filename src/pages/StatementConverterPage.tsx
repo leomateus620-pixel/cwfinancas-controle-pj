@@ -260,7 +260,7 @@ export default function StatementConverterPage() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Extrato");
-    XLSX.writeFile(wb, upload.file_name.replace(".pdf", "") + ".xlsx");
+    XLSX.writeFile(wb, upload.file_name.replace(/\.(pdf|xls|xlsx)$/i, "") + ".xlsx");
     toast.success("Excel exportado!");
   }, []);
 
