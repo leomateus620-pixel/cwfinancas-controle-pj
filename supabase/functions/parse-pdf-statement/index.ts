@@ -555,6 +555,119 @@ Regras:
   }
 }
 
+// ── Excel statement parser ──────────────────────────────────────
+const DATE_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
+const INSTALLMENT_RE = /^\d{1,2}\/\d{1,2}$/;
+const EXCEL_NOISE_RE = /^(total|resumo|despesas no|cartão:|cartao:|histórico|historico|extrato|associado|cooperativa|conta corrente|valor total|pagamento m[ií]nimo|situação|data de vencimento|n[aã]o existem|encargos|pagamentos\s*\/|cabeçalho|valor \(us|valor \(r|data\b|descri[cç][aã]o|parcela)/i;
+
+function isExcelNoise(cells: string[]): boolean {
+  const joined = cells.filter(Boolean).join(" ").trim();
+  if (!joined) return true;
+  if (EXCEL_NOISE_RE.test(joined)) return true;
+  // Header rows: only contains "Data", "Descrição", "Valor", "Parcela"
+  return false;
+}
+
+function cellToString(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number") return String(v);
+  return String(v).trim();
+}
+
+function parseExcelStatement(rows: string[][], type: DocType): ParsedTransaction[] {
+  const out: ParsedTransaction[] = [];
+  let rowIdx = 0;
+  let currentCardHolder = "";
+
+  for (const rawRow of rows) {
+    const cells = rawRow.map(cellToString);
+    const joined = cells.filter(Boolean).join(" | ").trim();
+
+    // Track current card holder for context (Sicredi format)
+    const cardMatch = joined.match(/cart[aã]o:\s*([\d.X]+)\s*-\s*(.+?)(?:\s*\||$)/i);
+    if (cardMatch) {
+      currentCardHolder = cardMatch[2].trim();
+      continue;
+    }
+
+    if (isExcelNoise(cells)) continue;
+
+    // Find date cell
+    let dateIso: string | null = null;
+    let dateIdx = -1;
+    for (let i = 0; i < cells.length; i++) {
+      const m = cells[i].match(DATE_RE);
+      if (m) {
+        const dd = m[1].padStart(2, "0");
+        const mm = m[2].padStart(2, "0");
+        const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+        dateIso = `${yyyy}-${mm}-${dd}`;
+        dateIdx = i;
+        break;
+      }
+    }
+
+    // Find a numeric/currency cell as the amount (prefer last non-empty cell)
+    let amount: number | null = null;
+    let amountIdx = -1;
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const c = cells[i];
+      if (!c) continue;
+      if (i === dateIdx) continue;
+      if (INSTALLMENT_RE.test(c)) continue;
+      // Must contain at least one digit and look numeric
+      if (!/\d/.test(c)) continue;
+      // skip cells that look like dates already handled or pure text
+      if (DATE_RE.test(c)) continue;
+      const v = parseValue(c);
+      if (v !== null && Math.abs(v) > 0.001) {
+        amount = v;
+        amountIdx = i;
+        break;
+      }
+    }
+
+    if (amount === null) continue;
+
+    // Build description from remaining cells
+    const descParts: string[] = [];
+    for (let i = 0; i < cells.length; i++) {
+      if (i === dateIdx || i === amountIdx) continue;
+      const c = cells[i];
+      if (!c) continue;
+      if (INSTALLMENT_RE.test(c)) {
+        descParts.push(c);
+        continue;
+      }
+      descParts.push(c);
+    }
+    let description = descParts.join(" ").replace(/\s+/g, " ").trim();
+    if (!description && currentCardHolder) description = currentCardHolder;
+    if (!description) continue;
+    if (description.length < 2) continue;
+
+    // For credit card: skip the "Pagamento" rows? No — keep them as negatives (they are credits to invoice)
+    out.push({
+      date: dateIso,
+      description: currentCardHolder && type === "credit_card"
+        ? `${description} [${currentCardHolder}]`
+        : description,
+      amount,
+      original_amount: Math.abs(amount),
+      row_index: rowIdx++,
+    });
+  }
+
+  return out;
+}
+
+function isExcelFile(filename: string, mime: string): boolean {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".xlsx") || lower.endsWith(".xls")) return true;
+  if (mime.includes("spreadsheetml") || mime.includes("ms-excel")) return true;
+  return false;
+}
+
 // ── Main handler ────────────────────────────────────────────────
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
