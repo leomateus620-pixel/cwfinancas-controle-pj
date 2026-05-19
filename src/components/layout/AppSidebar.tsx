@@ -62,6 +62,15 @@ const toolsNavItems = [
   { title: "Conversor de Extratos", url: "/statement-converter", icon: FileDown },
 ];
 
+const demandsNavItems = [
+  { title: "Dashboard", url: "/demands/dashboard", icon: LayoutGrid },
+  { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
+  { title: "Recebidas", url: "/demands", icon: Inbox },
+  { title: "Aprovações Pendentes", url: "/demands/approvals", icon: CheckSquare },
+  { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
+  { title: "Configurações", url: "/demands/settings", icon: Sliders },
+];
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
