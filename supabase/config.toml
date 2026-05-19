@@ -62,3 +62,15 @@ verify_jwt = false
 
 [functions.parse-pdf-statement]
 verify_jwt = false
+
+[functions.asana-create-task]
+verify_jwt = false
+
+[functions.asana-update-task]
+verify_jwt = false
+
+[functions.asana-retry-sync]
+verify_jwt = false
+
+[functions.asana-test-connection]
+verify_jwt = false
