@@ -1,4 +1,5 @@
-import { Search, Bell, Download, Menu, LogOut, Settings } from "lucide-react";
+import { Search, Download, Menu, LogOut, Settings } from "lucide-react";
+import { NotificationsBell } from "@/components/notifications/NotificationsBell";
 import { useNavigate } from "react-router-dom";
 import { GlobalDateRangeFilter } from "./GlobalDateRangeFilter";
 import { Button } from "@/components/ui/button";
@@ -81,10 +82,7 @@ export function DashboardHeader() {
           </DropdownMenu>
 
           {/* Notifications */}
-          <Button variant="ghost" size="icon" className="relative rounded-xl hover:bg-white/50 h-9 w-9 transition-corporate">
-            <Bell className="w-5 h-5 text-muted-foreground" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full shadow-glow-primary" />
-          </Button>
+          <NotificationsBell />
 
           {/* User Menu */}
           <DropdownMenu>

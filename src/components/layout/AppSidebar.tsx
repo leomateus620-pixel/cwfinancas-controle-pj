@@ -14,7 +14,13 @@ import {
   ClipboardList,
   Building2,
   CreditCard,
-  FileDown
+  FileDown,
+  Inbox,
+  PlusCircle,
+  CheckSquare,
+  FolderOpen,
+  Sliders,
+  LayoutGrid,
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
@@ -54,6 +60,15 @@ const toolsNavItems = [
   { title: "Upload de Dados", url: "/upload", icon: Upload },
   { title: "Insights IA", url: "/insights", icon: Sparkles },
   { title: "Conversor de Extratos", url: "/statement-converter", icon: FileDown },
+];
+
+const demandsNavItems = [
+  { title: "Dashboard", url: "/demands/dashboard", icon: LayoutGrid },
+  { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
+  { title: "Recebidas", url: "/demands", icon: Inbox },
+  { title: "Aprovações Pendentes", url: "/demands/approvals", icon: CheckSquare },
+  { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
+  { title: "Configurações", url: "/demands/settings", icon: Sliders },
 ];
 
 export function AppSidebar() {
@@ -122,6 +137,18 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
               {mainNavItems.map(renderNavItem)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Demandas Financeiras */}
+        <SidebarGroup className="mt-6">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-foreground/40 uppercase tracking-wider px-3 mb-3">
+            Demandas Financeiras
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="space-y-1">
+              {demandsNavItems.map(renderNavItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

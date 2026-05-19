@@ -905,6 +905,36 @@ export type Database = {
           },
         ]
       }
+      financial_category_rules: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          is_active: boolean
+          keyword: string
+          priority: number
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword: string
+          priority?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword?: string
+          priority?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       financial_daily_aggregates: {
         Row: {
           created_at: string | null
@@ -951,6 +981,307 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      financial_demand_checklist: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          demand_id: string
+          id: string
+          is_completed: boolean
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          demand_id: string
+          id?: string
+          is_completed?: boolean
+          label: string
+          sort_order?: number
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          demand_id?: string
+          id?: string
+          is_completed?: boolean
+          label?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_demand_checklist_demand_id_fkey"
+            columns: ["demand_id"]
+            isOneToOne: false
+            referencedRelation: "financial_demands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_demand_comments: {
+        Row: {
+          comment: string
+          created_at: string
+          demand_id: string
+          id: string
+          user_id: string
+          visibility: string
+        }
+        Insert: {
+          comment: string
+          created_at?: string
+          demand_id: string
+          id?: string
+          user_id: string
+          visibility?: string
+        }
+        Update: {
+          comment?: string
+          created_at?: string
+          demand_id?: string
+          id?: string
+          user_id?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_demand_comments_demand_id_fkey"
+            columns: ["demand_id"]
+            isOneToOne: false
+            referencedRelation: "financial_demands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_demand_documents: {
+        Row: {
+          created_at: string
+          demand_id: string
+          document_type: string | null
+          extracted_data: Json | null
+          extraction_confidence: number | null
+          extraction_status: string | null
+          file_name: string
+          file_path: string
+          file_size: number | null
+          file_type: string | null
+          id: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          demand_id: string
+          document_type?: string | null
+          extracted_data?: Json | null
+          extraction_confidence?: number | null
+          extraction_status?: string | null
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          demand_id?: string
+          document_type?: string | null
+          extracted_data?: Json | null
+          extraction_confidence?: number | null
+          extraction_status?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          file_type?: string | null
+          id?: string
+          uploaded_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_demand_documents_demand_id_fkey"
+            columns: ["demand_id"]
+            isOneToOne: false
+            referencedRelation: "financial_demands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_demand_tasks: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          demand_id: string
+          description: string | null
+          due_date: string | null
+          id: string
+          priority: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          demand_id: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          priority?: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          demand_id?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          priority?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_demand_tasks_demand_id_fkey"
+            columns: ["demand_id"]
+            isOneToOne: false
+            referencedRelation: "financial_demands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_demand_timeline: {
+        Row: {
+          created_at: string
+          demand_id: string
+          description: string | null
+          event_type: string
+          id: string
+          metadata: Json | null
+          title: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          demand_id: string
+          description?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          title: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          demand_id?: string
+          description?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          title?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_demand_timeline_demand_id_fkey"
+            columns: ["demand_id"]
+            isOneToOne: false
+            referencedRelation: "financial_demands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_demands: {
+        Row: {
+          ai_confidence: number | null
+          amount: number | null
+          approved_at: string | null
+          approved_by: string | null
+          assigned_to: string | null
+          category_final: string | null
+          category_suggested: string | null
+          cost_center: string | null
+          created_at: string
+          created_by: string
+          demand_type: string
+          description: string | null
+          due_date: string | null
+          finalized_at: string | null
+          id: string
+          priority: string
+          rejected_at: string | null
+          rejected_by: string | null
+          rejection_reason: string | null
+          requires_review: boolean
+          status: string
+          supplier_document: string | null
+          supplier_name: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          amount?: number | null
+          approved_at?: string | null
+          approved_by?: string | null
+          assigned_to?: string | null
+          category_final?: string | null
+          category_suggested?: string | null
+          cost_center?: string | null
+          created_at?: string
+          created_by: string
+          demand_type: string
+          description?: string | null
+          due_date?: string | null
+          finalized_at?: string | null
+          id?: string
+          priority?: string
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
+          requires_review?: boolean
+          status?: string
+          supplier_document?: string | null
+          supplier_name?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          amount?: number | null
+          approved_at?: string | null
+          approved_by?: string | null
+          assigned_to?: string | null
+          category_final?: string | null
+          category_suggested?: string | null
+          cost_center?: string | null
+          created_at?: string
+          created_by?: string
+          demand_type?: string
+          description?: string | null
+          due_date?: string | null
+          finalized_at?: string | null
+          id?: string
+          priority?: string
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
+          requires_review?: boolean
+          status?: string
+          supplier_document?: string | null
+          supplier_name?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       forecast_insights: {
         Row: {
@@ -1321,6 +1652,42 @@ export type Database = {
           updated_at?: string
           user_id?: string
           value?: number
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          link: string | null
+          metadata: Json | null
+          read_at: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link?: string | null
+          metadata?: Json | null
+          read_at?: string | null
+          title?: string
+          type?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -1764,6 +2131,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_internal: { Args: never; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "manager" | "user"
