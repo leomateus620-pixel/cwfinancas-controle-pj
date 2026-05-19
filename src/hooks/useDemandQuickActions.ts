@@ -56,5 +56,22 @@ export function useDemandQuickActions() {
     onSuccess: () => { invalidate(qc); toast({ title: "Reenvio ao Asana solicitado" }); },
   });
 
-  return { changeStatus, markUrgent, finalize, retryAsana };
+  const retryAllAsana = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("asana-retry-sync", { body: {} });
+      if (error) throw new Error(error.message);
+      return data as { processed?: number; success?: number; errors?: number };
+    },
+    onSuccess: (r) => {
+      invalidate(qc);
+      toast({
+        title: "Sincronização Asana executada",
+        description: `${r?.success ?? 0} OK · ${r?.errors ?? 0} erro(s) · ${r?.processed ?? 0} processadas`,
+      });
+    },
+    onError: (e) => toast({ title: "Falha ao sincronizar", description: String(e instanceof Error ? e.message : e), variant: "destructive" }),
+  });
+
+  return { changeStatus, markUrgent, finalize, retryAsana, retryAllAsana };
 }
+

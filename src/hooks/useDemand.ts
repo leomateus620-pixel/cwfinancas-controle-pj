@@ -41,17 +41,26 @@ export function useCreateDemand() {
 
       const { data, error } = await supabase
         .from("financial_demands")
-        .insert({ ...input, created_by: uid })
+        .insert({ ...input, created_by: uid, asana_sync_status: "pending_sync" })
         .select("id")
         .single();
       if (error) throw new Error(error.message);
-      return data.id as string;
+      const demandId = data.id as string;
+
+      // Fire-and-forget — não bloqueia UI, não quebra se Asana falhar
+      supabase.functions.invoke("asana-create-task", { body: { demand_id: demandId } })
+        .catch((e) => console.warn("[asana-create-task] background failed", e));
+
+      return demandId;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["financial-demands"] });
+      qc.invalidateQueries({ queryKey: ["demands-inbox"] });
+      qc.invalidateQueries({ queryKey: ["demands-inbox-stats"] });
     },
   });
 }
+
 
 export function useUpdateDemandStatus() {
   const qc = useQueryClient();
