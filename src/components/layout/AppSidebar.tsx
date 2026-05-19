@@ -27,7 +27,7 @@ import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
   Sidebar,
