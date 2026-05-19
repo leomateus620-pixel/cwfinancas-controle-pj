@@ -224,7 +224,13 @@ export default function DemandDetailPage() {
               </ol>
             )}
           </GlassCard>
+
+          <GlassCard className="p-5">
+            <DemandComments demandId={demand.id} />
+          </GlassCard>
         </div>
+
+
 
         {/* Coluna lateral */}
         <div className="lg:col-span-4 space-y-6">
