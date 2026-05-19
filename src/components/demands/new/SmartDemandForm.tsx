@@ -98,7 +98,7 @@ function Group({ title, className, children }: { title: string; className?: stri
       className,
     )}>
       <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground font-semibold mb-3">{title}</div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
         {children}
       </div>
     </div>

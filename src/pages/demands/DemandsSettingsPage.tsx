@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Pencil, ShieldAlert, AlertCircle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { ClientUsersSection } from "@/components/demands/settings/ClientUsersSection";
 
 export default function DemandsSettingsPage() {
   const { isManager, isLoading: roleLoading } = useUserRole();
@@ -66,6 +67,10 @@ export default function DemandsSettingsPage() {
         </div>
         <Button onClick={openNew} className="gap-2"><Plus className="w-4 h-4" /> Nova regra</Button>
       </div>
+
+      <ClientUsersSection />
+
+
 
       <GlassCard className="p-4 bg-violet-50/40 border-violet-200/60">
         <div className="flex items-start gap-3 text-sm">
