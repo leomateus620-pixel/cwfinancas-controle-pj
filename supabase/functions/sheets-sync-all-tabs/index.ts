@@ -2060,9 +2060,15 @@ Deno.serve(async (req) => {
     const forceRefresh = !!(body as Record<string, unknown>).force_refresh;
     const { month_range, selected_tabs } = body;
 
-    // Determine userId: internal call (from scheduled-sync) or user auth
+    // Determine userId: internal call (from scheduled-sync, verified via shared secret) or user auth
     let userId: string;
-    if (body._internal_user_id) {
+    const internalSecret = req.headers.get("x-internal-secret");
+    const expectedInternalSecret = Deno.env.get("CRON_SECRET");
+    if (
+      body._internal_user_id &&
+      expectedInternalSecret &&
+      internalSecret === expectedInternalSecret
+    ) {
       userId = body._internal_user_id;
     } else {
       const token = authHeader.replace("Bearer ", "");
