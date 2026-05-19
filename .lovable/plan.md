@@ -1,114 +1,85 @@
-# Redesign Premium — Módulo "Demandas Financeiras"
+# Correção da Sincronização Asana — Causa raiz + endurecimento
 
-Vou refatorar **apenas o módulo Demandas** (sidebar entry, dashboard, lista, nova demanda, detalhe, aprovações, documentos, configurações) elevando para o padrão **3D Liquid Glass** já presente em outras áreas (Home, Cartão de Crédito), sem inventar uma nova identidade visual e sem quebrar lógica de negócio existente (Asana, RLS, hooks, pg_cron).
+## Diagnóstico
 
-## Escopo
+Após inspecionar `supabase/functions/asana-*` e os pontos de chamada do frontend, identifiquei três causas plausíveis para o erro **"Failed to send a request to the Edge Function"** + falhas silenciosas:
 
-### 1. Sistema de design local (sem tocar tokens globais)
-- Criar `src/components/demands/ui/`:
-  - `LiquidGlassCard.tsx` — wrapper reutilizando classes `.liquid-glass*` do `index.css`, com variantes `default | highlight | navy | compact`, orbs opcionais (padrão wrapper `absolute pointer-events-none` — regra do projeto), prop `interactive` (hover lift sutil + press scale).
-  - `ThreeDIconCard.tsx` — caixinha com gradiente radial, borda translúcida, ícone Lucide centrado, sombra interna, suporte a cor temática por tipo de demanda.
-  - `DemandTypeIcon.tsx` — mapa tipo → ícone Lucide + gradiente (pagamento, recebimento, NF, boleto, conciliação, reembolso, outro, urgente, aprovação, asana).
-  - `MetricTile.tsx` — KPI 3D: ícone 3D, número (`tabular-nums` JetBrains Mono), label, micro-trend sparkline opcional, hover elevation.
-  - `MotionFade.tsx` / `StaggeredList.tsx` — wrappers framer-motion (já instalado) com easing natural `[0.22, 1, 0.36, 1]`, duração 300-400ms, respeita `prefers-reduced-motion`.
-- **Não criar tokens novos no `index.css`** — reaproveitar `--primary`, `--glass-*`, classes `.liquid-glass*` existentes.
+1. **Falta de `verify_jwt = false` explícito** para as 4 funções `asana-*` em `supabase/config.toml`. Embora o default seja `false`, fixar o valor remove ambiguidade e elimina rejeições no gateway (que retornam 401 sem CORS, gerando exatamente esse erro no browser).
+2. **`asana-retry-sync` chama internamente** `asana-create-task` / `asana-update-task` enviando apenas `x-cron-secret` + `apikey`, sem `Authorization`. Se o gateway exigir JWT, o sub-chamado falha silenciosamente (`success=0, errors=N`). Mesmo bug em `asana-create-task` quando delega para `asana-update-task`.
+3. **Frontend sem helper centralizado** — cada botão trata erros de forma diferente, alguns deixam `FunctionsFetchError` borbulhar como toast técnico.
 
-### 2. Sidebar — entrada "Demandas"
-Editar `src/components/layout/AppSidebar.tsx`:
-- Manter estrutura/rota.
-- Ícone do grupo passa a usar `DemandTypeIcon` (3D mini) no anchor.
-- Item ativo ganha visual liquid-glass (borda translúcida + sombra interna) via classe condicional, alinhado ao restante.
-- Badges de contagem: já existe `badgeKey: "pending"`. Adicionar `urgent` e `asana_error` lendo do hook `useDemandsInbox` (contadores agregados já existentes ou query leve nova `useDemandSidebarBadges`).
-- Transição de abertura/fechamento de submenu com `AnimatePresence` (sem mudar comportamento do Radix Collapsible).
+Os nomes das funções já estão consistentes (`asana-create-task`, `asana-update-task`, `asana-retry-sync`, `asana-test-connection`) e os CORS headers das funções estão corretos.
 
-### 3. Dashboard (`DemandsDashboardPage.tsx`)
-Reescrever layout mantendo hooks/dados atuais:
-- **Header premium**: título + subtítulo + filtro de período (reuso do componente global, se aplicável) em `LiquidGlassCard highlight`.
-- **6 KPIs principais** em grid 3×2 (desktop) / 1 col (mobile) usando `MetricTile`:
-  1. Demandas no período
-  2. Aguardando aprovação
-  3. Tempo médio de resolução
-  4. Volume financeiro finalizado
-  5. Demandas urgentes
-  6. Demandas com erro no Asana
-  - Cada tile é clicável e navega para `/demands?status=...` (filtros já suportados).
-- **Linha secundária**: gráfico de evolução (Recharts já no projeto) + lista "Gargalos / Vencidas" + "Aguardando aprovação".
-- **Skeleton states** premium (shimmer já existente nas classes).
+## Mudanças
 
-### 4. Lista Recebidas (`DemandsListPage.tsx`)
-- Manter toda lógica (`useDemandsInbox` infinite, filtros, KPIs, Kanban, Asana sync).
-- Apenas reskin: cards de KPI passam a `MetricTile`; barra de filtros em `LiquidGlassCard compact`; toolbar (view toggle tabela/cards/kanban + Sincronizar Asana) com botões glass.
-- **Mobile**: o `Sheet` de filtros já existe — refinar header e botão "Filtros (N)" com glass-chip.
-- Empty state premium: ilustração 3D + botões "Nova demanda" / "Criar demanda de teste" / "Configurar Asana".
-- Cards view e Kanban cards: novo `DemandCard` (glass + AsanaChip + Prio/Status badges + SLA).
+### 1. `supabase/config.toml`
+Adicionar blocos para as 4 funções:
+```toml
+[functions.asana-create-task]
+verify_jwt = false
+[functions.asana-update-task]
+verify_jwt = false
+[functions.asana-retry-sync]
+verify_jwt = false
+[functions.asana-test-connection]
+verify_jwt = false
+```
+Isso garante que o gateway nunca rejeite chamadas antes do código da função rodar. A validação de sessão continua sendo feita in-code via `auth.getUser(token)`.
 
-### 5. Nova Demanda — "Criar demanda inteligente" (`NewDemandPage.tsx`)
-Refatoração de UX em 4 etapas com formulário adaptativo:
-- **Stepper** glass no topo (Tipo → Informações → Documento → Revisão), com progress animado.
-- **Etapa 1 — Tipo**: grid de `ThreeDIconCard` selecionáveis (7 tipos), hover lift, seleção com borda glow.
-- **Etapa 2 — Informações principais**: campos dinâmicos por tipo via `SmartDemandForm` (novo) com schema Zod por tipo:
-  - pagamento, recebimento, nf, boleto, conciliacao, reembolso, outro (campos exatos do briefing).
-  - Máscaras: BRL, CNPJ/CPF (reusar utilitários existentes em `src/lib`); calendário shadcn; sugestão de categoria/prioridade via regra simples client-side (sem IA on-row — regra do projeto).
-- **Etapa 3 — Documentos**: `UploadDropzone` novo (drag-and-drop, click, colar imagem via `paste` event, câmera no mobile via `<input capture>`). Cards de arquivo com prévia, status, remover/substituir. Placeholders preparados para campos OCR futuros (valor, vencimento, CNPJ, fornecedor, confiança, needs_review) — apenas UI, sem chamadas.
-- **Etapa 4 — Revisão**: `DemandReviewPanel` (resumo lateral consolidado) + aviso sobre criação automática no Asana + botões Voltar / Salvar rascunho / Enviar.
-- **Tela de sucesso** (novo `DemandCreatedScreen`): código da demanda, status inicial, `AsanaChip` em tempo real (polling curto 3×), botões "Ver demanda" / "Criar nova".
-- **Desktop**: form esquerda + resumo lateral direita. **Mobile**: etapas full-screen + botões fixos no rodapé.
+### 2. Edge functions — autenticação interna robusta
+- Em `asana-retry-sync` e `asana-create-task`, o helper interno que chama outra função passa a enviar **também** `Authorization: Bearer ${SERVICE_ROLE_KEY}` (além de `x-cron-secret` + `apikey`). Isso garante que mesmo com `verify_jwt=true` no futuro, o internal call passe.
+- Tornar `x-cron-secret` opcional quando vier service-role JWT (já bypassa via `isCron`).
+- Padronizar mensagens de erro retornadas: usuário comum recebe "Não foi possível sincronizar agora", admin/internal recebe detalhe técnico (campo `detail` separado).
+- Adicionar guarda anti-duplicidade: em `asana-create-task`, antes do POST ao Asana, re-checar `asana_task_id` com `for update` lógico (segundo SELECT) e abortar se já existir.
 
-### 6. Detalhe (`DemandDetailPage.tsx`)
-- Manter abas já implementadas (Visão geral, Documentos, Comentários, Checklist, Timeline, Asana Logs) e `DemandAsanaActions`.
-- Reskin header em `LiquidGlassCard highlight` com `DemandTypeIcon` 3D, badges e SLA chip.
-- Tabs: estilo glass com indicador animado (`layoutId` do framer-motion — permitido aqui, já usado em outras telas).
-- **Mobile**: tabs com scroll horizontal + drawer full-screen.
+### 3. Frontend — helper centralizado
+Criar `src/lib/asana/invokeAsana.ts`:
+```ts
+export async function invokeAsana<T>(fn: string, body: Record<string, unknown> = {}):
+  Promise<{ ok: true; data: T } | { ok: false; error: string; detail?: string }>
+```
+- Usa `supabase.functions.invoke(fn, { body })`.
+- Captura `FunctionsFetchError`, `FunctionsHttpError` e respostas `{ ok: false }`.
+- Retorna sempre um objeto estruturado; nunca lança.
+- Para `error: string`, mapeia mensagens técnicas para textos amigáveis.
 
-### 7. Aprovações, Documentos, Configurações
-- `DemandsApprovalsPage`, `DemandsDocumentsPage`, `DemandsSettingsPage`, `AsanaSettingsPage`: apenas reskin (cards passam a `LiquidGlassCard`, empty states padronizados, botões glass). **Sem mudança funcional.**
+Refatorar para usar o helper:
+- `src/hooks/useDemandQuickActions.ts` (`retryAsana`, `retryAllAsana`, fire-and-forget `asana-update-task` em `changeStatus`)
+- `src/hooks/useDemand.ts` (fire-and-forget pós-criação)
+- `src/components/demands/detail/DemandAsanaActions.tsx`
 
-### 8. Performance e qualidade
-- `React.memo` em `DemandCard`, `MetricTile`, itens de Kanban.
-- Lazy-load das páginas pesadas via `React.lazy` nas rotas (`App.tsx`) — Dashboard, Aprovações, Documentos, AsanaSettings.
-- Animações respeitam `prefers-reduced-motion`.
-- Sem novos blurs pesados — reuso das classes existentes (24–32px já no padrão).
-- Skeletons em todas as queries (loading/error/success — regra core do projeto).
+### 4. Botão "Sincronizar Asana" (header)
+Verificar em `DemandsListPage.tsx` (linha 216) que o `onClick` chama `retryAllAsana.mutate()` da hook, com estado de loading no botão (`disabled={retryAllAsana.isPending}`) e ícone giratório. Toasts: sucesso resume `{success} OK · {errors} erro(s)`, falha mostra mensagem amigável.
 
-### 9. Acessibilidade / responsividade
-- Testar visualmente em 360 / 390 / 430 / tablet / desktop após implementação (browser tool).
-- Contraste mantido (tokens HSL existentes).
-- `aria-label` em ícones decorativos.
+### 5. UX por demanda
+`DemandAsanaActions.tsx`: o botão único decide via `taskId ? update : create` (já implementado). Acrescentar:
+- Estado visual `syncing` enquanto a request roda.
+- Toasts: "Tarefa criada no Asana" / "Tarefa atualizada no Asana" / "Não foi possível sincronizar agora".
+- Recuperação de erro: ao final, invalida `demand`, `asana-sync-logs` e `demands-inbox`.
 
-## Arquivos
+### 6. Criação automática
+`useDemand.ts`: depois do INSERT, dispara `invokeAsana("asana-create-task", { demand_id })` sem await bloqueante (`void invokeAsana(...).then(...)`), com `.catch` nunca propagando. Sucesso ou falha o demand já está salvo; o chip reflete o estado.
 
-**Novos**
-- `src/components/demands/ui/LiquidGlassCard.tsx`
-- `src/components/demands/ui/ThreeDIconCard.tsx`
-- `src/components/demands/ui/DemandTypeIcon.tsx`
-- `src/components/demands/ui/MetricTile.tsx`
-- `src/components/demands/ui/MotionFade.tsx`
-- `src/components/demands/DemandCard.tsx`
-- `src/components/demands/new/StepIndicator.tsx`
-- `src/components/demands/new/DemandTypeSelector.tsx`
-- `src/components/demands/new/SmartDemandForm.tsx`
-- `src/components/demands/new/UploadDropzone.tsx`
-- `src/components/demands/new/DemandReviewPanel.tsx`
-- `src/components/demands/new/DemandCreatedScreen.tsx`
-- `src/hooks/useDemandSidebarBadges.ts`
+## Arquivos afetados
 
-**Editados (reskin + integração)**
-- `src/components/layout/AppSidebar.tsx`
-- `src/pages/demands/DemandsDashboardPage.tsx`
-- `src/pages/demands/DemandsListPage.tsx`
-- `src/pages/demands/NewDemandPage.tsx`
-- `src/pages/demands/DemandDetailPage.tsx`
-- `src/pages/demands/DemandsApprovalsPage.tsx`
-- `src/pages/demands/DemandsDocumentsPage.tsx`
-- `src/pages/demands/DemandsSettingsPage.tsx`
-- `src/pages/demands/AsanaSettingsPage.tsx`
-- `src/App.tsx` (lazy imports)
+**Editados:**
+- `supabase/config.toml`
+- `supabase/functions/asana-retry-sync/index.ts`
+- `supabase/functions/asana-create-task/index.ts`
+- `supabase/functions/asana-update-task/index.ts` (apenas mensagens de erro padronizadas)
+- `src/hooks/useDemandQuickActions.ts`
+- `src/hooks/useDemand.ts`
+- `src/components/demands/detail/DemandAsanaActions.tsx`
+- `src/pages/demands/DemandsListPage.tsx` (loading state no botão header)
 
-## Não escopo (intencional)
-- Sem alterações em `supabase/migrations`, edge functions, RLS, pg_cron, schema.
-- Sem novos tokens globais em `index.css`.
-- Sem mudança nos hooks de dados (`useDemandsInbox`, `useDemand`, `useDemandQuickActions`, `useAsanaSettings`, `useAsanaSyncLogs`, `useFinancialDemands`) — apenas consumo.
-- Sem OCR real — apenas UI preparada.
+**Criados:**
+- `src/lib/asana/invokeAsana.ts`
 
-## Validação
-Após implementação: navegar preview em 390px e desktop, validar empty states, criar demanda de exemplo, conferir Asana chip, abrir detalhe, arrastar no Kanban. Reportar print + checklist do item 15 do briefing.
+## Validação pós-deploy
+
+1. Header → "Sincronizar Asana" → toast com contadores.
+2. Criar demanda nova → tarefa aparece em `ASANA_PROJECT_GID=1201221862107065` / `SECTION=1201221862107066`; `asana_task_id` e `asana_task_url` salvos; chip vira `synced`.
+3. Demanda existente sem task → botão "Sincronizar agora" cria.
+4. Demanda já sincronizada → botão atualiza (idempotente, não duplica).
+5. Logs em `asana_sync_logs` só visíveis para admin/manager (RLS já existente).
+6. Nenhum toast técnico "Failed to send a request to the Edge Function".
