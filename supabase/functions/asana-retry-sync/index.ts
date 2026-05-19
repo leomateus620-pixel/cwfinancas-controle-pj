@@ -57,8 +57,11 @@ Deno.serve(async (req) => {
 
     if (demand_id) {
       const { data: d } = await svc.from("financial_demands")
-        .select("id,asana_task_id").eq("id", demand_id).maybeSingle();
+        .select("id,created_by,asana_task_id").eq("id", demand_id).maybeSingle();
       if (!d) return new Response(JSON.stringify({ ok: false, error: "Demanda não encontrada" }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+      if (!isCron && !isInternal && d.created_by !== userId) return new Response(JSON.stringify({ ok: false, error: "Sem permissão" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
       const fn = d.asana_task_id ? "asana-update-task" : "asana-create-task";
@@ -72,11 +75,13 @@ Deno.serve(async (req) => {
     }
 
     // batch
-    const { data: rows } = await svc.from("financial_demands")
+    let query = svc.from("financial_demands")
       .select("id,asana_task_id,asana_sync_status")
       .in("asana_sync_status", ["pending_sync", "error"])
       .order("updated_at", { ascending: true })
       .limit(50);
+    if (!isCron && !isInternal) query = query.eq("created_by", userId);
+    const { data: rows } = await query;
 
     let success = 0, errors = 0;
     for (const row of (rows ?? [])) {
