@@ -1,113 +1,113 @@
-## Central de Demandas Financeiras — Etapa 1
 
-Objetivo: criar a fundação do módulo sem tocar nas features existentes. Entregar banco, segurança, menu, rota e listagem básica funcionando. Etapas 2-5 (formulário, upload, checklist, aprovação, dashboard, regras) virão em mensagens separadas.
+# Etapa 2 — Central de Demandas Financeiras
 
-### Modelo de acesso
+Objetivo: permitir que clientes criem demandas pelo `/demands/new` (formulário multi-step com upload), abram a página de detalhe (`/demands/:id`) com timeline + checklist auto-gerado por tipo, e que o banco registre eventos automaticamente via trigger.
 
-Reaproveita `user_roles` atual:
-- `user` = cliente final → vê apenas demandas onde `created_by = auth.uid()`.
-- `manager` e `admin` = equipe interna do BPO → veem todas as demandas do sistema, podem editar status, atribuir, comentar internamente, finalizar.
+## 1. Banco de dados (migração)
 
-Sem multitenancy novo. `assigned_to` referencia um usuário interno opcional.
+### 1.1 Templates de checklist por tipo
+Função `public.seed_demand_checklist(demand_id uuid, demand_type text)` que insere itens padrão em `financial_demand_checklist` de acordo com o tipo:
 
-### Banco de dados (migração única)
+- `pagamento`: "Validar boleto/NF", "Conferir dados bancários", "Aprovar valor", "Agendar pagamento", "Confirmar pagamento"
+- `recebimento`: "Conferir NF emitida", "Confirmar entrada", "Conciliar conta"
+- `nota_fiscal`: "Validar dados", "Emitir NF", "Enviar ao cliente"
+- `conciliacao`: "Importar extrato", "Conciliar lançamentos", "Validar diferenças"
+- `reembolso`: "Validar comprovante", "Aprovar valor", "Efetuar reembolso"
+- `outro`: 1 item genérico "Analisar solicitação"
 
-Tabelas criadas em `public`, todas com RLS habilitado e timestamps padrão:
+### 1.2 Trigger de timeline automática
+Trigger `AFTER INSERT OR UPDATE` em `financial_demands` chamando `public.log_demand_event()` (SECURITY DEFINER, search_path public):
 
-1. **financial_demands** — núcleo
-   - `created_by` (cliente), `assigned_to` (equipe, nullable)
-   - `demand_type` (enum text), `title`, `description`, `amount NUMERIC(14,2)`, `due_date`
-   - `supplier_name`, `supplier_document`, `category_suggested`, `category_final`, `cost_center`
-   - `priority` (baixa|normal|alta|urgente, default normal)
-   - `status` (recebida|em_analise|aguardando_info|aguardando_aprovacao|aprovada|reprovada|em_execucao|pagamento_agendado|comprovante_enviado|finalizada|cancelada)
-   - `ai_confidence NUMERIC`, `requires_review BOOL`
-   - `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejection_reason`
-   - `finalized_at`
+- INSERT → evento `created` + chama `seed_demand_checklist(...)` + cria `notifications` para `is_internal()` users
+- UPDATE de `status` → evento `status_changed` (de → para) + notifica `created_by`
+- UPDATE de `assigned_to` (não nulo) → evento `assigned` + notifica `assigned_to`
+- UPDATE de `approved_at` / `rejected_at` / `finalized_at` → eventos correspondentes
 
-2. **financial_demand_documents** — `demand_id`, `file_name`, `file_path`, `file_type`, `file_size`, `document_type`, `extracted_data JSONB`, `extraction_status`, `extraction_confidence`. (Upload real entra na Etapa 2; coluna já preparada para IA futura.)
+Trigger `AFTER INSERT` em `financial_demand_documents` → evento `document_uploaded` na timeline.
+Trigger `AFTER INSERT` em `financial_demand_comments` → evento `comment_added`.
 
-3. **financial_demand_checklist** — `demand_id`, `label`, `is_completed`, `completed_by`, `completed_at`, `sort_order`.
+Nenhuma alteração estrutural nas tabelas existentes; apenas funções + triggers.
 
-4. **financial_demand_comments** — `demand_id`, `user_id`, `comment`, `visibility` (`internal` | `client`).
+### 1.3 Storage policies
+Bucket `demand-documents` já existe. Adicionar policies (se não existirem) em `storage.objects`:
+- INSERT / SELECT / DELETE permitidos quando `bucket_id = 'demand-documents'` e o primeiro segmento do path (`(storage.foldername(name))[1]`) for um `demand_id` em `financial_demands` onde `is_internal()` ou `created_by = auth.uid()`.
 
-5. **financial_demand_timeline** — `demand_id`, `user_id`, `event_type`, `title`, `description`, `metadata JSONB`. Append-only.
+## 2. Hooks
 
-6. **financial_category_rules** — `keyword`, `category`, `priority`, `is_active`. Mantida por admins.
+- `useCreateDemand()` (mutation): insere em `financial_demands` retornando `id`, invalida `['demands']`.
+- `useUploadDemandDocument()` (mutation): faz upload em `demand-documents/{demand_id}/{uuid}-{filename}`, insere row em `financial_demand_documents`.
+- `useDemand(id)` (query): retorna demanda + `created_by` profile.
+- `useDemandTimeline(id)` (query): lista eventos ordenados por `created_at desc`.
+- `useDemandChecklist(id)` (query + mutation `toggle`): lista e marca itens.
+- `useDemandDocuments(id)` (query + mutation `delete`): lista e remove arquivos (storage + row).
 
-7. **financial_demand_tasks** — `demand_id`, `assigned_to`, `title`, `description`, `status`, `priority`, `due_date`.
+Todos com 3 estados (loading/error/empty) seguindo a regra global do projeto.
 
-8. **notifications** — `user_id`, `type`, `title`, `body`, `link`, `read_at`, `metadata`. Genérica (servirá outros módulos depois).
+## 3. Formulário multi-step `/demands/new`
 
-9. **storage bucket** `demand-documents` (privado). Policies: o dono da demanda e qualquer manager/admin podem ler/escrever arquivos no prefixo `{demand_id}/`.
+Componente `NewDemandPage` com 4 passos dentro de um `GlassCard` (Liquid Glass), barra de progresso no topo:
 
-Índices: `(created_by)`, `(assigned_to)`, `(status)`, `(due_date)`, `(demand_id)` nas filhas.
+1. **Tipo & título** — `demand_type` (cards visuais com ícones: Pagamento, Recebimento, NF, Conciliação, Reembolso, Outro), `title`, `priority`.
+2. **Detalhes financeiros** — `amount`, `due_date`, `supplier_name`, `supplier_document`, `cost_center`, `description` (textarea).
+3. **Documentos** — dropzone (drag-and-drop) usando input file; lista local antes do upload; aceita PDF/JPG/PNG/XML até 10MB cada.
+4. **Revisão** — resumo dos dados, botão "Enviar demanda".
 
-Trigger reaproveitando `update_updated_at_column` para todas as tabelas com `updated_at`.
+Fluxo de submit:
+1. Cria demanda → recebe `id`
+2. Faz upload de cada arquivo em paralelo (`Promise.all`) para `demand-documents/{id}/...`
+3. Insere rows em `financial_demand_documents`
+4. Redireciona para `/demands/:id`
 
-Trigger `validate_amount_precision` estendida (ou trigger dedicado) para arredondar `amount` em `financial_demands`.
+Validação com `zod` por etapa. Botões: Voltar / Próximo / Enviar. Estados: salvando, erro com retry.
 
-### RLS — padrão por tabela
+## 4. Página de detalhe `/demands/:id`
 
-Política helper: `public.is_internal()` = `has_role(auth.uid(),'admin') OR has_role(auth.uid(),'manager')` (SECURITY DEFINER, STABLE).
+`DemandDetailPage` com layout em 2 colunas (desktop) / stack (mobile):
 
-- **financial_demands**
-  - SELECT: `is_internal() OR created_by = auth.uid()`
-  - INSERT: `created_by = auth.uid()` (qualquer authenticated)
-  - UPDATE: `is_internal()` OU (`created_by = auth.uid()` AND status restrito) — Etapa 1 mantém simples: cliente só edita enquanto `status='recebida'`; equipe edita sempre.
-  - DELETE: `is_internal()`.
-- **documents / checklist / tasks**: SELECT/INSERT/UPDATE/DELETE delegados à demanda parent via EXISTS check em `financial_demands` aplicando a mesma regra acima.
-- **comments**:
-  - SELECT: `is_internal()` OU (dono da demanda AND `visibility='client'`).
-  - INSERT: `is_internal()` para qualquer; cliente só pode inserir `visibility='client'` em suas demandas.
-- **timeline**: SELECT igual a `demands`; INSERT só via service role (gravado por triggers / edge functions); UPDATE/DELETE bloqueados.
-- **category_rules**: SELECT para authenticated; INSERT/UPDATE/DELETE só `is_internal()`.
-- **notifications**: SELECT/UPDATE só `user_id = auth.uid()`; INSERT via service role.
+**Coluna principal (8/12)**:
+- Header: `StatusBadge` + `PriorityBadge` + título + ações internas (admin/manager: alterar status, atribuir, finalizar — Etapa 3 fará aprovar/rejeitar)
+- Card de detalhes (valor, vencimento, fornecedor, categoria sugerida, descrição)
+- Card **Documentos**: grid com thumbnail/ícone, nome, tamanho, botão download (`createSignedUrl` 60s) e excluir
+- Card **Timeline**: linha vertical com ícones por `event_type`, autor, timestamp relativo
 
-### Frontend — escopo Etapa 1
+**Coluna lateral (4/12)**:
+- Card **Checklist**: itens com checkbox; só internos podem marcar; mostra `completed_by` + horário
+- Card **Resumo**: criada por, criada em, atribuída a
 
-- Novo grupo no `AppSidebar` ("Demandas Financeiras") com itens: Dashboard, Nova Demanda, Recebidas, Aprovações Pendentes, Documentos, Configurações. Apenas **Recebidas** fica funcional nesta etapa; os outros itens renderizam placeholders "Em breve" (mantém roteamento estável).
-- Novas rotas protegidas em `src/App.tsx` sob `/demands/*`:
-  - `/demands` → `DemandsListPage`
-  - `/demands/new`, `/demands/approvals`, `/demands/documents`, `/demands/settings`, `/demands/dashboard` → placeholder único com empty state Liquid Glass.
-- `DemandsListPage` (Etapa 1):
-  - Hook `useFinancialDemands` (React Query) → SELECT em `financial_demands` ordenado por `created_at desc`, paginado (limit 50).
-  - Tabela em GlassCard com colunas: Título, Cliente (created_by → join opcional com `profiles.full_name`), Tipo, Valor, Vencimento, Prioridade (badge), Status (badge colorido), Atualizada em.
-  - StatusBadge e PriorityBadge novos em `src/components/demands/`.
-  - Filtros simples no topo: busca por título, select de status, select de prioridade.
-  - Estados Loading (skeleton), Empty ("Nenhuma demanda ainda"), Error (mensagem sanitizada) — conforme regra Core de resiliência.
-- Sininho de notificações no `DashboardHeader`:
-  - Hook `useNotifications` (count unread + lista últimas 20).
-  - `Popover` shadcn com itens clicáveis (navega para `link`) e botão "marcar todas como lidas".
-  - Subscription Realtime opcional (Etapa 2) — Etapa 1 só polling com `refetchInterval: 30s`.
+Loading: skeletons. Erro: mensagem amigável (404 captado como null). Vazio: estados próprios para timeline/docs/checklist.
 
-Sem formulário de criação, upload, timeline, aprovação ou dashboard nesta etapa — esses ficam para Etapas 2-4.
+## 5. Roteamento e sidebar
 
-### Componentes/arquivos novos
+- `App.tsx`: substituir placeholder de "Nova Demanda" pela rota real `/demands/new` → `NewDemandPage`; adicionar `/demands/:id` → `DemandDetailPage`.
+- `DemandsListPage`: cada linha vira link para `/demands/:id`.
+- `AppSidebar`: item "Nova Demanda" já existe — sem mudança estrutural.
 
-```
-src/pages/demands/DemandsListPage.tsx
-src/pages/demands/DemandsPlaceholderPage.tsx
-src/components/demands/StatusBadge.tsx
-src/components/demands/PriorityBadge.tsx
-src/components/demands/DemandFilters.tsx
-src/components/notifications/NotificationsBell.tsx
-src/hooks/useFinancialDemands.ts
-src/hooks/useNotifications.ts
-```
+## 6. Validação
 
-Editados: `src/App.tsx` (rotas), `src/components/layout/AppSidebar.tsx` (novo grupo), `src/components/layout/DashboardHeader.tsx` (sininho).
+- Migração roda limpa; linter sem warnings novos.
+- Cliente cria demanda → vê evento `created` na timeline e checklist preenchido conforme tipo.
+- Upload aparece imediatamente na lista de documentos e gera evento `document_uploaded`.
+- Mudança de status (feita pelo interno via dropdown) escreve evento `status_changed` e cria `notification` para o cliente.
+- RLS: cliente não vê demanda de outro cliente; cliente não consegue marcar checklist (policy `is_internal()`).
+- Nenhuma rota existente quebra.
 
-### Validação antes de fechar a Etapa 1
+## 7. Arquivos
 
-- Migração roda sem erro; linter Supabase limpo para as novas tabelas (RLS on, sem policies permissivas demais).
-- Cliente logado como `user` consegue criar 1 demanda via SQL e vê apenas a própria na listagem.
-- Conta com role `admin/manager` enxerga todas.
-- Sininho aparece sem quebrar header em desktop e mobile.
-- Nenhuma rota/feature existente quebra (Home, DRE, CC, Sheets continuam idênticos).
+**Criar**
+- `supabase/migrations/<ts>_demands_etapa2.sql`
+- `src/hooks/useDemand.ts`, `useDemandTimeline.ts`, `useDemandChecklist.ts`, `useDemandDocuments.ts`, `useCreateDemand.ts`, `useUploadDemandDocument.ts`
+- `src/pages/demands/NewDemandPage.tsx`
+- `src/pages/demands/DemandDetailPage.tsx`
+- `src/components/demands/new/StepTypeTitle.tsx`, `StepDetails.tsx`, `StepDocuments.tsx`, `StepReview.tsx`, `StepProgress.tsx`
+- `src/components/demands/detail/DemandHeader.tsx`, `DemandTimeline.tsx`, `DemandChecklist.tsx`, `DemandDocumentsCard.tsx`, `DemandSummaryCard.tsx`
+- `src/lib/demands/checklistTemplates.ts` (espelho TS dos templates, caso precise no front)
 
-### Fora desta etapa (próximas mensagens)
+**Editar**
+- `src/App.tsx` (rotas `/demands/new` e `/demands/:id`)
+- `src/pages/demands/DemandsListPage.tsx` (linkar linhas)
 
-Etapa 2: formulário multi-step `/demands/new`, upload para bucket, página de detalhe com timeline e checklist gerado por tipo, trigger que escreve eventos automáticos na `timeline`.
-Etapa 3: comentários (internos/cliente), fluxo de aprovação/reprovação, justificativa obrigatória, notificações disparadas.
-Etapa 4: dashboard KPI + filtros avançados, página Documentos, CRUD de `financial_category_rules`, sugestão automática de categoria por keyword.
-Etapa 5: polish UX/mobile, empty/loading/error states refinados, auditoria de segurança final, memória de projeto atualizada.
+## Próximas etapas (não nesta entrega)
+
+- Etapa 3: comentários, fluxo de aprovação/rejeição com justificativa, regras de notificação refinadas.
+- Etapa 4: dashboard de KPIs, lista de documentos global, CRUD de regras de categoria, sugestão automática.
+- Etapa 5: polimento, auditoria de segurança, atualização da memória do projeto.
