@@ -206,6 +206,78 @@ export type Database = {
           },
         ]
       }
+      asana_integration_settings: {
+        Row: {
+          created_at: string
+          default_assignee_gid: string | null
+          default_section_gid: string | null
+          id: string
+          is_enabled: boolean
+          priority_mapping: Json
+          project_gid: string | null
+          status_mapping: Json
+          updated_at: string
+          workspace_gid: string | null
+        }
+        Insert: {
+          created_at?: string
+          default_assignee_gid?: string | null
+          default_section_gid?: string | null
+          id?: string
+          is_enabled?: boolean
+          priority_mapping?: Json
+          project_gid?: string | null
+          status_mapping?: Json
+          updated_at?: string
+          workspace_gid?: string | null
+        }
+        Update: {
+          created_at?: string
+          default_assignee_gid?: string | null
+          default_section_gid?: string | null
+          id?: string
+          is_enabled?: boolean
+          priority_mapping?: Json
+          project_gid?: string | null
+          status_mapping?: Json
+          updated_at?: string
+          workspace_gid?: string | null
+        }
+        Relationships: []
+      }
+      asana_sync_logs: {
+        Row: {
+          action: string
+          created_at: string
+          demand_id: string | null
+          error_message: string | null
+          id: string
+          request_payload: Json | null
+          response_payload: Json | null
+          status: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          demand_id?: string | null
+          error_message?: string | null
+          id?: string
+          request_payload?: Json | null
+          response_payload?: Json | null
+          status: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          demand_id?: string | null
+          error_message?: string | null
+          id?: string
+          request_payload?: Json | null
+          response_payload?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
       balance_sheet_items: {
         Row: {
           amount: number
@@ -1205,12 +1277,19 @@ export type Database = {
           amount: number | null
           approved_at: string | null
           approved_by: string | null
+          asana_last_synced_at: string | null
+          asana_sync_error: string | null
+          asana_sync_status: string
+          asana_task_id: string | null
+          asana_task_url: string | null
           assigned_to: string | null
           category_final: string | null
           category_suggested: string | null
+          company_id: string | null
           cost_center: string | null
           created_at: string
           created_by: string
+          demand_code: string | null
           demand_type: string
           description: string | null
           due_date: string | null
@@ -1221,6 +1300,7 @@ export type Database = {
           rejected_by: string | null
           rejection_reason: string | null
           requires_review: boolean
+          sla_due_at: string | null
           status: string
           supplier_document: string | null
           supplier_name: string | null
@@ -1232,12 +1312,19 @@ export type Database = {
           amount?: number | null
           approved_at?: string | null
           approved_by?: string | null
+          asana_last_synced_at?: string | null
+          asana_sync_error?: string | null
+          asana_sync_status?: string
+          asana_task_id?: string | null
+          asana_task_url?: string | null
           assigned_to?: string | null
           category_final?: string | null
           category_suggested?: string | null
+          company_id?: string | null
           cost_center?: string | null
           created_at?: string
           created_by: string
+          demand_code?: string | null
           demand_type: string
           description?: string | null
           due_date?: string | null
@@ -1248,6 +1335,7 @@ export type Database = {
           rejected_by?: string | null
           rejection_reason?: string | null
           requires_review?: boolean
+          sla_due_at?: string | null
           status?: string
           supplier_document?: string | null
           supplier_name?: string | null
@@ -1259,12 +1347,19 @@ export type Database = {
           amount?: number | null
           approved_at?: string | null
           approved_by?: string | null
+          asana_last_synced_at?: string | null
+          asana_sync_error?: string | null
+          asana_sync_status?: string
+          asana_task_id?: string | null
+          asana_task_url?: string | null
           assigned_to?: string | null
           category_final?: string | null
           category_suggested?: string | null
+          company_id?: string | null
           cost_center?: string | null
           created_at?: string
           created_by?: string
+          demand_code?: string | null
           demand_type?: string
           description?: string | null
           due_date?: string | null
@@ -1275,6 +1370,7 @@ export type Database = {
           rejected_by?: string | null
           rejection_reason?: string | null
           requires_review?: boolean
+          sla_due_at?: string | null
           status?: string
           supplier_document?: string | null
           supplier_name?: string | null
