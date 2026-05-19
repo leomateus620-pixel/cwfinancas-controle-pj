@@ -140,6 +140,8 @@ export default function DemandDetailPage() {
         </div>
       </div>
 
+      <ApprovalDecisionCard demandId={demand.id} status={demand.status} rejectionReason={demand.rejection_reason ?? null} />
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Coluna principal */}
         <div className="lg:col-span-8 space-y-6">
@@ -151,7 +153,12 @@ export default function DemandDetailPage() {
               <Field label="Fornecedor" value={demand.supplier_name || "—"} />
               <Field label="CNPJ/CPF" value={demand.supplier_document || "—"} />
               <Field label="Centro de custo" value={demand.cost_center || "—"} />
-              <Field label="Categoria" value={demand.category_final || demand.category_suggested || "—"} />
+              <div>
+                <dt className="text-[11px] uppercase tracking-wider text-muted-foreground">Categoria</dt>
+                <dd className="mt-0.5">
+                  <CategorySuggestionBadge demandId={demand.id} suggested={demand.category_suggested} finalCategory={demand.category_final} />
+                </dd>
+              </div>
             </dl>
             {demand.description && (
               <div className="mt-4 pt-4 border-t border-black/[0.05]">
