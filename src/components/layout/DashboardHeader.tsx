@@ -1,4 +1,5 @@
-import { Search, Bell, Download, Menu, LogOut, Settings } from "lucide-react";
+import { Search, Download, Menu, LogOut, Settings } from "lucide-react";
+import { NotificationsBell } from "@/components/notifications/NotificationsBell";
 import { useNavigate } from "react-router-dom";
 import { GlobalDateRangeFilter } from "./GlobalDateRangeFilter";
 import { Button } from "@/components/ui/button";
