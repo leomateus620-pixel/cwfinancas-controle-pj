@@ -236,8 +236,8 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
-  const { isManager } = useUserRole();
-  const { data: pendingCount = 0 } = usePendingApprovalsCount(isManager);
+  const { isManager, isClient } = useUserRole();
+  const { data: pendingCount = 0 } = usePendingApprovalsCount(isManager && !isClient);
   const { variationPercent, isLoading: homeLoading } = useHomeDashboard();
 
   const kpiCtx: KpiContext = {
