@@ -225,7 +225,7 @@ function SummarySidebar({ form, files, typeLabel, step }: { form: DemandFormStat
   }, [form]);
 
   return (
-    <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+    <div className="space-y-4 xl:sticky xl:top-4 xl:self-start">
       <GlassCard className="p-4 md:p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">Resumo</div>
