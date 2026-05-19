@@ -59,9 +59,9 @@ export default function DemandsSettingsPage() {
     <div className="p-4 md:p-6 max-w-[1100px] mx-auto space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Regras & categorias</h1>
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Configurações da Central</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Palavras-chave detectadas no título, descrição ou fornecedor sugerem uma categoria automaticamente.
+            Regras de categorização automática: palavras-chave no título, descrição ou fornecedor sugerem uma categoria para o BPO confirmar.
           </p>
         </div>
         <Button onClick={openNew} className="gap-2"><Plus className="w-4 h-4" /> Nova regra</Button>

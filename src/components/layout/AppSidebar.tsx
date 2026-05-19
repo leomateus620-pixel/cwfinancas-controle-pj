@@ -63,15 +63,15 @@ const toolsNavItems = [
 ];
 
 const demandsClientItems = [
-  { title: "Visão geral", url: "/demands/dashboard", icon: LayoutGrid },
-  { title: "Recebidas", url: "/demands", icon: Inbox },
+  { title: "Dashboard", url: "/demands/dashboard", icon: LayoutGrid },
   { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
+  { title: "Recebidas", url: "/demands", icon: Inbox },
 ];
 
 const demandsInternalItems = [
-  { title: "Aprovações", url: "/demands/approvals", icon: CheckSquare, badgeKey: "pending" as const },
+  { title: "Aprovações Pendentes", url: "/demands/approvals", icon: CheckSquare, badgeKey: "pending" as const },
   { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
-  { title: "Regras & categorias", url: "/demands/settings", icon: Sliders },
+  { title: "Configurações", url: "/demands/settings", icon: Sliders },
 ];
 
 import { useUserRole } from "@/hooks/useUserRole";
