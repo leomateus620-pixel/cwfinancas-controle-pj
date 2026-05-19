@@ -2132,6 +2132,10 @@ export type Database = {
         Returns: boolean
       }
       is_internal: { Args: never; Returns: boolean }
+      seed_demand_checklist: {
+        Args: { _demand_id: string; _demand_type: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "manager" | "user"
