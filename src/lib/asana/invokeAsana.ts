@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export type AsanaInvokeResult<T = unknown> =
   | { ok: true; data: T }
-  | { ok: false, error: string; detail?: string };
+  | { ok: false; error: string; detail?: string };
 
 const FRIENDLY_FALLBACK = "Não foi possível sincronizar agora. Tente novamente.";
 
