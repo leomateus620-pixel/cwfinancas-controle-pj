@@ -68,6 +68,10 @@ export default function DemandsSettingsPage() {
         <Button onClick={openNew} className="gap-2"><Plus className="w-4 h-4" /> Nova regra</Button>
       </div>
 
+      <ClientUsersSection />
+
+
+
       <GlassCard className="p-4 bg-violet-50/40 border-violet-200/60">
         <div className="flex items-start gap-3 text-sm">
           <Sparkles className="w-4 h-4 text-violet-600 mt-0.5" />
