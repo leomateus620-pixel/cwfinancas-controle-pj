@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { useCreateDemand } from "@/hooks/useDemand";
 import { useDemand } from "@/hooks/useDemand";
 import { useUploadDemandDocument } from "@/hooks/useDemandDocuments";
+import { useProfile } from "@/hooks/useProfile";
 import { GlassCard } from "@/components/home/GlassCard";
 import { Button } from "@/components/ui/button";
 import { DEMAND_TYPES, PRIORITY_OPTIONS } from "@/lib/demands/types";
@@ -16,6 +17,7 @@ import { StepIndicator } from "@/components/demands/new/StepIndicator";
 import { UploadDropzone } from "@/components/demands/new/UploadDropzone";
 import { SmartDemandForm, EMPTY_FORM, buildDemandPayload, type DemandFormState } from "@/components/demands/new/SmartDemandForm";
 import { AsanaChip } from "@/components/demands/AsanaChip";
+import { ClientIdentityGate } from "@/components/demands/new/ClientIdentityGate";
 
 const STEPS = ["Tipo", "Informações", "Documentos", "Revisão"] as const;
 
