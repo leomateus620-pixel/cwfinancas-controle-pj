@@ -118,7 +118,7 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
-  const navigate = useNavigate();
+  // navigation handled by NavLink
   const currentPath = location.pathname;
   const { isManager } = useUserRole();
   const { data: pendingCount = 0 } = usePendingApprovalsCount(isManager);
