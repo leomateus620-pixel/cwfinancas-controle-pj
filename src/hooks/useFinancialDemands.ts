@@ -21,6 +21,7 @@ export interface FinancialDemand {
   supplier_document: string | null;
   category_suggested: string | null;
   category_final: string | null;
+  cost_center: string | null;
   priority: DemandPriority;
   status: DemandStatus;
   requires_review: boolean;
