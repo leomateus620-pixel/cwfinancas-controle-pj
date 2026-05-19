@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { useDemandQuickActions } from "@/hooks/useDemandQuickActions";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeAsana } from "@/lib/asana/invokeAsana";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Cloud, ExternalLink, RefreshCw, Link2, FileSearch, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -24,22 +24,24 @@ export function DemandAsanaActions({
   const syncNow = useMutation({
     mutationFn: async () => {
       const fn = taskId ? "asana-update-task" : "asana-create-task";
-      const { data, error } = await supabase.functions.invoke(fn, { body: { demand_id: demandId } });
-      if (error) throw new Error(error.message);
-      return data;
+      const res = await invokeAsana(fn, { demand_id: demandId });
+      if (res.ok === false) throw new Error(res.error);
+      return res.data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["demand", demandId] });
       qc.invalidateQueries({ queryKey: ["asana-sync-logs", demandId] });
       qc.invalidateQueries({ queryKey: ["demand-timeline", demandId] });
       qc.invalidateQueries({ queryKey: ["demands-inbox-infinite"] });
-      toast.success("Sincronização Asana executada");
+      qc.invalidateQueries({ queryKey: ["demands-inbox"] });
+      toast.success(taskId ? "Tarefa atualizada no Asana" : "Tarefa criada no Asana");
     },
     onError: (e) => {
-      const msg = e instanceof Error ? e.message : "Falha na sincronização";
-      toast.error(isInternal ? msg : "Não foi possível sincronizar com o Asana agora");
+      const msg = e instanceof Error ? e.message : "Não foi possível sincronizar agora";
+      toast.error(msg);
     },
   });
+
 
   const copyLink = () => {
     if (!taskUrl) return;
