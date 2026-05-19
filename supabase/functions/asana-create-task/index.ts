@@ -191,6 +191,7 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
           "x-cron-secret": Deno.env.get("CRON_SECRET") ?? "",
           apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({ demand_id: d.id }),
       });
