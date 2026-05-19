@@ -26,12 +26,30 @@ export function RegisterPage() {
     resolver: zodResolver(registerSchema),
   });
 
+  const slugifyUsername = (name: string) => {
+    const base = name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ".")
+      .replace(/^\.+|\.+$/g, "")
+      .replace(/\.{2,}/g, ".");
+    return base.length >= 3 ? base : `user.${Math.random().toString(36).slice(2, 8)}`;
+  };
+
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     try {
-      const { error } = await signUp(data.email, data.password, {
+      const hasEmail = !!data.email && data.email.trim().length > 0;
+      const username = hasEmail ? undefined : slugifyUsername(data.full_name);
+      const emailToUse = hasEmail
+        ? data.email!.trim()
+        : `${username}@cliente.cwfinancas.local`;
+
+      const { error } = await signUp(emailToUse, data.password, {
         full_name: data.full_name,
         company_name: data.company_name,
+        ...(username ? { username } : {}),
       });
 
       if (error) {
@@ -43,7 +61,9 @@ export function RegisterPage() {
       } else {
         toast({
           title: "Conta criada com sucesso!",
-          description: "Você já pode acessar sua conta.",
+          description: hasEmail
+            ? "Você já pode acessar sua conta."
+            : `Seu usuário de acesso é: ${username}. Anote para fazer login.`,
         });
         navigate("/login");
       }
@@ -107,13 +127,17 @@ export function RegisterPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
+              <Label htmlFor="email">E-mail (opcional)</Label>
               <Input
                 id="email"
                 type="email"
+                placeholder="Deixe em branco para criar login apenas com usuário"
                 {...register("email")}
                 className={`${inputClass} ${errors.email ? "border-destructive" : ""}`}
               />
+              <p className="text-xs text-muted-foreground">
+                Sem e-mail? Geraremos um usuário a partir do seu nome para você fazer login.
+              </p>
               {errors.email && (
                 <p className="text-sm text-destructive">{errors.email.message}</p>
               )}

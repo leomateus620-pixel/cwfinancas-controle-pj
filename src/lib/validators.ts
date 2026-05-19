@@ -8,7 +8,16 @@ export const loginSchema = z.object({
 export const registerSchema = z.object({
   full_name: z.string().trim().min(2, { message: "Nome deve ter no mínimo 2 caracteres" }).max(100),
   company_name: z.string().trim().min(2, { message: "Nome da empresa deve ter no mínimo 2 caracteres" }).max(100),
-  email: z.string().trim().email({ message: "E-mail inválido" }),
+  email: z
+    .string()
+    .trim()
+    .max(255)
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+      { message: "E-mail inválido" }
+    ),
   password: z.string().min(6, { message: "Senha deve ter no mínimo 6 caracteres" }),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
