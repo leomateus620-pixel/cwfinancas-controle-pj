@@ -343,6 +343,18 @@ export default function DemandsListPage() {
           </div>
         )}
 
+        {rows && rows.length > 0 && (
+          <div className="p-4 flex items-center justify-between border-t border-white/30 text-xs text-muted-foreground">
+            <span>Mostrando {rows.length}{total ? ` de ${total}` : ""} demanda{rows.length === 1 ? "" : "s"}</span>
+            {hasNextPage && (
+              <Button size="sm" variant="outline" className="rounded-xl" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+                {isFetchingNextPage ? "Carregando…" : "Carregar mais 50"}
+              </Button>
+            )}
+          </div>
+        )}
+
+
       </GlassCard>
     </div>
   );
