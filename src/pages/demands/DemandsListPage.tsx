@@ -1,24 +1,28 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Plus, Search, Filter, LayoutGrid, List, RefreshCw, ExternalLink,
+  Plus, Search, Filter, LayoutGrid, List, RefreshCw,
   AlertCircle, Inbox, Clock, AlertTriangle, CheckCircle2, Users,
   Zap, CalendarClock, ShieldCheck, ShieldAlert, Timer, MoreHorizontal,
-  ArrowUpRight,
+  ArrowUpRight, Columns3, Settings2, Cloud,
 } from "lucide-react";
 import {
   useDemandsInbox, useDemandsInboxStats, useUniqueDemandTypes,
   type AsanaSyncStatus, type InboxFilters, type InboxQuickFilter, type InboxDemand,
 } from "@/hooks/useDemandsInbox";
 import { useDemandQuickActions } from "@/hooks/useDemandQuickActions";
+import { useUserRole } from "@/hooks/useUserRole";
 import type { DemandPriority, DemandStatus } from "@/hooks/useFinancialDemands";
 import { GlassCard } from "@/components/home/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/demands/StatusBadge";
 import { PriorityBadge } from "@/components/demands/PriorityBadge";
+import { AsanaChip } from "@/components/demands/AsanaChip";
+import { DemandsKanbanBoard } from "@/components/demands/DemandsKanbanBoard";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -27,6 +31,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
 
 const TYPE_LABELS: Record<string, string> = {
   pagamento: "Solicitar pagamento",
@@ -82,29 +87,9 @@ function fmtRelative(iso: string | null) {
   return `há ${d}d`;
 }
 
-function AsanaChip({ status, url }: { status: AsanaSyncStatus; url: string | null }) {
-  const map: Record<AsanaSyncStatus, { label: string; cls: string }> = {
-    not_synced: { label: "Não sincronizado", cls: "bg-slate-100 text-slate-600 border-slate-200" },
-    pending_sync: { label: "Aguardando sync", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-    syncing: { label: "Sincronizando…", cls: "bg-blue-50 text-blue-700 border-blue-200" },
-    synced: { label: "Asana OK", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    error: { label: "Erro Asana", cls: "bg-rose-50 text-rose-700 border-rose-200" },
-    disabled: { label: "Desativado", cls: "bg-slate-50 text-slate-500 border-slate-200" },
-  };
-  const cfg = map[status] ?? map.not_synced;
-  const inner = (
-    <Badge variant="outline" className={cn(cfg.cls, "text-[10px] font-medium gap-1")}>
-      {status === "synced" && <CheckCircle2 className="w-3 h-3" />}
-      {status === "error" && <AlertTriangle className="w-3 h-3" />}
-      {cfg.label}
-      {url && <ExternalLink className="w-2.5 h-2.5" />}
-    </Badge>
-  );
-  if (url && status === "synced") {
-    return <a href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{inner}</a>;
-  }
-  return inner;
-}
+// AsanaChip importado de @/components/demands/AsanaChip
+
+
 
 interface KpiTileProps {
   label: string;
@@ -146,21 +131,28 @@ function KpiTile({ label, value, icon: Icon, tone, active, onClick }: KpiTilePro
   );
 }
 
+type ViewMode = "table" | "cards" | "kanban";
+
 export default function DemandsListPage() {
   const navigate = useNavigate();
+  const { isAdmin } = useUserRole();
   const [filters, setFilters] = useState<InboxFilters>({});
-  const [view, setView] = useState<"table" | "cards">(() => (localStorage.getItem("demands-view") as "table" | "cards") ?? "table");
+  const [view, setView] = useState<ViewMode>(() => {
+    const v = localStorage.getItem("demands-view") as ViewMode | null;
+    return v === "table" || v === "cards" || v === "kanban" ? v : "table";
+  });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
 
   const { data: rows, isLoading, error, refetch, isFetching } = useDemandsInbox(filters);
   const { data: stats } = useDemandsInboxStats();
-  const { changeStatus, markUrgent, finalize, retryAsana } = useDemandQuickActions();
+  const { changeStatus, markUrgent, finalize, retryAsana, retryAllAsana } = useDemandQuickActions();
   const types = useUniqueDemandTypes(rows);
 
   const setQuick = (q: InboxQuickFilter) =>
     setFilters((f) => ({ ...f, quick: f.quick === q ? undefined : q }));
 
-  const setView_ = (v: "table" | "cards") => { setView(v); localStorage.setItem("demands-view", v); };
+  const setView_ = (v: ViewMode) => { setView(v); localStorage.setItem("demands-view", v); };
 
   const subtitle = useMemo(() => {
     if (!stats) return "Carregando…";
@@ -181,7 +173,7 @@ export default function DemandsListPage() {
               <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Demandas Recebidas</h1>
             </div>
             <p className="text-sm text-muted-foreground">Central operacional de BPO Financeiro · {subtitle}</p>
-            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1.5">
                 <span className={cn("w-1.5 h-1.5 rounded-full",
                   stats?.asanaError ? "bg-rose-500" : stats?.asanaOk ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
@@ -202,12 +194,28 @@ export default function DemandsListPage() {
               <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
               Atualizar
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl gap-2 bg-white/50 backdrop-blur-sm"
+              onClick={() => retryAllAsana.mutate()}
+              disabled={retryAllAsana.isPending}
+            >
+              <Cloud className={cn("w-4 h-4", retryAllAsana.isPending && "animate-pulse")} />
+              Sincronizar Asana
+            </Button>
+            {isAdmin && (
+              <Button asChild variant="outline" size="sm" className="rounded-xl gap-2 bg-white/50 backdrop-blur-sm">
+                <Link to="/demands/settings/asana"><Settings2 className="w-4 h-4" />Configurações</Link>
+              </Button>
+            )}
             <Button asChild className="rounded-xl gap-2 shadow-md">
               <Link to="/demands/new"><Plus className="w-4 h-4" />Nova demanda</Link>
             </Button>
           </div>
         </div>
       </GlassCard>
+
 
       {/* KPI GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
@@ -246,13 +254,17 @@ export default function DemandsListPage() {
               {showAdvanced ? "Ocultar filtros" : "Mais filtros"}
             </Button>
             <div className="flex rounded-xl border border-white/40 bg-white/50 backdrop-blur-sm p-0.5">
-              <Button variant={view === "table" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("table")}>
+              <Button variant={view === "table" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("table")} title="Tabela">
                 <List className="w-4 h-4" />
               </Button>
-              <Button variant={view === "cards" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("cards")}>
+              <Button variant={view === "cards" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("cards")} title="Cards">
                 <LayoutGrid className="w-4 h-4" />
               </Button>
+              <Button variant={view === "kanban" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("kanban")} title="Kanban">
+                <Columns3 className="w-4 h-4" />
+              </Button>
             </div>
+
           </div>
         </div>
         {showAdvanced && (
@@ -316,9 +328,14 @@ export default function DemandsListPage() {
             onFinalize={(id) => finalize.mutate(id)}
             onRetry={(id) => retryAsana.mutate(id)}
           />
-        ) : (
+        ) : view === "cards" ? (
           <DemandsCards rows={rows} onOpen={(id) => navigate(`/demands/${id}`)} />
+        ) : (
+          <div className="p-4">
+            <DemandsKanbanBoard rows={rows} onStatusChange={(id, status) => changeStatus.mutate({ id, status })} />
+          </div>
         )}
+
       </GlassCard>
     </div>
   );
