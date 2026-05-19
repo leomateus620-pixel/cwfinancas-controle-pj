@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { invokeAsana } from "@/lib/asana/invokeAsana";
 import type { DemandStatus } from "./useFinancialDemands";
 
 function invalidate(qc: ReturnType<typeof useQueryClient>) {
@@ -20,7 +21,7 @@ export function useDemandQuickActions() {
       const { error } = await supabase.from("financial_demands").update(patch).eq("id", id);
       if (error) throw new Error(error.message);
       // Fire-and-forget Asana update (silenciado em caso de falha)
-      supabase.functions.invoke("asana-update-task", { body: { demand_id: id } }).catch(() => {});
+      void invokeAsana("asana-update-task", { demand_id: id });
     },
     onSuccess: () => {
       invalidate(qc);
@@ -48,30 +49,47 @@ export function useDemandQuickActions() {
 
   const retryAsana = useMutation({
     mutationFn: async (id: string) => {
+      // Decide create vs update no servidor via retry-sync
       const { error } = await supabase.from("financial_demands")
         .update({ asana_sync_status: "pending_sync", asana_sync_error: null }).eq("id", id);
       if (error) throw new Error(error.message);
-      await supabase.functions.invoke("asana-create-task", { body: { demand_id: id } }).catch(() => {});
+      const res = await invokeAsana<{ ok: boolean }>("asana-retry-sync", { demand_id: id });
+      if (!res.ok) throw new Error(res.error);
     },
-    onSuccess: () => { invalidate(qc); toast({ title: "Reenvio ao Asana solicitado" }); },
+    onSuccess: () => {
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ["asana-sync-logs"] });
+      toast({ title: "Sincronização enviada ao Asana" });
+    },
+    onError: (e) => toast({
+      title: "Não foi possível sincronizar",
+      description: e instanceof Error ? e.message : String(e),
+      variant: "destructive",
+    }),
   });
 
   const retryAllAsana = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("asana-retry-sync", { body: {} });
-      if (error) throw new Error(error.message);
-      return data as { processed?: number; success?: number; errors?: number };
+      const res = await invokeAsana<{ processed?: number; success?: number; errors?: number }>(
+        "asana-retry-sync", {},
+      );
+      if (!res.ok) throw new Error(res.error);
+      return res.data;
     },
     onSuccess: (r) => {
       invalidate(qc);
+      qc.invalidateQueries({ queryKey: ["asana-sync-logs"] });
       toast({
-        title: "Sincronização Asana executada",
+        title: "Sincronização concluída",
         description: `${r?.success ?? 0} OK · ${r?.errors ?? 0} erro(s) · ${r?.processed ?? 0} processadas`,
       });
     },
-    onError: (e) => toast({ title: "Falha ao sincronizar", description: String(e instanceof Error ? e.message : e), variant: "destructive" }),
+    onError: (e) => toast({
+      title: "Não foi possível sincronizar",
+      description: e instanceof Error ? e.message : String(e),
+      variant: "destructive",
+    }),
   });
 
   return { changeStatus, markUrgent, finalize, retryAsana, retryAllAsana };
 }
-
