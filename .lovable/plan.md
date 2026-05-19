@@ -1,113 +1,188 @@
 
-# Etapa 2 — Central de Demandas Financeiras
+# Etapas 3 + 4 — Central de Demandas Financeiras
 
-Objetivo: permitir que clientes criem demandas pelo `/demands/new` (formulário multi-step com upload), abram a página de detalhe (`/demands/:id`) com timeline + checklist auto-gerado por tipo, e que o banco registre eventos automaticamente via trigger.
+Entrega conjunta: comentários, aprovação/rejeição com justificativa, dashboard de KPIs, documentos consolidados, CRUD de regras e sugestão automática de categoria por palavra-chave. Tudo sob um menu reorganizado.
 
-## 1. Banco de dados (migração)
+## 1. Reorganização do menu (sidebar)
 
-### 1.1 Templates de checklist por tipo
-Função `public.seed_demand_checklist(demand_id uuid, demand_type text)` que insere itens padrão em `financial_demand_checklist` de acordo com o tipo:
+O menu atual lista 6 itens sem hierarquia. Vamos agrupá-los por papel do usuário para clientes e equipe interna verem só o que importa:
 
-- `pagamento`: "Validar boleto/NF", "Conferir dados bancários", "Aprovar valor", "Agendar pagamento", "Confirmar pagamento"
-- `recebimento`: "Conferir NF emitida", "Confirmar entrada", "Conciliar conta"
-- `nota_fiscal`: "Validar dados", "Emitir NF", "Enviar ao cliente"
-- `conciliacao`: "Importar extrato", "Conciliar lançamentos", "Validar diferenças"
-- `reembolso`: "Validar comprovante", "Aprovar valor", "Efetuar reembolso"
-- `outro`: 1 item genérico "Analisar solicitação"
+```text
+Demandas Financeiras
+├─ Visão geral          /demands/dashboard      (todos)
+├─ Recebidas            /demands                (todos)
+├─ Nova demanda         /demands/new            (todos)
+├─ Aprovações           /demands/approvals      (interno) — badge com contador
+├─ Documentos           /demands/documents      (interno)
+└─ Regras & categorias  /demands/settings       (interno)
+```
 
-### 1.2 Trigger de timeline automática
-Trigger `AFTER INSERT OR UPDATE` em `financial_demands` chamando `public.log_demand_event()` (SECURITY DEFINER, search_path public):
+- Itens marcados (interno) ficam ocultos para `role = user` via `useUserRole().isManager`.
+- "Aprovações" mostra badge com contagem de demandas `status = 'aguardando_aprovacao'` quando > 0.
+- "Visão geral" passa a ser o landing do módulo (era placeholder).
 
-- INSERT → evento `created` + chama `seed_demand_checklist(...)` + cria `notifications` para `is_internal()` users
-- UPDATE de `status` → evento `status_changed` (de → para) + notifica `created_by`
-- UPDATE de `assigned_to` (não nulo) → evento `assigned` + notifica `assigned_to`
-- UPDATE de `approved_at` / `rejected_at` / `finalized_at` → eventos correspondentes
+## 2. Etapa 3 — Comentários e aprovação
 
-Trigger `AFTER INSERT` em `financial_demand_documents` → evento `document_uploaded` na timeline.
-Trigger `AFTER INSERT` em `financial_demand_comments` → evento `comment_added`.
+### 2.1 Comentários (`/demands/:id`)
 
-Nenhuma alteração estrutural nas tabelas existentes; apenas funções + triggers.
+- Novo card "Conversa" abaixo da Linha do tempo.
+- Hook `useDemandComments(demandId)` + `useAddDemandComment`.
+- Cliente vê e cria apenas comentários com `visibility = 'client'`.
+- Interno escolhe `client` (visível ao cliente) ou `internal` (só equipe), com toggle visual claro (badge "Interno" em fundo âmbar).
+- Composer com `Textarea` + botão "Enviar" + radio `visibility`.
+- Mensagens renderizadas em bolhas alinhadas (esquerda=outros, direita=eu), avatar/inicial, horário relativo.
+- Trigger já existente (`log_demand_comment_event`) escreve evento na timeline automaticamente.
 
-### 1.3 Storage policies
-Bucket `demand-documents` já existe. Adicionar policies (se não existirem) em `storage.objects`:
-- INSERT / SELECT / DELETE permitidos quando `bucket_id = 'demand-documents'` e o primeiro segmento do path (`(storage.foldername(name))[1]`) for um `demand_id` em `financial_demands` onde `is_internal()` ou `created_by = auth.uid()`.
+### 2.2 Fluxo de aprovação
 
-## 2. Hooks
+Regra: clientes solicitam → interno revisa → manager aprova/rejeita. Etapas:
 
-- `useCreateDemand()` (mutation): insere em `financial_demands` retornando `id`, invalida `['demands']`.
-- `useUploadDemandDocument()` (mutation): faz upload em `demand-documents/{demand_id}/{uuid}-{filename}`, insere row em `financial_demand_documents`.
-- `useDemand(id)` (query): retorna demanda + `created_by` profile.
-- `useDemandTimeline(id)` (query): lista eventos ordenados por `created_at desc`.
-- `useDemandChecklist(id)` (query + mutation `toggle`): lista e marca itens.
-- `useDemandDocuments(id)` (query + mutation `delete`): lista e remove arquivos (storage + row).
+1. Cliente cria demanda → status `recebida`.
+2. Interno pode clicar **"Solicitar aprovação"** quando estiver em `em_analise` → status `aguardando_aprovacao`.
+3. Em `aguardando_aprovacao`, na página de detalhe aparece um card destacado **"Decisão pendente"** com dois botões:
+   - **Aprovar** (verde) — opcional justificar
+   - **Rejeitar** (vermelho) — abre modal exigindo `rejection_reason` (mín. 5 chars). Sem justificativa, botão fica desabilitado.
+4. Ao aprovar: `status='aprovada'`, `approved_at=now()`, `approved_by=auth.uid()`.
+5. Ao rejeitar: `status='reprovada'`, `rejected_at=now()`, `rejected_by=auth.uid()`, `rejection_reason=<texto>`.
+6. Trigger existente já gera eventos `approved`/`rejected` + notifica cliente via trigger de `status_changed`.
 
-Todos com 3 estados (loading/error/empty) seguindo a regra global do projeto.
+Hook único `useApproveDemand` / `useRejectDemand`. Visibilidade dos botões: só `isManager`.
 
-## 3. Formulário multi-step `/demands/new`
+### 2.3 Migração de banco
 
-Componente `NewDemandPage` com 4 passos dentro de um `GlassCard` (Liquid Glass), barra de progresso no topo:
+- Função `public.has_pending_approvals_count()` (SECURITY DEFINER) para badge — apenas conta, sem expor dados.
+- Garantir UPDATE em `financial_demands` permitido para `aprovada`/`reprovada` (RLS já cobre via `is_internal()`).
+- Sem schema novo; nenhum CREATE TABLE nesta parte.
 
-1. **Tipo & título** — `demand_type` (cards visuais com ícones: Pagamento, Recebimento, NF, Conciliação, Reembolso, Outro), `title`, `priority`.
-2. **Detalhes financeiros** — `amount`, `due_date`, `supplier_name`, `supplier_document`, `cost_center`, `description` (textarea).
-3. **Documentos** — dropzone (drag-and-drop) usando input file; lista local antes do upload; aceita PDF/JPG/PNG/XML até 10MB cada.
-4. **Revisão** — resumo dos dados, botão "Enviar demanda".
+## 3. Etapa 4 — Dashboard, Documentos, Regras, Sugestão
 
-Fluxo de submit:
-1. Cria demanda → recebe `id`
-2. Faz upload de cada arquivo em paralelo (`Promise.all`) para `demand-documents/{id}/...`
-3. Insere rows em `financial_demand_documents`
-4. Redireciona para `/demands/:id`
+### 3.1 `/demands/dashboard` — Visão geral
 
-Validação com `zod` por etapa. Botões: Voltar / Próximo / Enviar. Estados: salvando, erro com retry.
+Layout em 3 linhas, Liquid Glass:
 
-## 4. Página de detalhe `/demands/:id`
+**Linha 1 — KPIs (4 cards):**
+- Demandas no mês (total criadas)
+- Aguardando aprovação (com link → `/demands/approvals`)
+- Tempo médio de resolução (criada → finalizada, em horas/dias)
+- Volume financeiro do mês (soma de `amount` de demandas finalizadas)
 
-`DemandDetailPage` com layout em 2 colunas (desktop) / stack (mobile):
+**Linha 2 — Gráficos:**
+- Barra empilhada por status (últimos 30 dias)
+- Donut por tipo de demanda
 
-**Coluna principal (8/12)**:
-- Header: `StatusBadge` + `PriorityBadge` + título + ações internas (admin/manager: alterar status, atribuir, finalizar — Etapa 3 fará aprovar/rejeitar)
-- Card de detalhes (valor, vencimento, fornecedor, categoria sugerida, descrição)
-- Card **Documentos**: grid com thumbnail/ícone, nome, tamanho, botão download (`createSignedUrl` 60s) e excluir
-- Card **Timeline**: linha vertical com ícones por `event_type`, autor, timestamp relativo
+**Linha 3:**
+- Lista das 5 demandas mais antigas ainda abertas (alerta)
+- Filtros avançados que afetam todos os KPIs: período (date range), tipo, prioridade, status, criador (apenas interno), valor mín/máx.
 
-**Coluna lateral (4/12)**:
-- Card **Checklist**: itens com checkbox; só internos podem marcar; mostra `completed_by` + horário
-- Card **Resumo**: criada por, criada em, atribuída a
+Hook `useDemandStats(filters)` faz uma única query select agregando no cliente (até 1000 rows).
 
-Loading: skeletons. Erro: mensagem amigável (404 captado como null). Vazio: estados próprios para timeline/docs/checklist.
+### 3.2 `/demands/documents` — Documentos consolidados (interno)
 
-## 5. Roteamento e sidebar
+- Tabela com todos os arquivos de `financial_demand_documents` (JOIN com `financial_demands` para mostrar título/cliente).
+- Colunas: arquivo, demanda (link), enviado por, tipo, tamanho, data.
+- Filtros: busca por nome, tipo de arquivo (PDF/IMG/XML), demanda.
+- Ações: baixar (signed URL 60s), abrir demanda.
+- Paginação simples (50 por página).
 
-- `App.tsx`: substituir placeholder de "Nova Demanda" pela rota real `/demands/new` → `NewDemandPage`; adicionar `/demands/:id` → `DemandDetailPage`.
-- `DemandsListPage`: cada linha vira link para `/demands/:id`.
-- `AppSidebar`: item "Nova Demanda" já existe — sem mudança estrutural.
+### 3.3 `/demands/settings` — Regras & categorias (interno)
 
-## 6. Validação
+CRUD de `financial_category_rules` (já existe a tabela):
 
-- Migração roda limpa; linter sem warnings novos.
-- Cliente cria demanda → vê evento `created` na timeline e checklist preenchido conforme tipo.
-- Upload aparece imediatamente na lista de documentos e gera evento `document_uploaded`.
-- Mudança de status (feita pelo interno via dropdown) escreve evento `status_changed` e cria `notification` para o cliente.
-- RLS: cliente não vê demanda de outro cliente; cliente não consegue marcar checklist (policy `is_internal()`).
-- Nenhuma rota existente quebra.
+- Lista em `GlassCard`: keyword, categoria, prioridade, ativo (switch).
+- Botão "Nova regra" → modal com `keyword`, `category`, `priority` (number), `is_active`.
+- Editar inline (clique no item abre modal).
+- Excluir com confirmação.
+- Dica visual: "Quando uma demanda é criada, palavras-chave em título e descrição sugerem categoria automaticamente."
 
-## 7. Arquivos
+### 3.4 Sugestão automática de categoria
 
-**Criar**
-- `supabase/migrations/<ts>_demands_etapa2.sql`
-- `src/hooks/useDemand.ts`, `useDemandTimeline.ts`, `useDemandChecklist.ts`, `useDemandDocuments.ts`, `useCreateDemand.ts`, `useUploadDemandDocument.ts`
-- `src/pages/demands/NewDemandPage.tsx`
-- `src/pages/demands/DemandDetailPage.tsx`
-- `src/components/demands/new/StepTypeTitle.tsx`, `StepDetails.tsx`, `StepDocuments.tsx`, `StepReview.tsx`, `StepProgress.tsx`
-- `src/components/demands/detail/DemandHeader.tsx`, `DemandTimeline.tsx`, `DemandChecklist.tsx`, `DemandDocumentsCard.tsx`, `DemandSummaryCard.tsx`
-- `src/lib/demands/checklistTemplates.ts` (espelho TS dos templates, caso precise no front)
+**Trigger no banco** (`suggest_demand_category`) `BEFORE INSERT OR UPDATE OF title, description` em `financial_demands`:
 
-**Editar**
-- `src/App.tsx` (rotas `/demands/new` e `/demands/:id`)
-- `src/pages/demands/DemandsListPage.tsx` (linkar linhas)
+- Se `category_final` está preenchido → não faz nada.
+- Senão, busca regra ativa com maior `priority` cujo `lower(keyword)` apareça em `lower(coalesce(title,'') || ' ' || coalesce(description,''))`.
+- Se achar → `NEW.category_suggested = regra.category`, `NEW.ai_confidence = 0.7`.
+- Se não achar → mantém `category_suggested` como está.
 
-## Próximas etapas (não nesta entrega)
+No frontend, na página de detalhe, quando `category_suggested` existe e `category_final` é null, mostrar badge **"Sugestão: X"** com botão **"Confirmar"** (interno) que copia para `category_final`.
 
-- Etapa 3: comentários, fluxo de aprovação/rejeição com justificativa, regras de notificação refinadas.
-- Etapa 4: dashboard de KPIs, lista de documentos global, CRUD de regras de categoria, sugestão automática.
-- Etapa 5: polimento, auditoria de segurança, atualização da memória do projeto.
+## 4. Hooks novos
+
+- `src/hooks/useDemandComments.ts` — query + mutation add
+- `src/hooks/useApproveDemand.ts` — `approve`, `reject`, `requestApproval` mutations
+- `src/hooks/useDemandStats.ts` — agregados para o dashboard
+- `src/hooks/useAllDemandDocuments.ts` — lista consolidada
+- `src/hooks/useCategoryRules.ts` — CRUD (list, upsert, remove)
+- `src/hooks/usePendingApprovalsCount.ts` — badge do sidebar
+- `src/hooks/useSetDemandCategory.ts` — confirmar categoria sugerida
+
+## 5. Componentes novos
+
+```text
+src/components/demands/
+├─ detail/
+│   ├─ DemandComments.tsx       (lista + composer + toggle interno/cliente)
+│   ├─ ApprovalDecisionCard.tsx (card destacado com botões Aprovar/Rejeitar)
+│   ├─ RejectModal.tsx          (justificativa obrigatória)
+│   └─ CategorySuggestionBadge.tsx
+├─ dashboard/
+│   ├─ DemandKpiCards.tsx
+│   ├─ DemandStatusChart.tsx
+│   ├─ DemandTypeDonut.tsx
+│   ├─ OldestOpenList.tsx
+│   └─ AdvancedFilters.tsx
+├─ documents/
+│   └─ DocumentsTable.tsx
+└─ settings/
+    ├─ CategoryRulesTable.tsx
+    └─ CategoryRuleModal.tsx
+```
+
+## 6. Páginas novas / atualizadas
+
+- **Criar** `src/pages/demands/DemandsDashboardPage.tsx`
+- **Criar** `src/pages/demands/DemandsApprovalsPage.tsx` (lista filtrada `status=aguardando_aprovacao`)
+- **Criar** `src/pages/demands/DemandsDocumentsPage.tsx`
+- **Criar** `src/pages/demands/DemandsSettingsPage.tsx`
+- **Editar** `src/pages/demands/DemandDetailPage.tsx` — adicionar `DemandComments`, `ApprovalDecisionCard`, `CategorySuggestionBadge`
+- **Editar** `src/App.tsx` — trocar placeholders pelas páginas reais
+- **Editar** `src/components/layout/AppSidebar.tsx` — itens condicionados por role + badge "Aprovações"
+
+## 7. Banco de dados — migração única
+
+```sql
+-- 1) Trigger de sugestão de categoria
+CREATE FUNCTION public.suggest_demand_category() RETURNS trigger
+-- BEFORE INSERT OR UPDATE OF title, description ON financial_demands
+
+-- 2) Função de contagem para badge
+CREATE FUNCTION public.demands_pending_approvals_count() RETURNS int
+-- STABLE SECURITY INVOKER (RLS já filtra por papel)
+
+-- 3) Seed inicial de regras (opcional, 6 padrões úteis: aluguel, energia,
+--    folha, internet, marketing, imposto) com priority=50, is_active=true
+```
+
+Sem alteração estrutural; só funções/trigger e seed via `insert` tool.
+
+## 8. Permissões e segurança
+
+- Sidebar e botões internos escondidos por `isManager`, **mas** a defesa real está na RLS já existente (`is_internal()`).
+- `rejection_reason` validado com Zod (mín. 5, máx. 500) no front e na mutation.
+- Comentários `internal` filtrados pela RLS atual — cliente nunca recebe a linha.
+- Funções novas SECURITY DEFINER com `REVOKE EXECUTE` de `PUBLIC, anon, authenticated` quando não houver motivo para chamada direta (trigger e contagem).
+
+## 9. Validação
+
+- `bun run build` limpo, sem warnings novos do linter.
+- Cliente criando demanda com "boleto de energia" → categoria sugerida = "Utilidades" (se seed cobrir).
+- Interno marca `aguardando_aprovacao` → card de decisão aparece; aprovar/rejeitar atualiza status, gera evento e notifica cliente.
+- Sidebar do cliente esconde Aprovações/Documentos/Regras; sidebar interno mostra tudo com badge de pendentes.
+- Página `/demands/documents` lista arquivos do cliente da demanda atual com download funcionando.
+- CRUD de regras: criar, editar, desativar, excluir.
+
+## 10. Fora de escopo (próxima etapa, Etapa 5)
+
+- OCR/IA para preencher `extracted_data` (pendente decisão futura)
+- E-mail/Resend para notificações
+- Atribuição de demanda a um membro específico (Picker de usuários internos)
+- Atualização da memória do projeto e auditoria final
