@@ -1,164 +1,192 @@
 
-# Plano: Central de Demandas Financeiras (BPO + Asana)
+# Fase 2 + Fase 3 — Central de Demandas Financeiras
 
-Evolução **incremental** do módulo existente. Nada do que já funciona é refeito ou quebrado: autenticação, RLS atual, layout, sidebar, hooks `useFinancialDemands`/`useDemand`/`useCreateDemand`, páginas `NewDemandPage`/`DemandDetailPage` permanecem. A entrega é dividida em **3 fases** entregues sequencialmente, cada uma testável em produção.
-
----
-
-## Decisões aprovadas
-
-- **Asana auth**: PAT por tenant, armazenado como secret server-side (`ASANA_PAT`, `ASANA_WORKSPACE_GID`, `ASANA_PROJECT_GID`, `ASANA_DEFAULT_SECTION_GID`).
-- **Multitenant**: adicionar `company_id` (FK `company_profiles`) em `financial_demands`. Sem `tenant_id`.
-- **Sync Asana**: híbrida — gravação imediata no Supabase → invoke `create-asana-task` em background → cron a cada 1min reprocessa pendentes/erros → botão manual de reenvio.
-- **Design**: Liquid Glass Premium (já estabelecido em mem), Inter + JetBrains Mono, sem refazer sidebar.
+Entrega única, incremental sobre o que a Fase 1 já entregou. Nada existente é refeito: `useFinancialDemands`, `useDemand`, `useCreateDemand`, `NewDemandPage`, `DemandDetailPage`, `DemandsListPage`, sidebar, RLS, autenticação e tabelas permanecem.
 
 ---
 
-## FASE 1 — Schema + Tela "Demandas Recebidas" operacional
+## 0. Pré-requisito — secrets do Asana
 
-### 1.1 Migração de banco
+Antes de qualquer código de integração, solicito via `add_secret`:
+`ASANA_PAT`, `ASANA_WORKSPACE_GID`, `ASANA_PROJECT_GID`, `ASANA_DEFAULT_SECTION_GID`.
 
-Tabela `financial_demands` — adicionar colunas (nullable, sem quebrar dados existentes):
-
-- `company_id uuid` (FK lógica para `company_profiles.id`)
-- `demand_code text` (gerado por trigger: `DM-YYYYMM-####`)
-- `sla_due_at timestamptz`
-- `asana_task_id text`
-- `asana_task_url text`
-- `asana_sync_status text default 'not_synced'` — valores: `not_synced`, `pending_sync`, `syncing`, `synced`, `error`, `disabled`
-- `asana_sync_error text`
-- `asana_last_synced_at timestamptz`
-
-Índices: `(asana_sync_status)`, `(company_id, status)`, `(status, priority, due_date)`.
-
-Nova tabela `asana_integration_settings` (singleton por instância — sem tenant_id por escolha):
-- `id`, `is_enabled bool`, `workspace_gid text`, `project_gid text`, `default_section_gid text`, `default_assignee_gid text`, `status_mapping jsonb`, `priority_mapping jsonb`, `created_at`, `updated_at`.
-- RLS: SELECT/UPDATE apenas admin via `has_role(auth.uid(),'admin')`.
-
-Nova tabela `asana_sync_logs`:
-- `id`, `demand_id`, `action text` (create/update/retry), `status text`, `request_payload jsonb`, `response_payload jsonb`, `error_message text`, `created_at`.
-- RLS: apenas `is_internal()` (admin/manager).
-
-RLS `financial_demands` — manter políticas existentes. Adicionar regra: cliente só vê demandas onde `company_id` é igual ao `company_id` do seu `company_profiles` OU `created_by = auth.uid()` (mantém retrocompatibilidade para demandas antigas sem company_id).
-
-Trigger `set_demand_code` BEFORE INSERT para gerar `demand_code` se nulo.
-
-### 1.2 Reformulação da tela `DemandsListPage` ("Demandas Recebidas")
-
-Substituir a tabela atual mantendo o mesmo arquivo `src/pages/demands/DemandsListPage.tsx`. Estrutura nova:
-
-**Header executivo** (GlassCard):
-- Título "Demandas Recebidas" + subtítulo dinâmico ("12 abertas · 3 urgentes · 1 vencida").
-- Botões: `Nova demanda` (existente), `Sincronizar Asana` (Fase 2), `Exportar CSV`.
-- Chip "Última sync: há X min" + status do Asana (verde/amarelo/vermelho).
-
-**Grid de KPIs clicáveis** (10 cards Liquid Glass mini, grid responsivo 2/3/5 cols):
-1. Recebidas hoje
-2. Em aberto
-3. Urgentes
-4. Aguardando cliente
-5. Aguardando aprovação
-6. Vencidas
-7. Vencendo em 3 dias
-8. Sync Asana OK
-9. Erro de sync
-10. Tempo médio de resposta (h)
-
-Clicar aplica filtro correspondente. Hook novo: `useDemandsInbox` (deriva tudo via 1 query com `select=*, count(exact)`).
-
-**Barra de filtros avançados** (expansível): busca, status, prioridade, tipo, responsável, vencimento (range), empresa, sync_status.
-
-**Toggle de visualização**: `Tabela | Cards | Kanban` (persistido em localStorage). Fase 1 entrega **Tabela + Cards**; Kanban fica para Fase 3.
-
-**Tabela enriquecida** com colunas: Código, Cliente/Empresa, Tipo, Título, Valor, Vencimento, SLA badge (no prazo/atrasado), Prioridade, Status, Responsável, Asana chip (synced/pending/error + link externo), Ações rápidas (DropdownMenu: alterar status, atribuir, marcar urgente, finalizar, reenviar Asana, copiar link Asana).
-
-**Empty/Loading/Error** — manter o padrão de resiliência já em mem.
-
-### 1.3 Hooks novos
-- `useDemandsInbox(filters)` — substitui `useFinancialDemands` na tela Recebidas (mantém o hook antigo intacto para retro-compat).
-- `useDemandQuickActions()` — mutations: `changeStatus`, `assignTo`, `markUrgent`, `finalize`.
+Se algum estiver ausente em runtime, a Edge Function retorna `{ok:false, error}` com mensagem clara — nunca quebra a criação da demanda.
 
 ---
 
-## FASE 2 — Integração Asana resiliente
+## 1. Edge Functions (Fase 2)
 
-### 2.1 Secrets necessários
-Solicitar via `add_secret`: `ASANA_PAT`, `ASANA_WORKSPACE_GID`, `ASANA_PROJECT_GID`, `ASANA_DEFAULT_SECTION_GID`.
+Todas em `supabase/functions/<nome>/index.ts`, com CORS completo, `getUser(token)`, validação Zod, sempre HTTP 200, logs em `asana_sync_logs`. Nunca expõem o PAT.
 
-### 2.2 Edge Functions
+### 1.1 `asana-test-connection`
+- Admin/internal only.
+- `GET https://app.asana.com/api/1.0/users/me` com `Authorization: Bearer ${ASANA_PAT}`.
+- Retorna `{ok, user, workspaces}` ou `{ok:false, error}`.
 
-**`asana-test-connection`** — GET `/users/me` no Asana. Retorna `{ok, user, workspaces}`. Apenas admin.
+### 1.2 `asana-create-task`
+Body: `{demand_id}`.
+- Valida user + permissão (internal OU dono via `created_by`/`company_id`).
+- Carrega demanda + `asana_integration_settings`. Se `is_enabled=false`, marca `disabled` e retorna.
+- **Idempotência:** se `asana_task_id` já existe → invoca update e retorna `{ok:true, task_id, task_url, idempotent:true}`.
+- Marca `asana_sync_status='syncing'`.
+- POST `/tasks` com `name`, `notes` (markdown estruturado: código, empresa, tipo, valor, vencimento, prioridade, status, descrição, link interno `${origin}/demands/${id}`, documentos), `projects:[ASANA_PROJECT_GID]`, `memberships:[{project, section}]`, `due_on`, `assignee` quando aplicável.
+- Sucesso: grava `asana_task_id`, `asana_task_url`, `status='synced'`, `error=null`, `last_synced_at=now()`. Log `action='create', status='success'`.
+- Erro: `status='error'`, `error=<msg curta>`, log `status='error'` com payload e response.
 
-**`asana-create-task`** — body `{demand_id}`. Fluxo:
-1. `getUser(token)` + verificar role internal ou que a demanda pertence ao user.
-2. Carrega demanda + `asana_integration_settings`.
-3. Marca `asana_sync_status='syncing'`.
-4. POST `https://app.asana.com/api/1.0/tasks` com título `[Empresa] - [Tipo] - [Título]`, descrição estruturada (cliente, valor, vencimento, prioridade, descrição, link interno `/demands/{id}`), `projects:[project_gid]`, `memberships:[{project, section}]`.
-5. Sucesso → grava `asana_task_id`, `asana_task_url`, `status='synced'`, `last_synced_at=now()`. Log em `asana_sync_logs`.
-6. Erro → `status='error'`, `asana_sync_error=...`. Log. **Nunca lança exceção para o frontend** — sempre 200 com `{ok:false,error}`.
+### 1.3 `asana-update-task`
+Body: `{demand_id}`.
+- Internal only.
+- Se sem `asana_task_id` → delega para create.
+- PUT `/tasks/{gid}` atualizando `name`, `notes`, `due_on`, `assignee` se houver. Move seção via `addProject`/`memberships` conforme `status_mapping` (mapeamento padrão embutido conforme tabela do briefing).
+- Mesma resiliência e logging.
 
-**`asana-update-task`** — body `{demand_id}`. PUT no Asana atualizando seção/status conforme `status_mapping`. Mesma resiliência.
+### 1.4 `asana-retry-sync`
+Body opcional: `{demand_id?}`.
+- Header `X-CRON-SECRET` permite execução não-autenticada para o cron; chamada via UI exige auth + internal.
+- Sem id: SELECT demandas com `asana_sync_status IN ('pending_sync','error')` LIMIT 50, ordem por `updated_at`.
+- Para cada: se sem task_id → create, senão → update.
+- Retorna `{ok, processed, success, errors}`.
 
-**`asana-retry-sync`** — body `{demand_id?}`. Se id fornecido, retenta 1; se ausente, busca todas com `asana_sync_status in ('pending_sync','error')` e processa em batch (limit 50).
-
-### 2.3 Trigger de criação
-Após `useCreateDemand` resolver, chamar `supabase.functions.invoke('asana-create-task', {body:{demand_id}})` em **fire-and-forget** (não bloqueia a UI). Demanda já está marcada `pending_sync` por default.
-
-Alteração mínima em `useCreateDemand`: setar `asana_sync_status='pending_sync'` no INSERT, depois invoke async sem await crítico.
-
-### 2.4 Cron de reprocessamento
-SQL via tool `insert` (pg_cron + pg_net) — job a cada 1 minuto chamando `asana-retry-sync` sem body (processa fila). Header `X-CRON-SECRET` igual ao padrão já usado no `scheduled-sync`.
-
-### 2.5 UI integrada na tela Recebidas
-- Chip Asana na tabela com tooltip e link `target=_blank`.
-- Ação rápida "Reenviar para Asana" invoca `asana-create-task`.
-- Header chip "Última sync" lê max(`asana_last_synced_at`).
-- KPI "Erro de sync" abre lista filtrada.
-
-### 2.6 Atualização de status → Asana
-No `useDemandQuickActions.changeStatus`, após UPDATE bem-sucedido, invoke `asana-update-task` fire-and-forget.
+### 1.5 Cron (via `supabase--insert`, não migration)
+`pg_cron` + `pg_net`, schedule `* * * * *`, POST para `asana-retry-sync` com header `X-CRON-SECRET`. Mesmo padrão do `scheduled-sync` já existente.
 
 ---
 
-## FASE 3 — Kanban, detalhe enriquecido, configurações
+## 2. Frontend — integração Asana na lista (Fase 2 UI)
 
-### 3.1 Visualização Kanban
-Componente `DemandsKanbanBoard.tsx` — colunas por status agrupado: Novas (recebida/em_analise) | Pendentes (aguardando_info/aprovacao) | Em execução (aprovada/em_execucao/pagamento_agendado) | Concluídas (finalizada). Drag-and-drop com `@dnd-kit` (já no projeto; senão adicionar). Drop muda status.
+### 2.1 `useCreateDemand` — alteração mínima
+- INSERT com `asana_sync_status='pending_sync'`.
+- Após sucesso, `supabase.functions.invoke('asana-create-task', {body:{demand_id}})` fire-and-forget (sem `await` bloqueante). Toast de sucesso da demanda aparece imediatamente.
 
-### 3.2 Detalhe da demanda (drawer lateral)
-Evoluir `DemandDetailPage` com seções colapsáveis (default fechado para audit, conforme regra de mem):
-- Header: código, título, badges status/prioridade, chip Asana com link.
-- Tabs: Visão geral · Documentos · Comentários · Checklist · Timeline · **Logs Asana** (apenas internal).
-- Botão "Reenviar Asana" no header quando `status='error'`.
+### 2.2 `useDemandQuickActions` — extensão
+- Após `changeStatus`, `markUrgent`, `assignTo`, `finalize` resolverem: invoca `asana-update-task` fire-and-forget e invalida query.
+- Nova mutation `retrySync(demandId)` → invoca `asana-create-task` (que delega para update se já existir task).
+- Nova mutation `retryAll()` → invoca `asana-retry-sync` sem body.
 
-### 3.3 Página de configurações Asana
-Nova rota `/demands/settings/asana` (admin only). Form com:
-- Toggle ativar integração.
-- Inputs Workspace GID / Project GID / Section GID / Default assignee (apenas leitura se vier de env; editáveis se quiser sobrescrever).
-- Mapeamentos status→section e priority→tag (JSON editor).
-- Botões "Testar conexão" e "Criar tarefa de teste".
-- Tabela de últimos 50 logs.
+### 2.3 `AsanaChip` (componente novo `src/components/demands/AsanaChip.tsx`)
+- Variantes: `synced` (verde), `syncing` (azul + spin), `pending_sync` (âmbar), `error` (vermelho), `disabled` (cinza), `not_synced` (neutro).
+- Tooltip: última sync, task_id, link externo. Mensagem de erro **apenas se `isInternal`**.
+- Botão externo abre `asana_task_url` em nova aba.
 
-### 3.4 Refinamentos finais
-- Mobile: tabela vira lista de cards <1024px.
-- Performance: paginação 50 + infinite scroll.
-- Testes manuais checklist (RLS cliente vs internal, sync OK, sync erro, retry cron, mudança de status).
+### 2.4 Header da `DemandsListPage`
+- Botão `Sincronizar Asana` → `retryAll()`.
+- Chip global "Última sync: há X min" lendo `max(asana_last_synced_at)`.
+- Status integração: verde/âmbar/vermelho conforme contagem de erros vs sync OK.
 
----
-
-## Detalhes técnicos importantes
-
-- **RLS**: `asana_integration_settings` e `asana_sync_logs` restritos a `is_internal()`. Clientes nunca veem logs nem error messages técnicos.
-- **CORS**: todas edge functions seguem padrão `getUser(token)` + full Supabase CORS (regra de mem).
-- **Resiliência**: nenhum erro Asana propaga para a UI do cliente. Sempre log + chip visual + retry disponível.
-- **Idempotência**: `asana-create-task` checa se `asana_task_id` já existe; se sim, vira update.
-- **Monetary**: `amount` continua NUMERIC(14,2) com trigger existente.
-- **Não tocado**: `useFinancialDemands` (mantido para retro-compat), `NewDemandPage`, sidebar, demais módulos.
+### 2.5 Tabela e Cards
+- Coluna/linha Asana usando `AsanaChip`.
+- Ação rápida "Reenviar para Asana" + "Copiar link Asana".
+- KPI "Erro de sync" filtra `asana_sync_status='error'`.
 
 ---
 
-## Entrega proposta
+## 3. Kanban (Fase 3)
 
-Após aprovação, implemento **Fase 1 completa** primeiro (sem Asana), valido a tela operacional, e só então sigo para Fase 2 (que exige você adicionar os secrets do Asana). Fase 3 é incremental sobre o que estiver estável.
+### 3.1 `DemandsKanbanBoard.tsx`
+- 5 colunas: Novas, Pendentes, Em execução, Concluídas, Canceladas/Reprovadas (agrupamento exato do briefing).
+- `@dnd-kit/core` + `@dnd-kit/sortable` (instalo se ausente).
+- Card mostra: código, título, empresa, valor (mono tabular-nums), vencimento, prioridade, SLA, responsável, AsanaChip, ícone do tipo.
+- Drop entre colunas → escolhe primeiro status do grupo destino → `changeStatus()` otimista → revalida em erro.
+- Respeita filtros e busca de `useDemandsInbox`.
 
-Confirma este plano para eu iniciar pela Fase 1?
+### 3.2 Toggle Tabela | Cards | Kanban
+- Já existe Tabela/Cards. Adiciono botão Kanban no mesmo toggle, persistido em localStorage (`demands:view`).
+
+---
+
+## 4. Detalhe enriquecido (Fase 3)
+
+Evolução de `DemandDetailPage` (mesmo arquivo, sem quebrar rotas):
+
+### 4.1 Header
+- Adiciono: código, SLA badge, `AsanaChip`, botões "Abrir no Asana", "Reenviar Asana" (quando `error`), além dos atuais.
+
+### 4.2 Tabs (Radix `Tabs`)
+Substituo grid atual por: `Visão geral | Documentos | Comentários | Checklist | Timeline | Logs Asana`.
+- Conteúdo atual da página é redistribuído nas 5 primeiras (mantendo componentes `DemandComments`, `ApprovalDecisionCard`, etc.).
+- **Logs Asana**: nova tab condicionada a `isInternal`. Hook novo `useAsanaSyncLogs(demandId)` lê últimos 50 com paginação leve. Cada item: action, status, error_message, created_at, request/response em `<Collapsible>` (fechado por default — regra de mem).
+
+---
+
+## 5. Configurações Asana (Fase 3)
+
+### 5.1 Rota `/demands/settings/asana` — admin only
+Página nova `src/pages/demands/AsanaSettingsPage.tsx`. Guarded por `useUserRole().isAdmin` (redirect para `/demands` se não admin). Registrada em `App.tsx`.
+
+### 5.2 Form
+- Toggle `is_enabled`.
+- Inputs: `workspace_gid`, `project_gid`, `default_section_gid`, `default_assignee_gid`.
+- JSON editors (Textarea + validação) para `status_mapping` e `priority_mapping`.
+- Nota informativa: "Token PAT gerenciado em variáveis seguras do servidor" (sem expor).
+- Botão "Testar conexão" → `asana-test-connection` → exibe user + workspaces.
+- Botão "Criar tarefa de teste" → cria demanda dummy ou usa endpoint dedicado? **Decisão:** sem criar demanda — chama variante de teste do `asana-create-task` com flag `dry_run:true` que cria task com nome `[TESTE] Conexão Lovable` e retorna link, sem persistir vínculo.
+- Tabela últimos 50 logs (sem filtro de demand_id).
+
+### 5.3 Link no Sidebar
+**Não toco na sidebar.** Adiciono apenas link "Configurações Asana" no menu de ações do header da `DemandsListPage` (DropdownMenu admin-only).
+
+---
+
+## 6. RLS e segurança
+
+Políticas atuais já cobrem o necessário (`asana_integration_settings` admin-only, `asana_sync_logs` internal-only, `financial_demands` com `company_id` opcional). Sem migrations adicionais.
+
+Garantias no código:
+- `AsanaChip` esconde `error_message` para clientes.
+- Tab "Logs Asana" só renderiza se `isInternal`.
+- Comentários internos já filtrados por `visibility`.
+- Edge Functions revalidam permissão antes de operar.
+
+---
+
+## 7. Responsividade e performance
+
+- `DemandsListPage`: filtros viram `Sheet` lateral em `<lg`. Tabela vira lista de cards `<lg`. Kanban com `overflow-x-auto` + snap.
+- `DemandDetailPage`: tabs ficam scrolláveis horizontalmente em mobile; header empilha.
+- Paginação 50 itens em `useDemandsInbox` (já tem base; adiciono `range()` + botão "Carregar mais").
+- Logs Asana lazy (só fetch quando tab ativa).
+- Otimista em drag Kanban e quick actions.
+
+---
+
+## 8. Arquivos a criar / alterar
+
+**Criar:**
+- `supabase/functions/asana-test-connection/index.ts`
+- `supabase/functions/asana-create-task/index.ts`
+- `supabase/functions/asana-update-task/index.ts`
+- `supabase/functions/asana-retry-sync/index.ts`
+- `src/components/demands/AsanaChip.tsx`
+- `src/components/demands/DemandsKanbanBoard.tsx`
+- `src/hooks/useAsanaSyncLogs.ts`
+- `src/hooks/useAsanaSettings.ts`
+- `src/pages/demands/AsanaSettingsPage.tsx`
+
+**Alterar (cirurgicamente):**
+- `src/hooks/useCreateDemand.ts` — pending_sync + invoke fire-and-forget.
+- `src/hooks/useDemandQuickActions.ts` — sync hooks + retry mutations.
+- `src/hooks/useDemandsInbox.ts` — paginação 50.
+- `src/pages/demands/DemandsListPage.tsx` — toggle Kanban, header com sync global, Sheet de filtros mobile, ações Asana, link admin.
+- `src/pages/demands/DemandDetailPage.tsx` — tabs + header com Asana + tab Logs.
+- `src/App.tsx` — rota `/demands/settings/asana`.
+
+**Cron (via `supabase--insert`, não migration):** schedule `asana-retry-sync`.
+
+---
+
+## 9. Sequência de execução
+
+1. Solicitar secrets Asana (`add_secret`).
+2. Aguardar confirmação do usuário.
+3. Criar as 4 Edge Functions + deploy.
+4. Adicionar `@dnd-kit/core` e `@dnd-kit/sortable` (se ausentes).
+5. Criar componentes/hooks novos (AsanaChip, Kanban, logs, settings).
+6. Alterar hooks existentes (create, quickActions, inbox).
+7. Refatorar `DemandsListPage` (toggle Kanban, sync global, mobile sheet).
+8. Refatorar `DemandDetailPage` (tabs + logs).
+9. Criar `AsanaSettingsPage` + rota.
+10. Agendar cron via `supabase--insert`.
+11. Testar `asana-test-connection` via `curl_edge_functions`.
+12. Validar fluxo end-to-end com `read_query` (verificar `asana_sync_logs`).
+
+Confirma para eu solicitar os secrets e iniciar?
