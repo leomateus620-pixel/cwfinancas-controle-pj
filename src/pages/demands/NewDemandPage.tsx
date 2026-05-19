@@ -41,6 +41,7 @@ export default function NewDemandPage() {
   const navigate = useNavigate();
   const create = useCreateDemand();
   const upload = useUploadDemandDocument();
+  const { profile, isLoading: profileLoading } = useProfile();
 
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<DemandFormState>(EMPTY_FORM);
@@ -48,6 +49,15 @@ export default function NewDemandPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement | null>(null);
+
+  const identified = !!profile?.full_name && !!profile?.company_name;
+
+  // Pré-popula o solicitante quando o perfil estiver disponível
+  useEffect(() => {
+    if (identified && profile && !form.requester) {
+      setForm((f) => ({ ...f, requester: profile.full_name ?? "" }));
+    }
+  }, [identified, profile, form.requester]);
 
   const update = (k: keyof DemandFormState, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const selectType = (val: string) => {
