@@ -115,7 +115,17 @@ export default function NewDemandPage() {
   };
 
   if (createdId) {
-    return <SuccessScreen id={createdId} typeKey={form.demand_type} title={form.title} onNew={() => { setCreatedId(null); setForm(EMPTY_FORM); setFiles([]); setStep(0); }} />;
+    return <SuccessScreen id={createdId} typeKey={form.demand_type} title={form.title} onNew={() => { setCreatedId(null); setForm({ ...EMPTY_FORM, requester: profile?.full_name ?? "" }); setFiles([]); setStep(0); }} />;
+  }
+
+  if (!profileLoading && !identified) {
+    return (
+      <ClientIdentityGate
+        initialName={profile?.full_name ?? ""}
+        initialCompany={profile?.company_name ?? ""}
+        onDone={() => { /* refetch ocorre via invalidate em useProfile */ }}
+      />
+    );
   }
 
   const typeLabel = DEMAND_TYPES.find((t) => t.value === form.demand_type)?.label ?? "—";
