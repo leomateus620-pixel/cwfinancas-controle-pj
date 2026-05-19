@@ -144,10 +144,21 @@ export default function DemandsListPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
 
-  const { data: rows, isLoading, error, refetch, isFetching } = useDemandsInbox(filters);
+  const { data: rows, total, isLoading, error, refetch, isFetching, hasNextPage, isFetchingNextPage, fetchNextPage } = useDemandsInbox(filters);
   const { data: stats } = useDemandsInboxStats();
   const { changeStatus, markUrgent, finalize, retryAsana, retryAllAsana } = useDemandQuickActions();
   const types = useUniqueDemandTypes(rows);
+
+  const activeFiltersCount = useMemo(() => {
+    let n = 0;
+    if (filters.search?.trim()) n++;
+    if (filters.status && filters.status !== "all") n++;
+    if (filters.priority && filters.priority !== "all") n++;
+    if (filters.type && filters.type !== "all") n++;
+    if (filters.syncStatus && filters.syncStatus !== "all") n++;
+    if (filters.quick) n++;
+    return n;
+  }, [filters]);
 
   const setQuick = (q: InboxQuickFilter) =>
     setFilters((f) => ({ ...f, quick: f.quick === q ? undefined : q }));
