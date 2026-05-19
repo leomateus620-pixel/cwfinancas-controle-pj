@@ -191,6 +191,7 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
           "x-cron-secret": Deno.env.get("CRON_SECRET") ?? "",
           apikey: SUPABASE_SERVICE_ROLE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
         },
         body: JSON.stringify({ demand_id: d.id }),
       });
@@ -201,8 +202,15 @@ Deno.serve(async (req) => {
       }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Marca syncing
+    // Marca syncing + re-check anti-duplicidade
     await svc.from("financial_demands").update({ asana_sync_status: "syncing" }).eq("id", d.id);
+    const { data: recheck } = await svc.from("financial_demands")
+      .select("asana_task_id,asana_task_url").eq("id", d.id).maybeSingle();
+    if (recheck?.asana_task_id) {
+      return new Response(JSON.stringify({
+        ok: true, task_id: recheck.asana_task_id, task_url: recheck.asana_task_url, idempotent: true,
+      }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     const origin = req.headers.get("origin") ?? "https://app.lovable.dev";
     const titlePrefix = d.supplier_name ? `[${d.supplier_name}] ` : "";

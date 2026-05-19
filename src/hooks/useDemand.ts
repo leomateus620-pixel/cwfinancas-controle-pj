@@ -48,8 +48,9 @@ export function useCreateDemand() {
       const demandId = data.id as string;
 
       // Fire-and-forget — não bloqueia UI, não quebra se Asana falhar
-      supabase.functions.invoke("asana-create-task", { body: { demand_id: demandId } })
-        .catch((e) => console.warn("[asana-create-task] background failed", e));
+      void import("@/lib/asana/invokeAsana").then(({ invokeAsana }) =>
+        invokeAsana("asana-create-task", { demand_id: demandId }),
+      );
 
       return demandId;
     },
