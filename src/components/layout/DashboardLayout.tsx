@@ -1,4 +1,4 @@
-import { Outlet, Link, useNavigate } from "react-router-dom";
+import { Outlet, Link } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { DashboardHeader } from "./DashboardHeader";
 import { SidebarProvider } from "@/components/ui/sidebar";
