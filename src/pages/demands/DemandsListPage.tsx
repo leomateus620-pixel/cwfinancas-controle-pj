@@ -87,29 +87,9 @@ function fmtRelative(iso: string | null) {
   return `há ${d}d`;
 }
 
-function AsanaChip({ status, url }: { status: AsanaSyncStatus; url: string | null }) {
-  const map: Record<AsanaSyncStatus, { label: string; cls: string }> = {
-    not_synced: { label: "Não sincronizado", cls: "bg-slate-100 text-slate-600 border-slate-200" },
-    pending_sync: { label: "Aguardando sync", cls: "bg-amber-50 text-amber-700 border-amber-200" },
-    syncing: { label: "Sincronizando…", cls: "bg-blue-50 text-blue-700 border-blue-200" },
-    synced: { label: "Asana OK", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    error: { label: "Erro Asana", cls: "bg-rose-50 text-rose-700 border-rose-200" },
-    disabled: { label: "Desativado", cls: "bg-slate-50 text-slate-500 border-slate-200" },
-  };
-  const cfg = map[status] ?? map.not_synced;
-  const inner = (
-    <Badge variant="outline" className={cn(cfg.cls, "text-[10px] font-medium gap-1")}>
-      {status === "synced" && <CheckCircle2 className="w-3 h-3" />}
-      {status === "error" && <AlertTriangle className="w-3 h-3" />}
-      {cfg.label}
-      {url && <ExternalLink className="w-2.5 h-2.5" />}
-    </Badge>
-  );
-  if (url && status === "synced") {
-    return <a href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>{inner}</a>;
-  }
-  return inner;
-}
+// AsanaChip importado de @/components/demands/AsanaChip
+
+
 
 interface KpiTileProps {
   label: string;
