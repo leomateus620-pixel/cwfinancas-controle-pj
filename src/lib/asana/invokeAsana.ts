@@ -30,11 +30,29 @@ export async function invokeAsana<T = unknown>(
   body: Record<string, unknown> = {},
 ): Promise<AsanaInvokeResult<T>> {
   try {
-    const { data, error } = await supabase.functions.invoke(fn, { body });
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
 
-    if (error) {
-      const raw = (error as { message?: string })?.message ?? String(error);
-      return { ok: false, error: friendly(raw), detail: raw };
+    if (!accessToken) {
+      return { ok: false, error: "Sessão expirada. Faça login novamente.", detail: "missing_session" };
+    }
+
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${fn}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await response.text();
+    const data = text ? JSON.parse(text) : null;
+
+    if (!response.ok) {
+      const raw = data?.error ?? data?.message ?? `HTTP ${response.status}`;
+      return { ok: false, error: friendly(String(raw)), detail: String(raw) };
     }
 
     // As funções sempre devolvem 200 com { ok: boolean, ... }
