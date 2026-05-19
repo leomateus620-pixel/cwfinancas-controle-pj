@@ -62,20 +62,28 @@ const toolsNavItems = [
   { title: "Conversor de Extratos", url: "/statement-converter", icon: FileDown },
 ];
 
-const demandsNavItems = [
-  { title: "Dashboard", url: "/demands/dashboard", icon: LayoutGrid },
-  { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
+const demandsClientItems = [
+  { title: "Visão geral", url: "/demands/dashboard", icon: LayoutGrid },
   { title: "Recebidas", url: "/demands", icon: Inbox },
-  { title: "Aprovações Pendentes", url: "/demands/approvals", icon: CheckSquare },
-  { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
-  { title: "Configurações", url: "/demands/settings", icon: Sliders },
+  { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
 ];
+
+const demandsInternalItems = [
+  { title: "Aprovações", url: "/demands/approvals", icon: CheckSquare, badgeKey: "pending" as const },
+  { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
+  { title: "Regras & categorias", url: "/demands/settings", icon: Sliders },
+];
+
+import { useUserRole } from "@/hooks/useUserRole";
+import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
+  const { isManager } = useUserRole();
+  const { data: pendingCount = 0 } = usePendingApprovalsCount(isManager);
 
   const isActive = (path: string) => {
     if (path === "/") return currentPath === "/";

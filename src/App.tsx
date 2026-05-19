@@ -108,12 +108,12 @@ const App = () => {
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/statement-converter" element={<StatementConverterPage />} />
                   <Route path="/demands" element={<DemandsListPage />} />
-                  <Route path="/demands/dashboard" element={<DemandsPlaceholderPage title="Dashboard de Demandas" description="Indicadores e visão geral das demandas financeiras." />} />
+                  <Route path="/demands/dashboard" element={<DemandsDashboardPage />} />
                   <Route path="/demands/new" element={<NewDemandPage />} />
                   <Route path="/demands/:id" element={<DemandDetailPage />} />
-                  <Route path="/demands/approvals" element={<DemandsPlaceholderPage title="Aprovações Pendentes" description="Demandas que aguardam sua aprovação." />} />
-                  <Route path="/demands/documents" element={<DemandsPlaceholderPage title="Documentos Financeiros" description="Todos os documentos vinculados às demandas." />} />
-                  <Route path="/demands/settings" element={<DemandsPlaceholderPage title="Configurações de Fluxo" description="Regras de categorização e parâmetros do módulo." />} />
+                  <Route path="/demands/approvals" element={<DemandsApprovalsPage />} />
+                  <Route path="/demands/documents" element={<DemandsDocumentsPage />} />
+                  <Route path="/demands/settings" element={<DemandsSettingsPage />} />
                 </Route>
                 
                 <Route path="*" element={<NotFound />} />
