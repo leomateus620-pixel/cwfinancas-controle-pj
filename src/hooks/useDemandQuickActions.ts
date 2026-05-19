@@ -54,7 +54,7 @@ export function useDemandQuickActions() {
         .update({ asana_sync_status: "pending_sync", asana_sync_error: null }).eq("id", id);
       if (error) throw new Error(error.message);
       const res = await invokeAsana<{ ok: boolean }>("asana-retry-sync", { demand_id: id });
-      if (!res.ok) throw new Error(res.error);
+      if (res.ok === false) throw new Error(res.error);
     },
     onSuccess: () => {
       invalidate(qc);
@@ -73,7 +73,7 @@ export function useDemandQuickActions() {
       const res = await invokeAsana<{ processed?: number; success?: number; errors?: number }>(
         "asana-retry-sync", {},
       );
-      if (!res.ok) throw new Error(res.error);
+      if (res.ok === false) throw new Error(res.error);
       return res.data;
     },
     onSuccess: (r) => {
