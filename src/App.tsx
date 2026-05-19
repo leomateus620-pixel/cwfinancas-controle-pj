@@ -102,6 +102,12 @@ const App = () => {
                   <Route path="/credit-cards" element={<CreditCardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/statement-converter" element={<StatementConverterPage />} />
+                  <Route path="/demands" element={<DemandsListPage />} />
+                  <Route path="/demands/dashboard" element={<DemandsPlaceholderPage title="Dashboard de Demandas" description="Indicadores e visão geral das demandas financeiras." />} />
+                  <Route path="/demands/new" element={<DemandsPlaceholderPage title="Nova Demanda" description="Crie uma nova solicitação financeira." />} />
+                  <Route path="/demands/approvals" element={<DemandsPlaceholderPage title="Aprovações Pendentes" description="Demandas que aguardam sua aprovação." />} />
+                  <Route path="/demands/documents" element={<DemandsPlaceholderPage title="Documentos Financeiros" description="Todos os documentos vinculados às demandas." />} />
+                  <Route path="/demands/settings" element={<DemandsPlaceholderPage title="Configurações de Fluxo" description="Regras de categorização e parâmetros do módulo." />} />
                 </Route>
                 
                 <Route path="*" element={<NotFound />} />
