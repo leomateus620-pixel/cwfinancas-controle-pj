@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { useCreateDemand } from "@/hooks/useDemand";
 import { useDemand } from "@/hooks/useDemand";
 import { useUploadDemandDocument } from "@/hooks/useDemandDocuments";
+import { useProfile } from "@/hooks/useProfile";
 import { GlassCard } from "@/components/home/GlassCard";
 import { Button } from "@/components/ui/button";
 import { DEMAND_TYPES, PRIORITY_OPTIONS } from "@/lib/demands/types";
@@ -16,6 +17,7 @@ import { StepIndicator } from "@/components/demands/new/StepIndicator";
 import { UploadDropzone } from "@/components/demands/new/UploadDropzone";
 import { SmartDemandForm, EMPTY_FORM, buildDemandPayload, type DemandFormState } from "@/components/demands/new/SmartDemandForm";
 import { AsanaChip } from "@/components/demands/AsanaChip";
+import { ClientIdentityGate } from "@/components/demands/new/ClientIdentityGate";
 
 const STEPS = ["Tipo", "Informações", "Documentos", "Revisão"] as const;
 
@@ -39,6 +41,7 @@ export default function NewDemandPage() {
   const navigate = useNavigate();
   const create = useCreateDemand();
   const upload = useUploadDemandDocument();
+  const { profile, isLoading: profileLoading } = useProfile();
 
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<DemandFormState>(EMPTY_FORM);
@@ -46,6 +49,15 @@ export default function NewDemandPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const topRef = useRef<HTMLDivElement | null>(null);
+
+  const identified = !!profile?.full_name && !!profile?.company_name;
+
+  // Pré-popula o solicitante quando o perfil estiver disponível
+  useEffect(() => {
+    if (identified && profile && !form.requester) {
+      setForm((f) => ({ ...f, requester: profile.full_name ?? "" }));
+    }
+  }, [identified, profile, form.requester]);
 
   const update = (k: keyof DemandFormState, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const selectType = (val: string) => {
@@ -103,7 +115,17 @@ export default function NewDemandPage() {
   };
 
   if (createdId) {
-    return <SuccessScreen id={createdId} typeKey={form.demand_type} title={form.title} onNew={() => { setCreatedId(null); setForm(EMPTY_FORM); setFiles([]); setStep(0); }} />;
+    return <SuccessScreen id={createdId} typeKey={form.demand_type} title={form.title} onNew={() => { setCreatedId(null); setForm({ ...EMPTY_FORM, requester: profile?.full_name ?? "" }); setFiles([]); setStep(0); }} />;
+  }
+
+  if (!profileLoading && !identified) {
+    return (
+      <ClientIdentityGate
+        initialName={profile?.full_name ?? ""}
+        initialCompany={profile?.company_name ?? ""}
+        onDone={() => { /* refetch ocorre via invalidate em useProfile */ }}
+      />
+    );
   }
 
   const typeLabel = DEMAND_TYPES.find((t) => t.value === form.demand_type)?.label ?? "—";
