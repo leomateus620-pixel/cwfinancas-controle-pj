@@ -96,7 +96,11 @@ export default function DemandsListPage() {
               </thead>
               <tbody>
                 {data.map((d) => (
-                  <tr key={d.id} className="border-b border-black/[0.03] hover:bg-white/40 transition-colors">
+                  <tr
+                    key={d.id}
+                    className="border-b border-black/[0.03] hover:bg-white/40 transition-colors cursor-pointer"
+                    onClick={() => { window.location.assign(`/demands/${d.id}`); }}
+                  >
                     <td className="px-4 py-3 font-medium">
                       <div className="line-clamp-1">{d.title}</div>
                       {d.supplier_name && (
