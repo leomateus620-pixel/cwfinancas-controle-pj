@@ -62,42 +62,46 @@ const toolsNavItems = [
   { title: "Conversor de Extratos", url: "/statement-converter", icon: FileDown },
 ];
 
-const demandsNavItems = [
-  { title: "Dashboard", url: "/demands/dashboard", icon: LayoutGrid },
-  { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
+const demandsClientItems = [
+  { title: "Visão geral", url: "/demands/dashboard", icon: LayoutGrid },
   { title: "Recebidas", url: "/demands", icon: Inbox },
-  { title: "Aprovações Pendentes", url: "/demands/approvals", icon: CheckSquare },
-  { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
-  { title: "Configurações", url: "/demands/settings", icon: Sliders },
+  { title: "Nova Demanda", url: "/demands/new", icon: PlusCircle },
 ];
+
+const demandsInternalItems = [
+  { title: "Aprovações", url: "/demands/approvals", icon: CheckSquare, badgeKey: "pending" as const },
+  { title: "Documentos", url: "/demands/documents", icon: FolderOpen },
+  { title: "Regras & categorias", url: "/demands/settings", icon: Sliders },
+];
+
+import { useUserRole } from "@/hooks/useUserRole";
+import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
   const currentPath = location.pathname;
+  const { isManager } = useUserRole();
+  const { data: pendingCount = 0 } = usePendingApprovalsCount(isManager);
 
   const isActive = (path: string) => {
     if (path === "/") return currentPath === "/";
     return currentPath.startsWith(path);
   };
 
-  const renderNavItem = (item: typeof mainNavItems[0]) => (
+  const renderNavItem = (item: { title: string; url: string; icon: typeof Home; badgeKey?: "pending" }) => {
+    const badge = item.badgeKey === "pending" && pendingCount > 0 ? pendingCount : null;
+    return (
     <SidebarMenuItem key={item.title}>
-      <SidebarMenuButton 
-        asChild
-        isActive={isActive(item.url)}
-        tooltip={item.title}
-      >
-        <NavLink 
-          to={item.url} 
+      <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+        <NavLink
+          to={item.url}
           end={item.url === "/"}
           className={`
             flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 relative
             text-foreground/70 hover:text-foreground
-            ${isActive(item.url) 
-              ? 'sidebar-nav-active text-primary font-medium' 
-              : 'sidebar-nav-hover border border-transparent'}
+            ${isActive(item.url) ? 'sidebar-nav-active text-primary font-medium' : 'sidebar-nav-hover border border-transparent'}
           `}
           activeClassName="sidebar-nav-active text-primary font-medium"
         >
@@ -105,11 +109,17 @@ export function AppSidebar() {
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-primary rounded-r-full shadow-[0_0_8px_rgba(45,126,243,0.4)]" />
           )}
           <item.icon className={`w-[18px] h-[18px] shrink-0 transition-colors ${isActive(item.url) ? 'text-primary' : ''}`} />
-          {!collapsed && <span className="text-[13px]">{item.title}</span>}
+          {!collapsed && <span className="text-[13px] flex-1">{item.title}</span>}
+          {!collapsed && badge != null && (
+            <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-violet-100 text-violet-700 text-[10px] font-semibold">
+              {badge}
+            </span>
+          )}
         </NavLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
-  );
+    );
+  };
 
   return (
     <Sidebar 
@@ -148,7 +158,8 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-1">
-              {demandsNavItems.map(renderNavItem)}
+              {demandsClientItems.map(renderNavItem)}
+              {isManager && demandsInternalItems.map(renderNavItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -35,9 +35,12 @@ import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsOfUsePage from "@/pages/TermsOfUsePage";
 import StatementConverterPage from "@/pages/StatementConverterPage";
 import DemandsListPage from "@/pages/demands/DemandsListPage";
-import DemandsPlaceholderPage from "@/pages/demands/DemandsPlaceholderPage";
 import NewDemandPage from "@/pages/demands/NewDemandPage";
 import DemandDetailPage from "@/pages/demands/DemandDetailPage";
+import DemandsDashboardPage from "@/pages/demands/DemandsDashboardPage";
+import DemandsApprovalsPage from "@/pages/demands/DemandsApprovalsPage";
+import DemandsDocumentsPage from "@/pages/demands/DemandsDocumentsPage";
+import DemandsSettingsPage from "@/pages/demands/DemandsSettingsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -105,12 +108,12 @@ const App = () => {
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/statement-converter" element={<StatementConverterPage />} />
                   <Route path="/demands" element={<DemandsListPage />} />
-                  <Route path="/demands/dashboard" element={<DemandsPlaceholderPage title="Dashboard de Demandas" description="Indicadores e visão geral das demandas financeiras." />} />
+                  <Route path="/demands/dashboard" element={<DemandsDashboardPage />} />
                   <Route path="/demands/new" element={<NewDemandPage />} />
                   <Route path="/demands/:id" element={<DemandDetailPage />} />
-                  <Route path="/demands/approvals" element={<DemandsPlaceholderPage title="Aprovações Pendentes" description="Demandas que aguardam sua aprovação." />} />
-                  <Route path="/demands/documents" element={<DemandsPlaceholderPage title="Documentos Financeiros" description="Todos os documentos vinculados às demandas." />} />
-                  <Route path="/demands/settings" element={<DemandsPlaceholderPage title="Configurações de Fluxo" description="Regras de categorização e parâmetros do módulo." />} />
+                  <Route path="/demands/approvals" element={<DemandsApprovalsPage />} />
+                  <Route path="/demands/documents" element={<DemandsDocumentsPage />} />
+                  <Route path="/demands/settings" element={<DemandsSettingsPage />} />
                 </Route>
                 
                 <Route path="*" element={<NotFound />} />
