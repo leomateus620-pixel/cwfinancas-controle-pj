@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-cron-secret",
+    "authorization, x-client-info, x-supabase-client-platform, apikey, content-type, x-cron-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -36,8 +36,9 @@ Deno.serve(async (req) => {
 
     const cronSecret = req.headers.get("x-cron-secret");
     const isCron = cronSecret && cronSecret === Deno.env.get("CRON_SECRET");
-    if (!isCron && !demand_id) {
-      // chamada manual sem id exige auth
+    let userId: string | null = null;
+    let isInternal = false;
+    if (!isCron) {
       const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
       if (!token) return new Response(JSON.stringify({ ok: false, error: "Não autenticado" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -49,11 +50,9 @@ Deno.serve(async (req) => {
       if (!ures?.user) return new Response(JSON.stringify({ ok: false, error: "Sessão inválida" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+      userId = ures.user.id;
       const { data: roles } = await svc.from("user_roles").select("role").eq("user_id", ures.user.id);
-      const isInternal = (roles ?? []).some((r: { role: string }) => r.role === "admin" || r.role === "manager");
-      if (!isInternal) return new Response(JSON.stringify({ ok: false, error: "Sem permissão" }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      isInternal = (roles ?? []).some((r: { role: string }) => r.role === "admin" || r.role === "manager");
     }
 
     if (demand_id) {
