@@ -188,7 +188,7 @@ export default function NewDemandPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
           <Button
             variant="outline"
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            onClick={back}
             disabled={step === 0 || submitting}
             className="gap-2 bg-white/70"
           >
