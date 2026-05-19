@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { DemandPriority, DemandStatus } from "./useFinancialDemands";
@@ -48,6 +48,8 @@ const OPEN_STATUSES: DemandStatus[] = [
   "aprovada", "em_execucao", "pagamento_agendado", "comprovante_enviado",
 ];
 
+const PAGE_SIZE = 50;
+
 function startOfTodayISO() {
   const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString();
 }
@@ -58,48 +60,90 @@ function todayDateISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function useDemandsInbox(filters: InboxFilters = {}) {
-  const query = useQuery({
-    queryKey: ["demands-inbox", filters],
-    queryFn: async () => {
-      let q = supabase
-        .from("financial_demands")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(500);
+function applyFilters(qBase: ReturnType<typeof supabase.from>, filters: InboxFilters) {
+  // Using `any` to chain typed query builder fluently without explosion.
+  // The filters call results are all part of PostgrestFilterBuilder.
+   
+  let q: any = qBase
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false });
 
-      if (filters.status && filters.status !== "all") q = q.eq("status", filters.status);
-      if (filters.priority && filters.priority !== "all") q = q.eq("priority", filters.priority);
-      if (filters.type && filters.type !== "all") q = q.eq("demand_type", filters.type);
-      if (filters.syncStatus && filters.syncStatus !== "all") q = q.eq("asana_sync_status", filters.syncStatus);
-      if (filters.search?.trim()) {
-        const s = filters.search.trim();
-        q = q.or(`title.ilike.%${s}%,demand_code.ilike.%${s}%,supplier_name.ilike.%${s}%`);
-      }
+  if (filters.status && filters.status !== "all") q = q.eq("status", filters.status);
+  if (filters.priority && filters.priority !== "all") q = q.eq("priority", filters.priority);
+  if (filters.type && filters.type !== "all") q = q.eq("demand_type", filters.type);
+  if (filters.syncStatus && filters.syncStatus !== "all") q = q.eq("asana_sync_status", filters.syncStatus);
+  if (filters.search?.trim()) {
+    const s = filters.search.trim();
+    q = q.or(`title.ilike.%${s}%,demand_code.ilike.%${s}%,supplier_name.ilike.%${s}%`);
+  }
 
-      switch (filters.quick) {
-        case "today": q = q.gte("created_at", startOfTodayISO()); break;
-        case "open": q = q.in("status", OPEN_STATUSES); break;
-        case "urgent": q = q.eq("priority", "urgente"); break;
-        case "waiting_client": q = q.eq("status", "aguardando_info"); break;
-        case "waiting_approval": q = q.eq("status", "aguardando_aprovacao"); break;
-        case "overdue":
-          q = q.in("status", OPEN_STATUSES).lt("due_date", todayDateISO()); break;
-        case "due_soon":
-          q = q.in("status", OPEN_STATUSES).gte("due_date", todayDateISO()).lte("due_date", isoPlusDays(3)); break;
-        case "asana_ok": q = q.eq("asana_sync_status", "synced"); break;
-        case "asana_error": q = q.eq("asana_sync_status", "error"); break;
-        default: break;
-      }
+  switch (filters.quick) {
+    case "today": q = q.gte("created_at", startOfTodayISO()); break;
+    case "open": q = q.in("status", OPEN_STATUSES); break;
+    case "urgent": q = q.eq("priority", "urgente"); break;
+    case "waiting_client": q = q.eq("status", "aguardando_info"); break;
+    case "waiting_approval": q = q.eq("status", "aguardando_aprovacao"); break;
+    case "overdue":
+      q = q.in("status", OPEN_STATUSES).lt("due_date", todayDateISO()); break;
+    case "due_soon":
+      q = q.in("status", OPEN_STATUSES).gte("due_date", todayDateISO()).lte("due_date", isoPlusDays(3)); break;
+    case "asana_ok": q = q.eq("asana_sync_status", "synced"); break;
+    case "asana_error": q = q.eq("asana_sync_status", "error"); break;
+    default: break;
+  }
+  return q;
+}
 
-      const { data, error } = await q;
-      if (error) throw new Error(error.message);
-      return (data ?? []) as InboxDemand[];
-    },
+/**
+ * Paginated inbox loader (50 itens/página, infinite scroll).
+ */
+export function useDemandsInboxInfinite(filters: InboxFilters = {}) {
+  return useInfiniteQuery({
+    queryKey: ["demands-inbox-infinite", filters],
+    initialPageParam: 0,
     staleTime: 20_000,
+    queryFn: async ({ pageParam }) => {
+      const page = pageParam as number;
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const q = applyFilters(supabase.from("financial_demands"), filters).range(from, to);
+      const { data, error, count } = await q;
+      if (error) throw new Error(error.message);
+      return {
+        rows: (data ?? []) as InboxDemand[],
+        page,
+        total: count ?? 0,
+        hasMore: ((data ?? []).length === PAGE_SIZE) && (count == null || to + 1 < count),
+      };
+    },
+    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
   });
+}
 
-  return query;
+/**
+ * Compat wrapper — retorna interface idêntica ao hook antigo (data = array flat).
+ * Mantemos para não quebrar consumidores existentes. Para "carregar mais",
+ * preferir useDemandsInboxInfinite diretamente.
+ */
+export function useDemandsInbox(filters: InboxFilters = {}) {
+  const inf = useDemandsInboxInfinite(filters);
+  const flat = useMemo<InboxDemand[] | undefined>(() => {
+    if (!inf.data) return undefined;
+    return inf.data.pages.flatMap((p) => p.rows);
+  }, [inf.data]);
+  const total = inf.data?.pages[0]?.total ?? 0;
+
+  return {
+    data: flat,
+    total,
+    isLoading: inf.isLoading,
+    isFetching: inf.isFetching,
+    error: inf.error,
+    refetch: inf.refetch,
+    hasNextPage: inf.hasNextPage,
+    isFetchingNextPage: inf.isFetchingNextPage,
+    fetchNextPage: inf.fetchNextPage,
+  };
 }
 
 export function useDemandsInboxStats() {
