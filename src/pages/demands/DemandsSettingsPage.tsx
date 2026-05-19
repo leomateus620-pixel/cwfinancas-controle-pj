@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Plus, Trash2, Pencil, ShieldAlert, AlertCircle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { ClientUsersSection } from "@/components/demands/settings/ClientUsersSection";
 
 export default function DemandsSettingsPage() {
   const { isManager, isLoading: roleLoading } = useUserRole();
