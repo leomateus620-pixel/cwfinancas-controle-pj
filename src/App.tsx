@@ -35,9 +35,12 @@ import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsOfUsePage from "@/pages/TermsOfUsePage";
 import StatementConverterPage from "@/pages/StatementConverterPage";
 import DemandsListPage from "@/pages/demands/DemandsListPage";
-import DemandsPlaceholderPage from "@/pages/demands/DemandsPlaceholderPage";
 import NewDemandPage from "@/pages/demands/NewDemandPage";
 import DemandDetailPage from "@/pages/demands/DemandDetailPage";
+import DemandsDashboardPage from "@/pages/demands/DemandsDashboardPage";
+import DemandsApprovalsPage from "@/pages/demands/DemandsApprovalsPage";
+import DemandsDocumentsPage from "@/pages/demands/DemandsDocumentsPage";
+import DemandsSettingsPage from "@/pages/demands/DemandsSettingsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
