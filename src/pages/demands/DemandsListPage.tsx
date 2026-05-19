@@ -483,3 +483,46 @@ function DemandsCards({ rows, onOpen }: { rows: InboxDemand[]; onOpen: (id: stri
     </div>
   );
 }
+
+interface FilterControlsProps {
+  filters: InboxFilters;
+  setFilters: React.Dispatch<React.SetStateAction<InboxFilters>>;
+  types: string[];
+}
+function FilterControls({ filters, setFilters, types }: FilterControlsProps) {
+  return (
+    <>
+      <Select value={filters.status ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, status: v as DemandStatus | "all" }))}>
+        <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Status" /></SelectTrigger>
+        <SelectContent>{STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+      </Select>
+      <Select value={filters.priority ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, priority: v as DemandPriority | "all" }))}>
+        <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Prioridade" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todas prioridades</SelectItem>
+          <SelectItem value="baixa">Baixa</SelectItem>
+          <SelectItem value="normal">Normal</SelectItem>
+          <SelectItem value="alta">Alta</SelectItem>
+          <SelectItem value="urgente">Urgente</SelectItem>
+        </SelectContent>
+      </Select>
+      <Select value={filters.type ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, type: v }))}>
+        <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Tipo" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos os tipos</SelectItem>
+          {types.map((t) => <SelectItem key={t} value={t}>{TYPE_LABELS[t] ?? t}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Select value={filters.syncStatus ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, syncStatus: v as AsanaSyncStatus | "all" }))}>
+        <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Sync Asana" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos (Asana)</SelectItem>
+          <SelectItem value="synced">Sincronizado</SelectItem>
+          <SelectItem value="pending_sync">Pendente</SelectItem>
+          <SelectItem value="error">Erro</SelectItem>
+          <SelectItem value="not_synced">Não sincronizado</SelectItem>
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
