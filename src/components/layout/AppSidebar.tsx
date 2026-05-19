@@ -261,11 +261,18 @@ export function AppSidebar() {
     Object.fromEntries(groups.map((g) => [g.id, groupContainsActive(g)])),
   );
 
+  // Only auto-open a group when the route *changes* into one of its URLs.
+  // Never force-open on every render — that fights the user's manual close.
+  const lastPathRef = useRef<string>(currentPath);
   useEffect(() => {
+    if (lastPathRef.current === currentPath) return;
+    lastPathRef.current = currentPath;
     setOpenGroups((prev) => {
       const next = { ...prev };
       for (const g of groups) {
-        if (groupContainsActive(g)) next[g.id] = true;
+        const hits =
+          isActive(g.anchor.url) || visibleChildren(g).some((c) => isActive(c.url));
+        if (hits) next[g.id] = true;
       }
       return next;
     });
@@ -274,6 +281,9 @@ export function AppSidebar() {
 
   const toggleGroup = (id: string) =>
     setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const openGroup = (id: string) =>
+    setOpenGroups((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
 
   // ─────────────────────────────────────────────
   // Anchor card with 3D tilt + Liquid Glass physics
