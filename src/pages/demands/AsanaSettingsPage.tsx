@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useAsanaSettings, useSaveAsanaSettings, type AsanaSettings } from "@/hooks/useAsanaSettings";
 import { useAllAsanaSyncLogs } from "@/hooks/useAsanaSyncLogs";
-import { supabase } from "@/integrations/supabase/client";
+import { invokeAsana } from "@/lib/asana/invokeAsana";
 import { toast } from "sonner";
 
 const DEFAULT: AsanaSettings = {
@@ -69,8 +69,9 @@ export default function AsanaSettingsPage() {
   const onTest = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const { data, error } = await supabase.functions.invoke("asana-test-connection", { body: {} });
-      if (error) throw new Error(error.message);
+      const res = await invokeAsana<{ ok?: boolean; user?: { name?: string; email?: string }; error?: string }>("asana-test-connection", {});
+      if (res.ok === false) throw new Error(res.error);
+      const data = res.data;
       if (data?.ok) setTestResult({ ok: true, msg: `Conectado como ${data.user?.name ?? data.user?.email ?? "—"}` });
       else setTestResult({ ok: false, msg: data?.error ?? "Falha desconhecida" });
     } catch (e) {
@@ -81,8 +82,9 @@ export default function AsanaSettingsPage() {
   const onCreateTest = async () => {
     setTesting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("asana-create-task", { body: { dry_run: true } });
-      if (error) throw new Error(error.message);
+      const res = await invokeAsana<{ ok?: boolean; task_url?: string; error?: string }>("asana-create-task", { dry_run: true });
+      if (res.ok === false) throw new Error(res.error);
+      const data = res.data;
       if (data?.ok) {
         setTestResult({ ok: true, msg: "Tarefa de teste criada no Asana", url: data.task_url });
         toast.success("Tarefa criada no Asana");
