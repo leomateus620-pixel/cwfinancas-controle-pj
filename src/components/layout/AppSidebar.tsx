@@ -141,6 +141,18 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Demandas Financeiras */}
+        <SidebarGroup className="mt-6">
+          <SidebarGroupLabel className="text-[11px] font-semibold text-foreground/40 uppercase tracking-wider px-3 mb-3">
+            Demandas Financeiras
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="space-y-1">
+              {demandsNavItems.map(renderNavItem)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
         {/* Tools Navigation */}
         <SidebarGroup className="mt-6">
           <SidebarGroupLabel className="text-[11px] font-semibold text-foreground/40 uppercase tracking-wider px-3 mb-3">
