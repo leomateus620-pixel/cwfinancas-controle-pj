@@ -41,6 +41,8 @@ import DemandsDashboardPage from "@/pages/demands/DemandsDashboardPage";
 import DemandsApprovalsPage from "@/pages/demands/DemandsApprovalsPage";
 import DemandsDocumentsPage from "@/pages/demands/DemandsDocumentsPage";
 import DemandsSettingsPage from "@/pages/demands/DemandsSettingsPage";
+import AsanaSettingsPage from "@/pages/demands/AsanaSettingsPage";
+
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -114,6 +116,8 @@ const App = () => {
                   <Route path="/demands/approvals" element={<DemandsApprovalsPage />} />
                   <Route path="/demands/documents" element={<DemandsDocumentsPage />} />
                   <Route path="/demands/settings" element={<DemandsSettingsPage />} />
+                  <Route path="/demands/settings/asana" element={<AsanaSettingsPage />} />
+
                 </Route>
                 
                 <Route path="*" element={<NotFound />} />
