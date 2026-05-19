@@ -458,36 +458,56 @@ export function AppSidebar() {
       <SidebarContent className="px-3 py-5">
         <SidebarGroup>
           <SidebarGroupLabel className="text-[10px] font-bold tracking-[0.15em] text-foreground/40 uppercase px-3 mb-3 font-mono">
-            Navegação
+            {isClient ? "Demandas" : "Navegação"}
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu className="space-y-2.5" style={{ perspective: "1100px" }}>
-              {groups.map(renderGroup)}
+              {isClient ? (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/demands/new")} tooltip="Nova Demanda">
+                    <NavLink
+                      to="/demands/new"
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
+                        isActive("/demands/new")
+                          ? "bg-orange-500/10 border border-orange-400/40 text-orange-900 font-medium"
+                          : "hover:bg-foreground/[0.04] border border-transparent text-foreground/75"
+                      }`}
+                    >
+                      <PlusCircle className="w-[18px] h-[18px] shrink-0" />
+                      {!collapsed && <span className="text-[13px] flex-1">Nova Demanda</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ) : (
+                groups.map(renderGroup)
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-3 border-t border-black/[0.04]">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={isActive("/settings")} tooltip="Configurações">
-              <NavLink
-                to="/settings"
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 relative
-                  text-foreground/70 hover:text-foreground
-                  ${isActive("/settings") ? "sidebar-nav-active text-primary font-medium" : "sidebar-nav-hover border border-transparent"}
-                `}
-                activeClassName="sidebar-nav-active text-primary font-medium"
-              >
-                <Settings className={`w-[18px] h-[18px] shrink-0 ${isActive("/settings") ? "text-primary" : ""}`} />
-                {!collapsed && <span className="text-[13px] flex-1">Configurações</span>}
-              </NavLink>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+      {!isClient && (
+        <SidebarFooter className="p-3 border-t border-black/[0.04]">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={isActive("/settings")} tooltip="Configurações">
+                <NavLink
+                  to="/settings"
+                  className={`
+                    flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 relative
+                    text-foreground/70 hover:text-foreground
+                    ${isActive("/settings") ? "sidebar-nav-active text-primary font-medium" : "sidebar-nav-hover border border-transparent"}
+                  `}
+                  activeClassName="sidebar-nav-active text-primary font-medium"
+                >
+                  <Settings className={`w-[18px] h-[18px] shrink-0 ${isActive("/settings") ? "text-primary" : ""}`} />
+                  {!collapsed && <span className="text-[13px] flex-1">Configurações</span>}
+                </NavLink>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      )}
     </Sidebar>
   );
 }
