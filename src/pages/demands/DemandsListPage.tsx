@@ -131,21 +131,28 @@ function KpiTile({ label, value, icon: Icon, tone, active, onClick }: KpiTilePro
   );
 }
 
+type ViewMode = "table" | "cards" | "kanban";
+
 export default function DemandsListPage() {
   const navigate = useNavigate();
+  const { isAdmin } = useUserRole();
   const [filters, setFilters] = useState<InboxFilters>({});
-  const [view, setView] = useState<"table" | "cards">(() => (localStorage.getItem("demands-view") as "table" | "cards") ?? "table");
+  const [view, setView] = useState<ViewMode>(() => {
+    const v = localStorage.getItem("demands-view") as ViewMode | null;
+    return v === "table" || v === "cards" || v === "kanban" ? v : "table";
+  });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
 
   const { data: rows, isLoading, error, refetch, isFetching } = useDemandsInbox(filters);
   const { data: stats } = useDemandsInboxStats();
-  const { changeStatus, markUrgent, finalize, retryAsana } = useDemandQuickActions();
+  const { changeStatus, markUrgent, finalize, retryAsana, retryAllAsana } = useDemandQuickActions();
   const types = useUniqueDemandTypes(rows);
 
   const setQuick = (q: InboxQuickFilter) =>
     setFilters((f) => ({ ...f, quick: f.quick === q ? undefined : q }));
 
-  const setView_ = (v: "table" | "cards") => { setView(v); localStorage.setItem("demands-view", v); };
+  const setView_ = (v: ViewMode) => { setView(v); localStorage.setItem("demands-view", v); };
 
   const subtitle = useMemo(() => {
     if (!stats) return "Carregando…";
@@ -166,7 +173,7 @@ export default function DemandsListPage() {
               <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Demandas Recebidas</h1>
             </div>
             <p className="text-sm text-muted-foreground">Central operacional de BPO Financeiro · {subtitle}</p>
-            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1.5">
                 <span className={cn("w-1.5 h-1.5 rounded-full",
                   stats?.asanaError ? "bg-rose-500" : stats?.asanaOk ? "bg-emerald-500 animate-pulse" : "bg-slate-400")} />
@@ -187,12 +194,28 @@ export default function DemandsListPage() {
               <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
               Atualizar
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl gap-2 bg-white/50 backdrop-blur-sm"
+              onClick={() => retryAllAsana.mutate()}
+              disabled={retryAllAsana.isPending}
+            >
+              <Cloud className={cn("w-4 h-4", retryAllAsana.isPending && "animate-pulse")} />
+              Sincronizar Asana
+            </Button>
+            {isAdmin && (
+              <Button asChild variant="outline" size="sm" className="rounded-xl gap-2 bg-white/50 backdrop-blur-sm">
+                <Link to="/demands/settings/asana"><Settings2 className="w-4 h-4" />Configurações</Link>
+              </Button>
+            )}
             <Button asChild className="rounded-xl gap-2 shadow-md">
               <Link to="/demands/new"><Plus className="w-4 h-4" />Nova demanda</Link>
             </Button>
           </div>
         </div>
       </GlassCard>
+
 
       {/* KPI GRID */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
