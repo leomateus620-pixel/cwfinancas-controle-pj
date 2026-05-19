@@ -254,13 +254,17 @@ export default function DemandsListPage() {
               {showAdvanced ? "Ocultar filtros" : "Mais filtros"}
             </Button>
             <div className="flex rounded-xl border border-white/40 bg-white/50 backdrop-blur-sm p-0.5">
-              <Button variant={view === "table" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("table")}>
+              <Button variant={view === "table" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("table")} title="Tabela">
                 <List className="w-4 h-4" />
               </Button>
-              <Button variant={view === "cards" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("cards")}>
+              <Button variant={view === "cards" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("cards")} title="Cards">
                 <LayoutGrid className="w-4 h-4" />
               </Button>
+              <Button variant={view === "kanban" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("kanban")} title="Kanban">
+                <Columns3 className="w-4 h-4" />
+              </Button>
             </div>
+
           </div>
         </div>
         {showAdvanced && (
@@ -324,9 +328,14 @@ export default function DemandsListPage() {
             onFinalize={(id) => finalize.mutate(id)}
             onRetry={(id) => retryAsana.mutate(id)}
           />
-        ) : (
+        ) : view === "cards" ? (
           <DemandsCards rows={rows} onOpen={(id) => navigate(`/demands/${id}`)} />
+        ) : (
+          <div className="p-4">
+            <DemandsKanbanBoard rows={rows} onStatusChange={(id, status) => changeStatus.mutate({ id, status })} />
+          </div>
         )}
+
       </GlassCard>
     </div>
   );
