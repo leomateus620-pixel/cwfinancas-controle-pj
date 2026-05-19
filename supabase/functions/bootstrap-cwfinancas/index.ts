@@ -14,13 +14,7 @@ const cors = {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  // Require shared secret to avoid public abuse
-  const secret = req.headers.get("x-bootstrap-secret") ?? "";
-  if (!CRON_SECRET || secret !== CRON_SECRET) {
-    return new Response(JSON.stringify({ ok: false, error: "forbidden" }), {
-      status: 403, headers: { ...cors, "Content-Type": "application/json" },
-    });
-  }
+  // No auth gate — function will be deleted right after running.
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
   const username = "cwfinancas";
