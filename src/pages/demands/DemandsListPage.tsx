@@ -1,24 +1,28 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  Plus, Search, Filter, LayoutGrid, List, RefreshCw, ExternalLink,
+  Plus, Search, Filter, LayoutGrid, List, RefreshCw,
   AlertCircle, Inbox, Clock, AlertTriangle, CheckCircle2, Users,
   Zap, CalendarClock, ShieldCheck, ShieldAlert, Timer, MoreHorizontal,
-  ArrowUpRight,
+  ArrowUpRight, Columns3, Settings2, Cloud,
 } from "lucide-react";
 import {
   useDemandsInbox, useDemandsInboxStats, useUniqueDemandTypes,
   type AsanaSyncStatus, type InboxFilters, type InboxQuickFilter, type InboxDemand,
 } from "@/hooks/useDemandsInbox";
 import { useDemandQuickActions } from "@/hooks/useDemandQuickActions";
+import { useUserRole } from "@/hooks/useUserRole";
 import type { DemandPriority, DemandStatus } from "@/hooks/useFinancialDemands";
 import { GlassCard } from "@/components/home/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/demands/StatusBadge";
 import { PriorityBadge } from "@/components/demands/PriorityBadge";
+import { AsanaChip } from "@/components/demands/AsanaChip";
+import { DemandsKanbanBoard } from "@/components/demands/DemandsKanbanBoard";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -27,6 +31,7 @@ import {
   DropdownMenuLabel, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+
 
 const TYPE_LABELS: Record<string, string> = {
   pagamento: "Solicitar pagamento",
