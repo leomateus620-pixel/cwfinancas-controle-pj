@@ -14,7 +14,13 @@ import {
   ClipboardList,
   Building2,
   CreditCard,
-  FileDown
+  FileDown,
+  Inbox,
+  PlusCircle,
+  CheckSquare,
+  FolderOpen,
+  Sliders,
+  LayoutGrid,
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
