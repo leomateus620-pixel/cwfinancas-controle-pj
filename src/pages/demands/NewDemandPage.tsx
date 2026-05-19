@@ -109,11 +109,11 @@ export default function NewDemandPage() {
   const typeLabel = DEMAND_TYPES.find((t) => t.value === form.demand_type)?.label ?? "—";
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-5 md:space-y-6 animate-fade-in pb-28 md:pb-6">
+    <div ref={topRef} className="p-4 md:p-6 max-w-5xl mx-auto space-y-5 md:space-y-6 animate-fade-in pb-[calc(7rem+env(safe-area-inset-bottom))] md:pb-6">
       {/* Header */}
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         <DemandTypeIcon kind={(form.demand_type as DemandIconKey) || "outro"} size="lg" />
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Criar demanda inteligente</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Preencha em 4 etapas — o formulário adapta-se ao tipo escolhido.</p>
         </div>
@@ -121,19 +121,20 @@ export default function NewDemandPage() {
 
       {/* Stepper */}
       <GlassCard variant="compact" className="p-4">
-        <StepIndicator steps={STEPS} current={step} onStepClick={(i) => i < step && setStep(i)} />
+        <StepIndicator steps={STEPS} current={step} onStepClick={(i) => { if (i < step) { setStep(i); scrollToTop(); } }} />
       </GlassCard>
 
-      {/* Layout desktop: 2 colunas (form + resumo); mobile: 1 coluna */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-5">
-        <div className="space-y-5">
+      {/* Layout desktop: 2 colunas (form + resumo) somente em xl; mobile/tablet: 1 coluna */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-6">
+        <div className="space-y-5 min-w-0">
           {step === 0 && (
             <GlassCard className="p-5 md:p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Sparkles className="w-4 h-4 text-primary" />
                 <h2 className="text-sm font-semibold">Que tipo de demanda você está enviando?</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+
                 {DEMAND_TYPES.map((t) => (
                   <ThreeDIconCard
                     key={t.value}
