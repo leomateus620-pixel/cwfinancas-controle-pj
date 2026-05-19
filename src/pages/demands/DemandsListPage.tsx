@@ -7,7 +7,7 @@ import { PriorityBadge } from "@/components/demands/PriorityBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Inbox, Plus, AlertCircle } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function formatBRL(v: number | null) {
   if (v == null) return "—";
@@ -31,6 +31,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 export default function DemandsListPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<DemandStatus | "all">("all");
   const [priority, setPriority] = useState<DemandPriority | "all">("all");
@@ -99,7 +100,7 @@ export default function DemandsListPage() {
                   <tr
                     key={d.id}
                     className="border-b border-black/[0.03] hover:bg-white/40 transition-colors cursor-pointer"
-                    onClick={() => { window.location.assign(`/demands/${d.id}`); }}
+                    onClick={() => navigate(`/demands/${d.id}`)}
                   >
                     <td className="px-4 py-3 font-medium">
                       <div className="line-clamp-1">{d.title}</div>
