@@ -80,6 +80,3 @@ verify_jwt = false
 
 [functions.reset-client-password]
 verify_jwt = false
-
-[functions.bootstrap-cwfinancas]
-verify_jwt = false
