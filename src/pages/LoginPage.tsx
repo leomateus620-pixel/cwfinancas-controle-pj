@@ -133,14 +133,6 @@ export function LoginPage() {
               Entrar
             </Button>
 
-            {!isUsername && (
-              <p className="text-sm text-center text-muted-foreground">
-                Não tem uma conta?{" "}
-                <Link to="/register" className="text-primary hover:underline font-medium">
-                  Criar conta
-                </Link>
-              </p>
-            )}
           </form>
         </div>
 
