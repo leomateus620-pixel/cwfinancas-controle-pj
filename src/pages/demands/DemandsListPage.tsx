@@ -258,12 +258,38 @@ export default function DemandsListPage() {
             <Button
               variant="outline"
               size="sm"
-              className="rounded-xl gap-2 bg-white/50"
+              className="rounded-xl gap-2 bg-white/50 hidden lg:inline-flex"
               onClick={() => setShowAdvanced((s) => !s)}
             >
               <Filter className="w-4 h-4" />
               {showAdvanced ? "Ocultar filtros" : "Mais filtros"}
+              {activeFiltersCount > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{activeFiltersCount}</Badge>
+              )}
             </Button>
+            <Sheet open={filtersSheetOpen} onOpenChange={setFiltersSheetOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="rounded-xl gap-2 bg-white/50 lg:hidden">
+                  <Filter className="w-4 h-4" />
+                  Filtros
+                  {activeFiltersCount > 0 && (
+                    <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px]">{activeFiltersCount}</Badge>
+                  )}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="h-[85vh] p-0 flex flex-col">
+                <SheetHeader className="p-4 border-b">
+                  <SheetTitle>Filtros</SheetTitle>
+                </SheetHeader>
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  <FilterControls filters={filters} setFilters={setFilters} types={types} />
+                </div>
+                <div className="border-t p-3 flex gap-2 bg-white/80 backdrop-blur-md">
+                  <Button variant="outline" className="flex-1 rounded-xl" onClick={() => setFilters({})}>Limpar</Button>
+                  <Button className="flex-1 rounded-xl" onClick={() => setFiltersSheetOpen(false)}>Aplicar</Button>
+                </div>
+              </SheetContent>
+            </Sheet>
             <div className="flex rounded-xl border border-white/40 bg-white/50 backdrop-blur-sm p-0.5">
               <Button variant={view === "table" ? "default" : "ghost"} size="sm" className="rounded-lg h-8 px-3" onClick={() => setView_("table")} title="Tabela">
                 <List className="w-4 h-4" />
@@ -279,38 +305,8 @@ export default function DemandsListPage() {
           </div>
         </div>
         {showAdvanced && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 pt-3 border-t border-white/30">
-            <Select value={filters.status ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, status: v as DemandStatus | "all" }))}>
-              <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Status" /></SelectTrigger>
-              <SelectContent>{STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={filters.priority ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, priority: v as DemandPriority | "all" }))}>
-              <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Prioridade" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas prioridades</SelectItem>
-                <SelectItem value="baixa">Baixa</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
-                <SelectItem value="alta">Alta</SelectItem>
-                <SelectItem value="urgente">Urgente</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={filters.type ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, type: v }))}>
-              <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Tipo" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
-                {types.map((t) => <SelectItem key={t} value={t}>{TYPE_LABELS[t] ?? t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filters.syncStatus ?? "all"} onValueChange={(v) => setFilters((f) => ({ ...f, syncStatus: v as AsanaSyncStatus | "all" }))}>
-              <SelectTrigger className="bg-white/60 border-white/40 rounded-xl h-10"><SelectValue placeholder="Sync Asana" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos (Asana)</SelectItem>
-                <SelectItem value="synced">Sincronizado</SelectItem>
-                <SelectItem value="pending_sync">Pendente</SelectItem>
-                <SelectItem value="error">Erro</SelectItem>
-                <SelectItem value="not_synced">Não sincronizado</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="hidden lg:grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 pt-3 border-t border-white/30">
+            <FilterControls filters={filters} setFilters={setFilters} types={types} />
           </div>
         )}
       </GlassCard>
