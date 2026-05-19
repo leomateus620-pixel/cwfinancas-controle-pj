@@ -127,13 +127,17 @@ export function RegisterPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="email">E-mail</Label>
+              <Label htmlFor="email">E-mail (opcional)</Label>
               <Input
                 id="email"
                 type="email"
+                placeholder="Deixe em branco para criar login apenas com usuário"
                 {...register("email")}
                 className={`${inputClass} ${errors.email ? "border-destructive" : ""}`}
               />
+              <p className="text-xs text-muted-foreground">
+                Sem e-mail? Geraremos um usuário a partir do seu nome para você fazer login.
+              </p>
               {errors.email && (
                 <p className="text-sm text-destructive">{errors.email.message}</p>
               )}
