@@ -34,6 +34,8 @@ import NotFound from "@/pages/NotFound";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 import TermsOfUsePage from "@/pages/TermsOfUsePage";
 import StatementConverterPage from "@/pages/StatementConverterPage";
+import DemandsListPage from "@/pages/demands/DemandsListPage";
+import DemandsPlaceholderPage from "@/pages/demands/DemandsPlaceholderPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
