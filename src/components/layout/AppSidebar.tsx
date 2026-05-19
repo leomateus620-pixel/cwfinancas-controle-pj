@@ -27,7 +27,7 @@ import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
   Sidebar,
@@ -261,11 +261,18 @@ export function AppSidebar() {
     Object.fromEntries(groups.map((g) => [g.id, groupContainsActive(g)])),
   );
 
+  // Only auto-open a group when the route *changes* into one of its URLs.
+  // Never force-open on every render — that fights the user's manual close.
+  const lastPathRef = useRef<string>(currentPath);
   useEffect(() => {
+    if (lastPathRef.current === currentPath) return;
+    lastPathRef.current = currentPath;
     setOpenGroups((prev) => {
       const next = { ...prev };
       for (const g of groups) {
-        if (groupContainsActive(g)) next[g.id] = true;
+        const hits =
+          isActive(g.anchor.url) || visibleChildren(g).some((c) => isActive(c.url));
+        if (hits) next[g.id] = true;
       }
       return next;
     });
@@ -274,6 +281,9 @@ export function AppSidebar() {
 
   const toggleGroup = (id: string) =>
     setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const openGroup = (id: string) =>
+    setOpenGroups((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
 
   // ─────────────────────────────────────────────
   // Anchor card with 3D tilt + Liquid Glass physics
@@ -304,7 +314,7 @@ export function AppSidebar() {
     }
 
     return (
-      <SidebarMenuItem className="group" style={{ transformStyle: "preserve-3d" }}>
+      <SidebarMenuItem className="group">
         <div className="relative">
           {/* Active soft glow underlay */}
           {active && (
@@ -314,21 +324,17 @@ export function AppSidebar() {
             />
           )}
 
-          <NavLink
-            to={group.anchor.url}
-            onClick={() => hasChildren && toggleGroup(group.id)}
+          <div
             className={`
-              relative flex items-center justify-between h-[58px] px-3.5 rounded-2xl
-              backdrop-blur-xl border transition-[transform,box-shadow,background,border-color] duration-300 ease-out
-              transform-gpu will-change-transform cursor-pointer
+              relative flex items-center justify-between h-[58px] rounded-2xl
+              backdrop-blur-xl border transition-[transform,box-shadow,background,border-color] duration-200 ease-out
+              transform-gpu will-change-transform
               ${active
                 ? `${a.activeBorder} ${a.activeShadow} bg-white/55`
                 : `border-white/55 bg-white/35 shadow-[0_2px_8px_-2px_rgba(15,23,42,0.04)] ${a.hoverBorder} ${a.hoverShadow} group-hover:bg-white/55`
               }
-              group-hover:[transform:perspective(900px)_rotateY(-5deg)_rotateX(2deg)_translateZ(6px)_scale(1.02)]
-              group-active:scale-[0.97]
+              group-hover:-translate-y-px group-hover:scale-[1.015]
             `}
-            style={{ transformOrigin: "center left" }}
           >
             {/* Top sheen (glass highlight) */}
             <span
@@ -336,12 +342,17 @@ export function AppSidebar() {
               aria-hidden
             />
 
-            <div className="flex items-center gap-3 min-w-0">
+            {/* Main click target → navigation only */}
+            <NavLink
+              to={group.anchor.url}
+              onClick={() => hasChildren && openGroup(group.id)}
+              aria-current={active ? "page" : undefined}
+              className="flex items-center gap-3 min-w-0 flex-1 pl-3.5 pr-2 py-2 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:scale-[0.985] transition-transform duration-150"
+            >
               <div
-                className={`flex items-center justify-center w-9 h-9 rounded-xl shrink-0 transition-all duration-300 ${
+                className={`flex items-center justify-center w-9 h-9 rounded-xl shrink-0 transition-transform duration-200 ${
                   active ? a.iconBoxActive : `${a.iconBoxIdle} group-hover:scale-[1.06]`
                 }`}
-                style={{ transform: "translateZ(8px)" }}
               >
                 <Icon className="w-[18px] h-[18px]" />
               </div>
@@ -349,21 +360,33 @@ export function AppSidebar() {
                 className={`text-[13px] font-medium truncate transition-colors ${
                   active ? `${a.label} font-semibold` : "text-foreground/75 group-hover:text-foreground"
                 }`}
-                style={{ transform: "translateZ(4px)" }}
               >
                 {group.anchor.title}
               </span>
-            </div>
+            </NavLink>
 
-            <div className="flex items-center gap-2 shrink-0" style={{ transform: "translateZ(6px)" }}>
+            {/* KPI + chevron (chevron toggles only, no nav) */}
+            <div className="flex items-center gap-1 shrink-0 pr-2">
               {renderKpi(group.kpi, group.accent, kpiCtx, active)}
               {hasChildren && (
-                <ChevronRight
-                  className={`w-4 h-4 text-foreground/35 transition-transform duration-300 ${open ? "rotate-90" : ""}`}
-                />
+                <button
+                  type="button"
+                  onClick={(e: ReactMouseEvent<HTMLButtonElement>) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleGroup(group.id);
+                  }}
+                  aria-label={open ? `Recolher ${group.anchor.title}` : `Expandir ${group.anchor.title}`}
+                  aria-expanded={open}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-foreground/40 hover:text-foreground/80 hover:bg-foreground/5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
+                  <ChevronRight
+                    className={`w-4 h-4 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+                  />
+                </button>
               )}
             </div>
-          </NavLink>
+          </div>
         </div>
       </SidebarMenuItem>
     );
