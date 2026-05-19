@@ -310,8 +310,8 @@ function SuccessScreen({ id, typeKey, title, onNew }: { id: string; typeKey: str
             </div>
             <div className="text-sm font-medium max-w-xs line-clamp-2">{title}</div>
             <AsanaChip
-              status={demand?.asana_sync_status ?? "pending_sync"}
-              taskUrl={demand?.asana_task_url ?? null}
+              status={(demand?.asana_sync_status ?? "pending_sync") as never}
+              url={demand?.asana_task_url ?? null}
             />
           </div>
 
