@@ -45,15 +45,24 @@ export default function NewDemandPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const topRef = useRef<HTMLDivElement | null>(null);
 
   const update = (k: keyof DemandFormState, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const selectType = (val: string) => {
     setForm((f) => ({ ...f, demand_type: val }));
   };
 
+  const scrollToTop = () => {
+    requestAnimationFrame(() => {
+      topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const main = document.querySelector("main");
+      if (main) main.scrollTo({ top: 0, behavior: "smooth" });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  };
+
   const next = () => {
     if (step === 0) {
-      // valida tipo + título + prioridade (título pode estar vazio na etapa 0 → coletado em 1; só exigimos tipo aqui)
       if (!form.demand_type) {
         toast.error("Escolha o tipo da demanda");
         return;
@@ -67,7 +76,15 @@ export default function NewDemandPage() {
       }
     }
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    scrollToTop();
   };
+
+  const back = () => {
+    setStep((s) => Math.max(0, s - 1));
+    scrollToTop();
+  };
+
+
 
   const submit = async () => {
     setSubmitting(true);
