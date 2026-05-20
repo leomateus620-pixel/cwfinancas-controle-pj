@@ -29,6 +29,7 @@ export interface CreateDemandInput {
   supplier_document?: string | null;
   cost_center?: string | null;
   description?: string | null;
+  requester_metadata?: Record<string, string> | null;
 }
 
 export function useCreateDemand() {
