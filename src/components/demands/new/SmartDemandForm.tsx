@@ -373,6 +373,13 @@ export function buildDemandPayload(form: DemandFormState) {
 
   const combinedDesc = [form.description, ...extras].filter(Boolean).join("\n");
 
+  const requester_metadata: Record<string, string> = {};
+  if (form.requester_name.trim()) requester_metadata.name = form.requester_name.trim();
+  if (form.requester_company.trim()) requester_metadata.company = form.requester_company.trim();
+  if (form.requester_email.trim()) requester_metadata.email = form.requester_email.trim();
+  if (form.requester_phone.trim()) requester_metadata.phone = form.requester_phone.trim();
+  if (form.requester_role.trim()) requester_metadata.role = form.requester_role.trim();
+
   return {
     demand_type: form.demand_type,
     title: form.title.trim(),
@@ -383,5 +390,6 @@ export function buildDemandPayload(form: DemandFormState) {
     supplier_document: form.supplier_document.trim() || null,
     cost_center: form.cost_center.trim() || null,
     description: combinedDesc.trim() || null,
+    requester_metadata: Object.keys(requester_metadata).length ? requester_metadata : null,
   };
 }
