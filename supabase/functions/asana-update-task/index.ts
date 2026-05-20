@@ -193,10 +193,14 @@ Deno.serve(async (req) => {
     const statusMapping = (settings?.status_mapping ?? {}) as Record<string, string>;
 
     const titlePrefix = demand.supplier_name ? `[${demand.supplier_name}] ` : "";
+    const requesterName = demand.requester_metadata?.name?.trim() || "—";
+    const requesterCompany = demand.requester_metadata?.company?.trim() || "—";
     const notes = [
       `Código: ${demand.demand_code ?? demand.id.slice(0, 8)}`,
       `Tipo: ${demand.demand_type}`,
       `Cliente/Fornecedor: ${demand.supplier_name ?? "—"}`,
+      `Solicitante: ${requesterName}`,
+      `Empresa: ${requesterCompany}`,
       `Valor: ${fmtBRL(demand.amount)}`,
       `Vencimento: ${fmtDate(demand.due_date)}`,
       `Prioridade: ${demand.priority}`,
