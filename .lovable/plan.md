@@ -1,69 +1,73 @@
+## Objetivo
+Corrigir, **só no desktop**, a tela de sucesso da demanda: hoje o canal 3D se sobrepõe ao card de origem e ao logo CW, os checkpoints ficam minúsculos e desalinhados, o puck atravessa atrás do card e o conjunto parece "stepper de baixa resolução". Mobile já está bom e não será tocado.
 
-# Asana — incluir Solicitante/Empresa e anexar arquivos da demanda
+## Diagnóstico (PC)
+1. O retângulo do "canal/sulco" usa `inset-x-[5%]` e cobre origem **e** destino — vira fundo branco atrás do card.
+2. Trilho em `inset-x-[10%]` + grid com colunas de larguras diferentes → os 3 nós não casam com início/fim do trilho.
+3. Nós de 28px num viewport de 1087px viram "stepper genérico".
+4. Logo CW em `size="md"` (~110px) é pequeno demais para ser o destino premium.
+5. Puck viaja de `12% → 88%` da seção inteira → nasce atrás do card e morre dentro do logo.
+6. `rotateX(22deg)` só no retângulo, sem perspectiva real no trilho/nós → sem profundidade.
+7. `backdrop-blur` + `mix-blend-mode: screen` em camadas pequenas degradam a nitidez.
 
-## Diagnóstico
+## Mudanças (apenas branch `hidden md:block` do `DemandFlowSection.tsx`)
 
-1. **Solicitante e Empresa ausentes na descrição do Asana.** O campo `financial_demands.requester_metadata` (jsonb `{name, company}`) já é salvo no banco quando a demanda é criada, mas o `asana-create-task` e o `asana-update-task` não leem esse campo nem renderizam essas linhas nas `notes`. Por isso a descrição mostra só: Código, Tipo, Cliente/Fornecedor, Valor, Vencimento, Prioridade, Status (igual ao print enviado).
+### 1. Nova composição em 3 zonas com pedestais
+```text
+┌────────────┐    ┌───────────────────────────────┐    ┌────────────┐
+│  ORIGEM    │ ─> │  CANAL 3D + 3 CHECKPOINTS     │ ─> │  NÚCLEO CW │
+│ (pedestal) │    │  (puck viaja somente aqui)    │    │ (pedestal) │
+└────────────┘    └───────────────────────────────┘    └────────────┘
+```
+- Grid `grid-cols-[280px_1fr_220px] gap-6`.
+- Canal/sulco confinado à coluna central (`inset-x-0`), não cobre mais origem/destino.
+- Origem e destino ganham pedestal próprio (gradiente radial no piso + sombra elíptica) para dar peso.
 
-2. **Anexos nunca são enviados ao Asana.** Os arquivos vão para o bucket privado `demand-documents` (tabela `financial_demand_documents`), mas não há nenhuma chamada para o endpoint `POST /tasks/{gid}/attachments` da Asana. O fluxo cria a task e termina — anexos ficam só dentro do nosso app.
+### 2. Perspectiva real
+- Altura sobe de `180px` para `240px`.
+- `perspective: 1600px`, `perspectiveOrigin: 50% 75%`.
+- `transformStyle: preserve-3d` na coluna central; piso com `rotateX(28deg)`.
+- Reflexo dos nós no piso (cópia `scaleY(-1)`, opacity 0.18, mask gradiente).
 
-## Correções
+### 3. Checkpoints premium (não stepper)
+- Nó passa para `w-12 h-12` (≈48px) no desktop via prop `size` opcional.
+- Disco glass duplo: anel externo translúcido + disco interno gradiente azul.
+- Sombra elíptica projetada no piso por baixo de cada nó.
+- `passing`: ring expansivo maior + spark vertical curto.
+- `upcoming`: borda azul mais saturada + check com leve emissão.
 
-Ambas as correções ficam **dentro das duas edge functions** já existentes, sem alterar UI, hooks, RLS, schema, ou o fluxo de criação da demanda. Tudo continua idempotente; em caso de falha de upload de um anexo, registra erro no `asana_sync_logs` e segue (não derruba a sincronização da task).
+### 4. Trilho alinhado aos centros
+- Reescrito como **SVG path** dentro da coluna central, com `linearGradient` no stroke e `filter: drop-shadow` para o glow.
+- Sparks viajam ao longo do mesmo eixo do path (mesma `inset` que os nós).
 
-### 1. Incluir Solicitante e Empresa nas notes
+### 5. Puck reposicionado
+- Trajetória `8% → 92%` **dentro da coluna central** (não mais da seção inteira).
+- Tamanho +20%, leve `rotateX` para casar com o piso inclinado.
+- Halo do puck mais largo e menos opaco.
 
-**`supabase/functions/asana-create-task/index.ts`** e **`supabase/functions/asana-update-task/index.ts`**:
+### 6. Núcleo CW maior no desktop
+- `CWLogoDestination` passa a receber `size="lg"` quando `md+`.
+- Adiciono pedestal radial igual ao da origem.
+- Removo `backdrop-blur-xl` do disco principal (estava degradando o PNG do logo).
 
-- Adicionar `requester_metadata` ao `interface Demand`:
-  ```ts
-  requester_metadata: { name?: string; company?: string } | null;
-  ```
-- Em `buildNotes` (e no bloco equivalente do update), inserir duas linhas logo após `Cliente/Fornecedor`:
-  ```text
-  Solicitante: {requester_metadata.name ?? "—"}
-  Empresa: {requester_metadata.company ?? "—"}
-  ```
+### 7. Nitidez
+- Sparks: 3–4px, sem `blur`, glow via `box-shadow`; removido `mix-blend-mode: screen` (fica só no halo do puck).
+- `will-change: transform, opacity` nos elementos animados (layer próprio do compositor).
 
-A ordem final fica: Código → Tipo → Cliente/Fornecedor → **Solicitante** → **Empresa** → Valor → Vencimento → Prioridade → Status → Descrição → Link interno.
+## Arquivos
+- **Editado:** `src/components/demands/new/success/DemandFlowSection.tsx` (somente branch desktop).
+- **Editado (mínimo, via prop opcional `size`):** `src/components/demands/new/success/FlowStationCard.tsx` para suportar nó maior no desktop sem afetar mobile.
+- **Sem alteração de API:** `CWLogoDestination.tsx` (já aceita `size="lg"`), `DemandOriginCard.tsx`.
 
-### 2. Anexar arquivos da demanda à task do Asana
+## Não muda
+- Mobile (`md:hidden`).
+- Tempos/lógica de animação (`PASS_AT`, `ARRIVED_AT`, `SETTLE_AT`, `passingIdx`, `arrived`, `settled`).
+- Backend, dados, hooks, rotas, fluxo de criação de demanda.
 
-**Somente em `asana-create-task`** (após criar a task com sucesso) e replicar a mesma rotina em **`asana-update-task`** (para reanexar arquivos que foram adicionados depois).
-
-Fluxo para cada documento de `financial_demand_documents`:
-
-1. Buscar todos os docs do `demand_id` via service role.
-2. Para cada doc:
-   - Download via `svc.storage.from("demand-documents").download(file_path)` → `Blob`.
-   - Criar `FormData`:
-     ```ts
-     const form = new FormData();
-     form.append("file", blob, file_name);
-     ```
-   - POST para `https://app.asana.com/api/1.0/tasks/{task_gid}/attachments` com `Authorization: Bearer ${ASANA_PAT}` (sem Content-Type — fetch define o boundary).
-3. Logar resultado por anexo em `asana_sync_logs` com `action: "attachment"`, status `success`/`error`.
-
-**Anti-duplicação no update**: antes de tentar reanexar, listar anexos existentes via `GET /tasks/{gid}/attachments?opt_fields=name` e pular os que já existem com o mesmo `file_name`. Isso evita anexos duplicados a cada update.
-
-**Tolerância a falhas**:
-- Erro em um anexo individual NÃO marca a task como `error` nem aborta os próximos anexos.
-- Cada falha vira uma linha em `asana_sync_logs` com `action: "attachment"`, `error_message` e o `file_name` no `request_payload`.
-
-**Limites**:
-- Asana aceita até 100MB por anexo via PAT. Se `file_size > 100 * 1024 * 1024`, pular o anexo e logar como `error` com motivo "arquivo excede 100MB".
-
-## Arquivos alterados
-
-- `supabase/functions/asana-create-task/index.ts` — `Demand` ganha `requester_metadata`; `buildNotes` ganha linhas Solicitante/Empresa; nova função `uploadAttachments(svc, taskGid, demandId)` chamada após sucesso do create.
-- `supabase/functions/asana-update-task/index.ts` — `Demand` ganha `requester_metadata`; mesmo bloco de notes ajustado; reusa `uploadAttachments` com checagem de duplicatas via lista do Asana.
-
-Nenhum arquivo de frontend, hook, migration ou política RLS é alterado.
-
-## Critério de aceite
-
-1. Demanda nova criada hoje: ao abrir a task no Asana, a descrição mostra `Solicitante:` e `Empresa:` preenchidos com `requester_metadata.name` / `.company`.
-2. Demanda com 1+ anexos: cada arquivo aparece na aba de anexos da task no Asana (testar PDF e imagem).
-3. Update subsequente não duplica anexos já presentes.
-4. Falha de upload de um anexo: outros anexos continuam, task permanece `synced`, e há entrada de erro em `asana_sync_logs` com `action='attachment'`.
-5. Demandas antigas que já tinham task no Asana: ao acionar resync (botão atual), descrição é atualizada com Solicitante/Empresa e anexos pendentes são enviados.
+## Resultado esperado
+- Card de origem **fora** do canal, como ponto de partida claro.
+- Canal 3D real com piso inclinado e reflexo dos nós.
+- 3 checkpoints grandes, glass, perfeitamente alinhados ao trilho.
+- Puck visível atravessando o canal de ponta a ponta.
+- Logo CW grande, valorizada, pousada num pedestal.
+- Renderização nítida — fim do aspecto "borrado/baixa resolução".

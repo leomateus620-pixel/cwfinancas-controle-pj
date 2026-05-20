@@ -9,6 +9,7 @@ interface Props {
   Icon: LucideIcon;
   state: StationState;
   orientation?: "horizontal" | "vertical";
+  size?: "sm" | "md" | "lg";
 }
 
 /**
@@ -25,12 +26,20 @@ export function FlowStationCard({
   Icon,
   state,
   orientation = "horizontal",
+  size = "sm",
 }: Props) {
   const reduce = useReducedMotion();
   const isPassing = state === "passing";
   const isUpcoming = state === "upcoming" || state === "current";
 
   const isVertical = orientation === "vertical";
+  const dotSize =
+    size === "lg" ? "w-12 h-12" : size === "md" ? "w-10 h-10" : isVertical ? "w-8 h-8" : "w-7 h-7";
+  const iconSize =
+    size === "lg" ? "w-5 h-5" : size === "md" ? "w-4 h-4" : isVertical ? "w-4 h-4" : "w-3.5 h-3.5";
+  const checkSize = size === "lg" ? "w-5 h-5" : "w-3.5 h-3.5";
+  const labelSize =
+    size === "lg" ? "text-[12px]" : isVertical ? "text-[12px]" : "text-[10px]";
 
   return (
     <div
@@ -55,7 +64,7 @@ export function FlowStationCard({
         }
         className={cn(
           "relative flex items-center justify-center rounded-full backdrop-blur-md transition-colors duration-300 shrink-0",
-          isVertical ? "w-8 h-8" : "w-7 h-7",
+          dotSize,
           isPassing
             ? "bg-gradient-to-br from-sky-400 to-blue-600 text-white border border-sky-200/80"
             : isUpcoming
@@ -79,9 +88,9 @@ export function FlowStationCard({
         }
       >
         {isUpcoming && !isPassing ? (
-          <Check className="w-3.5 h-3.5" strokeWidth={2.8} />
+          <Check className={checkSize} strokeWidth={2.8} />
         ) : (
-          <Icon className={cn(isVertical ? "w-4 h-4" : "w-3.5 h-3.5")} strokeWidth={2.2} />
+          <Icon className={iconSize} strokeWidth={2.2} />
         )}
 
         {/* Halo de passagem */}
@@ -101,7 +110,7 @@ export function FlowStationCard({
       <span
         className={cn(
           "font-semibold tracking-tight whitespace-nowrap transition-colors duration-300",
-          isVertical ? "text-[12px]" : "text-[10px]",
+          labelSize,
           isPassing
             ? "text-sky-700"
             : isUpcoming
