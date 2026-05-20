@@ -23,13 +23,16 @@ interface Demand {
   amount: number | null;
   due_date: string | null;
   supplier_name: string | null;
+  supplier_document: string | null;
   priority: string;
   status: string;
   created_by: string;
   company_id: string | null;
   asana_task_id: string | null;
   asana_task_url: string | null;
-  requester_metadata: { name?: string; company?: string } | null;
+  requester_metadata:
+    | { name?: string; company?: string; email?: string; phone?: string; role?: string }
+    | null;
 }
 
 const PRIORITY_LABEL: Record<string, string> = {
@@ -45,25 +48,76 @@ function fmtDate(d: string | null) {
   return new Date(d + "T00:00:00").toLocaleDateString("pt-BR");
 }
 
-function buildNotes(d: Demand, appOrigin: string): string {
-  const requesterName = d.requester_metadata?.name?.trim() || "—";
-  const requesterCompany = d.requester_metadata?.company?.trim() || "—";
-  return [
-    `Código: ${d.demand_code ?? d.id.slice(0, 8)}`,
-    `Tipo: ${d.demand_type}`,
-    `Cliente/Fornecedor: ${d.supplier_name ?? "—"}`,
-    `Solicitante: ${requesterName}`,
-    `Empresa: ${requesterCompany}`,
-    `Valor: ${fmtBRL(d.amount)}`,
-    `Vencimento: ${fmtDate(d.due_date)}`,
-    `Prioridade: ${PRIORITY_LABEL[d.priority] ?? d.priority}`,
-    `Status: ${d.status}`,
-    "",
-    `Descrição:`,
-    d.description ?? "(sem descrição)",
-    "",
-    `Link interno: ${appOrigin}/demands/${d.id}`,
-  ].join("\n");
+function contrapartLabel(demand_type: string): { title: string; hint: string } {
+  switch ((demand_type || "").toLowerCase()) {
+    case "pagamento":
+      return { title: "FORNECEDOR", hint: "quem será pago" };
+    case "recebimento":
+      return { title: "CLIENTE", hint: "quem vai pagar / pagou" };
+    case "boleto":
+      return { title: "CLIENTE / SACADO", hint: "quem receberá a cobrança" };
+    case "nota_fiscal":
+    case "emissao_nf":
+      return { title: "TOMADOR", hint: "para quem a NF será emitida" };
+    case "reembolso":
+      return { title: "BENEFICIÁRIO", hint: "quem receberá o reembolso" };
+    case "conciliacao":
+      return { title: "CONTRAPARTE", hint: "lançamento conciliado" };
+    default:
+      return { title: "CLIENTE / FORNECEDOR", hint: "contraparte da demanda" };
+  }
+}
+
+const DIVIDER = "────────────────────────────";
+
+export function buildNotes(d: Demand, appOrigin: string): string {
+  const r = d.requester_metadata ?? {};
+  const requesterName = r.name?.trim() || "—";
+  const requesterCompany = r.company?.trim() || "—";
+  const requesterRole = r.role?.trim();
+  const requesterEmail = r.email?.trim();
+  const requesterPhone = r.phone?.trim();
+
+  const cp = contrapartLabel(d.demand_type);
+  const cpName = d.supplier_name?.trim() || "—";
+  const cpDoc = d.supplier_document?.trim() || "—";
+
+  const lines: string[] = [];
+
+  // BLOCO 1 — DEMANDA
+  lines.push("📋 DEMANDA");
+  lines.push(`Código: ${d.demand_code ?? d.id.slice(0, 8)}`);
+  lines.push(`Tipo: ${d.demand_type}`);
+  lines.push(`Valor: ${fmtBRL(d.amount)}`);
+  lines.push(`Vencimento: ${fmtDate(d.due_date)}`);
+  lines.push(`Prioridade: ${PRIORITY_LABEL[d.priority] ?? d.priority}`);
+  lines.push(`Status: ${d.status}`);
+  lines.push(DIVIDER);
+
+  // BLOCO 2 — SOLICITANTE
+  lines.push("👤 QUEM ENVIOU (Solicitante)");
+  lines.push(`Nome: ${requesterName}`);
+  lines.push(`Empresa: ${requesterCompany}`);
+  if (requesterRole) lines.push(`Cargo/Setor: ${requesterRole}`);
+  if (requesterEmail) lines.push(`E-mail: ${requesterEmail}`);
+  if (requesterPhone) lines.push(`WhatsApp: ${requesterPhone}`);
+  lines.push(DIVIDER);
+
+  // BLOCO 3 — CONTRAPARTE
+  lines.push(`🏢 ${cp.title} (${cp.hint})`);
+  lines.push(`Nome: ${cpName}`);
+  lines.push(`CNPJ/CPF: ${cpDoc}`);
+  lines.push(DIVIDER);
+
+  // BLOCO 4 — DESCRIÇÃO
+  lines.push("📝 DESCRIÇÃO");
+  lines.push(d.description?.trim() || "(sem descrição)");
+  lines.push(DIVIDER);
+
+  // BLOCO 5 — LINK
+  lines.push(`🔗 Link interno: ${appOrigin}/demands/${d.id}`);
+
+  return lines.join("\n");
 }
 
 const ASANA_MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;

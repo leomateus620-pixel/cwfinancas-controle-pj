@@ -1,113 +1,65 @@
-# Auto-atualização de versão (Cache Busting Inteligente)
+## Objetivo
+Incluir o **CNPJ/CPF** da demanda nas tarefas do Asana e **separar visualmente** quem **enviou** a demanda (Solicitante) de quem é a **contraparte** (Cliente/Fornecedor/Tomador/Sacado etc.), evitando que os dados se misturem.
 
-Objetivo: garantir que após cada publicação, todos os usuários (PC e mobile) recebam a versão mais recente automaticamente, sem limpar cache manualmente e sem deslogar.
+## Diagnóstico
+- O formulário já salva `supplier_document` (CNPJ/CPF da contraparte) e `requester_metadata` completo (name, company, email, phone, role) na tabela `financial_demands`.
+- As Edge Functions `asana-create-task` e `asana-update-task` montam o campo `notes` da task Asana, mas **não incluem `supplier_document`** e juntam tudo numa lista linear, sem separar Solicitante × Contraparte.
 
-## Estratégia (sem Service Worker)
+## Mudanças (somente backend / Edge Functions, sem alterar UI nem dados)
 
-O projeto NÃO usa PWA/Service Worker (confirmado em `vite.config.ts` e `main.tsx`). Vamos usar abordagem leve:
-- Vite já gera assets com hash (`assets/*-[hash].js`) — ok nativo.
-- Vamos garantir que `index.html` nunca fique em cache antigo.
-- Um `version.json` público + hook que compara e recarrega quando necessário.
-- Idle/visibility-aware: verifica ao abrir, ao voltar pra aba, e após 10min de inatividade.
-- Proteção contra loop de reload.
+### 1. `supabase/functions/asana-create-task/index.ts`
+- Adicionar `supplier_document` na interface `Demand`.
+- Reescrever `buildNotes()` em **3 blocos visuais** separados por divisores `────`:
+  1. **📋 DEMANDA** — Código, Tipo, Valor, Vencimento, Prioridade, Status.
+  2. **👤 QUEM ENVIOU (Solicitante)** — Nome, Empresa, Cargo/Setor, E-mail, WhatsApp.
+  3. **🏢 CONTRAPARTE (Cliente/Fornecedor/Tomador/Sacado)** — Nome (`supplier_name`) e **CNPJ/CPF (`supplier_document`)** — rótulo dinâmico conforme `demand_type` (Fornecedor para pagamento, Cliente para recebimento/boleto, Tomador para nota fiscal etc.).
+  4. **📝 DESCRIÇÃO**
+  5. **🔗 Link interno**
+- Manter o `titlePrefix` atual (`[supplier_name]`) que já ajuda na identificação.
 
-## Arquivos a criar
+### 2. `supabase/functions/asana-update-task/index.ts`
+- Aplicar a mesma estrutura de `notes` (extrair função `buildNotes()` igual à de create) e adicionar `supplier_document` no SELECT/interface.
+- Garante que tarefas já criadas sejam reformatadas no próximo update/retry.
 
+### 3. Helper de rótulo
+Função `contrapartLabel(demand_type)`:
+- `pagamento` → "Fornecedor"
+- `recebimento` / `boleto` → "Cliente / Sacado"
+- `nota_fiscal` → "Tomador"
+- `reembolso` → "Beneficiário"
+- demais → "Cliente / Fornecedor"
+
+## Exemplo do `notes` final no Asana
 ```text
-public/version.json                          # versão pública (consultada com no-store)
-scripts/generate-version.mjs                 # gera version.json no build (timestamp + commit)
-src/lib/version.ts                           # APP_VERSION + helpers (fetchRemoteVersion, clearAppCaches)
-src/hooks/useAppVersionCheck.ts              # lógica de polling + idle + visibility
-src/components/system/AppUpdateHandler.tsx   # monta o hook + toast discreto "Atualizando..."
-```
-
-## Arquivos a editar
-
-- `index.html` → adicionar meta `Cache-Control: no-cache, no-store, must-revalidate` (via meta http-equiv) e `<meta name="app-version" content="__APP_VERSION__">`.
-- `vite.config.ts` → `define: { __APP_VERSION__: JSON.stringify(...) }` lendo de `version.json` gerado no build; manter assets com hash (default já faz).
-- `package.json` → adicionar `"prebuild": "node scripts/generate-version.mjs"` para regenerar `public/version.json` a cada build/publish.
-- `src/App.tsx` → montar `<AppUpdateHandler />` dentro do `BrowserRouter` (acima das rotas), nada mais.
-
-## Como funciona o fluxo
-
-1. Build gera `public/version.json` com `{ version, buildId, deployedAt }` (timestamp do build).
-2. Vite injeta `APP_VERSION` (mesmo valor) no bundle via `define`.
-3. Ao montar `AppUpdateHandler`:
-   - Faz `fetch('/version.json', { cache: 'no-store' })`.
-   - Compara `data.version` com `APP_VERSION` do bundle.
-   - Se diferente → toast discreto "Nova versão disponível. Atualizando o sistema..." → `clearAppCaches()` (apenas `caches.*` e chaves `cwf-version-*`; preserva tokens `sb-*`/auth) → `location.reload()`.
-4. Eventos que disparam nova verificação:
-   - `visibilitychange` (volta pra aba).
-   - Idle timeout de **10 min** (listeners: `mousemove`, `keydown`, `click`, `scroll`, `touchstart`) — após idle, na próxima interação ou `visibilitychange` reverifica.
-   - Polling leve a cada **5 min** em background (só quando aba visível).
-5. Anti-loop: grava `sessionStorage['cwf-last-reload-at']`. Se já recarregou nos últimos 30s, não recarrega de novo; mostra mensagem amigável.
-
-## Preservação (não mexer)
-
-- Login/sessão: não tocamos em chaves `sb-*` nem `supabase.auth.*` ao limpar cache.
-- Rotas, permissões, dados, integrações Asana/Sheets/Cloud: nenhum impacto.
-- Layout: zero alteração visual, exceto um toast Sonner discreto (já existe `<Sonner />` no App).
-- DRE, Forecasts, demandas, fluxo Asana: intocados.
-
-## Detalhes técnicos
-
-**`scripts/generate-version.mjs`**
-```js
-import { writeFileSync } from 'node:fs';
-const now = new Date();
-const pad = (n) => String(n).padStart(2,'0');
-const version = `${now.getFullYear()}.${pad(now.getMonth()+1)}.${pad(now.getDate())}.${pad(now.getHours())}${pad(now.getMinutes())}`;
-const payload = { version, buildId: `build_${Date.now()}`, deployedAt: now.toISOString() };
-writeFileSync('public/version.json', JSON.stringify(payload, null, 2));
-process.env.APP_VERSION_OUT && writeFileSync(process.env.APP_VERSION_OUT, version);
-console.log('[version]', payload);
-```
-
-**`vite.config.ts`** — ler `public/version.json` (ou gerar inline) e injetar:
-```ts
-define: {
-  __APP_VERSION__: JSON.stringify(readVersion()),
-  __BUILD_ID__: JSON.stringify(readBuildId()),
-}
-```
-
-**`src/lib/version.ts`**
-```ts
-export const APP_VERSION: string = (globalThis as any).__APP_VERSION__ ?? 'dev';
-export async function fetchRemoteVersion() {
-  const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
-  if (!r.ok) throw new Error('version fetch failed');
-  return r.json() as Promise<{ version: string; buildId: string; deployedAt: string }>;
-}
-export async function clearAppCaches() {
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    await Promise.all(keys.map(k => caches.delete(k)));
-  }
-  // limpa só chaves do nosso versionamento — preserva auth (sb-*) e dados
-  Object.keys(localStorage).filter(k => k.startsWith('cwf-version-')).forEach(k => localStorage.removeItem(k));
-}
-```
-
-**`useAppVersionCheck.ts`** — encapsula: fetch inicial, listeners de visibility/idle, polling 5min, anti-loop com `sessionStorage`. Quando detecta nova versão: `toast.message('Nova versão disponível', { description: 'Atualizando o sistema...' })` → `await clearAppCaches()` → `location.reload()`.
-
-**`index.html`** — adicionar dentro do `<head>`:
-```html
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />
+📋 DEMANDA
+Código: DEM-00123
+Tipo: pagamento
+Valor: R$ 1.500,00
+Vencimento: 25/05/2026
+Prioridade: Alta
+Status: em_analise
+────────────────────────────
+👤 QUEM ENVIOU (Solicitante)
+Nome: Maria Silva
+Empresa: Acme Ltda
+Cargo/Setor: Diretora Financeira
+E-mail: maria@acme.com
+WhatsApp: (11) 98765-4321
+────────────────────────────
+🏢 FORNECEDOR (quem será pago)
+Nome: Fornecedor XYZ Ltda
+CNPJ/CPF: 12.345.678/0001-90
+────────────────────────────
+📝 DESCRIÇÃO
+Pagamento de serviços de consultoria referente a abril/2026.
+────────────────────────────
+🔗 Link interno: https://app.../demands/<id>
 ```
 
 ## Validação
-
-- Build local: confirmar `dist/version.json` gerado e `APP_VERSION` injetada no bundle.
-- Simular versão antiga: editar manualmente `public/version.json` em runtime (dev) → confirmar toast + reload.
-- Voltar para aba após 10min ocioso → confirmar reverificação.
-- Confirmar que sessão Supabase persiste após reload (não desloga).
-- Confirmar ausência de loop (anti-reload 30s).
-- Mobile: testar Chrome Android / Safari iOS via `visibilitychange`.
+- Criar uma demanda de teste de cada tipo (pagamento, nota fiscal, boleto) com CNPJ/CPF preenchido e conferir no Asana se aparecem os 3 blocos separados e o documento da contraparte.
+- Demandas antigas com task já criada: ao salvar qualquer edição (ou via Retry Sync) o `notes` é atualizado com o novo formato.
 
 ## Fora de escopo
-
-- Não vamos adicionar Service Worker / PWA (instruções explícitas e risco de cache pior em preview).
-- Não vamos mexer em headers do servidor (hospedagem Lovable já trata HTML como no-cache); meta tags reforçam.
+- Não muda nenhum schema, RLS, UI do formulário, nem anexos.
+- Não cria custom fields no Asana (mantém tudo em `notes` para não exigir configuração extra do workspace).
