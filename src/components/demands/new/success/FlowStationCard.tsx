@@ -9,6 +9,7 @@ interface Props {
   Icon: LucideIcon;
   state: StationState;
   orientation?: "horizontal" | "vertical";
+  size?: "sm" | "md" | "lg";
 }
 
 /**
