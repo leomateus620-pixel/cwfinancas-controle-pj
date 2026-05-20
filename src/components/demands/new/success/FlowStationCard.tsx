@@ -110,7 +110,7 @@ export function FlowStationCard({
       <span
         className={cn(
           "font-semibold tracking-tight whitespace-nowrap transition-colors duration-300",
-          isVertical ? "text-[12px]" : "text-[10px]",
+          labelSize,
           isPassing
             ? "text-sky-700"
             : isUpcoming
