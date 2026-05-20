@@ -28,6 +28,12 @@ export interface DemandFormState {
   refund_reason: string;
   refund_method: string;
   description: string;
+  // Identificação do solicitante (etapa inicial)
+  requester_name: string;
+  requester_company: string;
+  requester_email: string;
+  requester_phone: string;
+  requester_role: string;
 }
 
 export const EMPTY_FORM: DemandFormState = {
@@ -53,6 +59,11 @@ export const EMPTY_FORM: DemandFormState = {
   refund_reason: "",
   refund_method: "",
   description: "",
+  requester_name: "",
+  requester_company: "",
+  requester_email: "",
+  requester_phone: "",
+  requester_role: "",
 };
 
 interface Props {
