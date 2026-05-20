@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+// (navigation is delegated to child components)
 import { z } from "zod";
 import { useCreateDemand } from "@/hooks/useDemand";
 import { useUploadDemandDocument } from "@/hooks/useDemandDocuments";
@@ -42,7 +42,6 @@ const step2Schema = z.object({
 });
 
 export default function NewDemandPage() {
-  const navigate = useNavigate();
   const create = useCreateDemand();
   const upload = useUploadDemandDocument();
 
