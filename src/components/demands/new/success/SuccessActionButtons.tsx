@@ -1,9 +1,8 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Plus, LayoutGrid, LogOut } from "lucide-react";
+import { ExternalLink, Plus, LayoutGrid, Home } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
-import { useAuth } from "@/contexts/AuthContext";
 
 interface Props {
   demandId: string;
@@ -13,15 +12,9 @@ interface Props {
 export function SuccessActionButtons({ demandId, onNew }: Props) {
   const navigate = useNavigate();
   const { isClient, isAdmin, isManager, isLoading } = useUserRole();
-  const { signOut } = useAuth();
 
-  // Cliente puro (cwfinancas): fluxo simplificado — só pode criar nova ou sair.
+  // Cliente puro (cwfinancas): fluxo simplificado — só "Criar nova demanda" + "Voltar ao início".
   const clientOnly = !isLoading && isClient && !isAdmin && !isManager;
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate("/login");
-  };
 
   if (clientOnly) {
     return (
@@ -34,10 +27,10 @@ export function SuccessActionButtons({ demandId, onNew }: Props) {
         </Button>
         <Button
           variant="outline"
-          onClick={handleLogout}
+          onClick={() => navigate("/demands/new")}
           className="gap-2 bg-white/70 w-full sm:w-auto"
         >
-          <LogOut className="w-4 h-4" /> Sair
+          <Home className="w-4 h-4" /> Voltar ao início
         </Button>
       </div>
     );

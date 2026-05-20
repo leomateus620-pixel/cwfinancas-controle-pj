@@ -1,41 +1,36 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
-import { Inbox, Search, Users } from "lucide-react";
+import { Inbox, Filter, Users } from "lucide-react";
 import { DemandTypeIcon, type DemandIconKey } from "@/components/demands/ui/DemandTypeIcon";
 import { CWLogoDestination } from "./CWLogoDestination";
 import { FlowStationCard, type StationState } from "./FlowStationCard";
-import { cn } from "@/lib/utils";
+import { DemandOriginCard } from "./DemandOriginCard";
 
 interface Props {
   typeKey: string;
   typeLabel: string;
+  code: string;
+  priority?: string;
 }
 
 const STATIONS = [
   { id: "received", label: "Recebida", Icon: Inbox },
-  { id: "analysis", label: "Em análise", Icon: Search },
+  { id: "triage", label: "Triagem", Icon: Filter },
   { id: "team", label: "Equipe CW", Icon: Users },
 ] as const;
 
-/**
- * Timeline (ms):
- *  0      → puck inicia
- *  600    → cruza "Recebida"   (passing)
- *  1050   → cruza "Em análise" (passing)
- *  1500   → cruza "Equipe CW"  (passing)
- *  1900   → chega na logo CW
- *  2100   → estado final: só "Recebida" verde, outras voltam neutras
- */
-const PASS_AT = [600, 1050, 1500];
-const PASS_DURATION = 320;
-const ARRIVED_AT = 1900;
-const SETTLE_AT = 2100;
+// Timeline (ms)
+const PASS_AT = [950, 1300, 1650];
+const PASS_DURATION = 360;
+const ARRIVED_AT = 2000;
+const SETTLE_AT = 2200;
 
 /**
- * Túnel 3D real: perspective + feixe de luz + partículas + puck com
- * translateZ/rotateY + trail. Só "Recebida" termina verde com check.
+ * Fluxo CW Premium — canal 3D real (não stepper).
+ * Mini card → trilha em perspectiva com pontos de luz → núcleo CW.
+ * Paleta azul nos checkpoints (sem verde berrante).
  */
-export function DemandFlowSection({ typeKey, typeLabel }: Props) {
+export function DemandFlowSection({ typeKey, typeLabel, code, priority }: Props) {
   const reduce = useReducedMotion();
 
   const [passingIdx, setPassingIdx] = useState<number | null>(null);
@@ -47,9 +42,11 @@ export function DemandFlowSection({ typeKey, typeLabel }: Props) {
     const timers: number[] = [];
     PASS_AT.forEach((ms, i) => {
       timers.push(window.setTimeout(() => setPassingIdx(i), ms));
-      timers.push(window.setTimeout(() => {
-        setPassingIdx((cur) => (cur === i ? null : cur));
-      }, ms + PASS_DURATION));
+      timers.push(
+        window.setTimeout(() => {
+          setPassingIdx((cur) => (cur === i ? null : cur));
+        }, ms + PASS_DURATION),
+      );
     });
     timers.push(window.setTimeout(() => setArrived(true), ARRIVED_AT));
     timers.push(window.setTimeout(() => setSettled(true), SETTLE_AT));
@@ -58,220 +55,208 @@ export function DemandFlowSection({ typeKey, typeLabel }: Props) {
 
   const stationState = (i: number): StationState => {
     if (passingIdx === i) return "passing";
-    if (settled && i === 0) return "current"; // só "Recebida" fica verde
-    if (settled) return "upcoming";
+    if (settled || arrived) {
+      // Após chegada, todos os checkpoints permanecem "upcoming" (azul suave + check)
+      if (PASS_AT[i] <= (settled ? SETTLE_AT : ARRIVED_AT)) return "upcoming";
+    }
     return "pending";
   };
 
-  // Partículas estáveis
-  const particles = useMemo(
+  // Sparks (pontos de luz) viajando no trilho — loop infinito
+  const sparks = useMemo(
     () =>
-      Array.from({ length: 7 }).map((_, i) => ({
+      Array.from({ length: 5 }).map((_, i) => ({
         id: i,
-        delay: (i * 0.32) % 2.4,
-        top: 30 + ((i * 53) % 40),
-        size: 2 + (i % 3),
+        delay: (i * 0.5) % 2.5,
+        duration: 2.4 + (i % 3) * 0.25,
+        offset: ((i * 17) % 30) - 15, // -15..15 px no eixo Y do trilho
+        size: 2 + (i % 2),
       })),
     [],
   );
 
   return (
     <div className="relative">
-      {/* ============ DESKTOP / TABLET (md+) — túnel horizontal ============ */}
+      {/* ============ DESKTOP / TABLET (md+) — canal 3D horizontal ============ */}
       <div
-        className="hidden md:block relative py-2"
-        style={{
-          perspective: "1200px",
-          perspectiveOrigin: "50% 55%",
-        }}
+        className="hidden md:block relative"
+        style={{ perspective: "1400px", perspectiveOrigin: "50% 60%" }}
       >
-        {/* Atmosfera de fundo (neblina respirando) */}
-        {!reduce && (
-          <motion.div
+        <div
+          className="relative h-[180px]"
+          style={{ transformStyle: "preserve-3d" }}
+        >
+          {/* Canal/sulco — paredes laterais com gradiente translúcido */}
+          <div
             aria-hidden
-            initial={{ opacity: 0.35 }}
-            animate={{ opacity: [0.35, 0.7, 0.35] }}
-            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-            className="absolute inset-0 pointer-events-none rounded-2xl"
+            className="absolute inset-x-[5%] top-1/2 -translate-y-1/2 h-[120px] rounded-[28px] pointer-events-none"
             style={{
+              transform: "rotateX(22deg)",
+              transformStyle: "preserve-3d",
               background:
-                "radial-gradient(ellipse at 50% 60%, rgba(56,189,248,0.10), transparent 65%)",
+                "linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(241,245,249,0.20) 35%, rgba(226,232,240,0.10) 70%, rgba(15,23,42,0.04) 100%)",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,0.8), inset 0 -8px 20px rgba(15,23,42,0.08), 0 18px 36px -16px rgba(15,23,42,0.18)",
+              border: "1px solid rgba(255,255,255,0.55)",
             }}
           />
-        )}
 
-        <div
-          className="relative"
-          style={{ transformStyle: "preserve-3d", transform: "rotateX(2deg)" }}
-        >
-          {/* Trilha de fundo */}
-          <div className="absolute left-[8%] right-[8%] top-1/2 -translate-y-1/2 h-px bg-gradient-to-r from-transparent via-sky-400/40 to-transparent pointer-events-none" />
-          <div className="absolute left-[8%] right-[8%] top-1/2 -translate-y-1/2 h-[6px] -mt-[3px] rounded-full bg-gradient-to-r from-transparent via-sky-400/12 to-transparent blur-md pointer-events-none" />
-
-          {/* Feixe de luz percorrendo (camada principal de túnel) */}
+          {/* Atmosfera azul respirando dentro do canal */}
           {!reduce && (
             <motion.div
               aria-hidden
-              initial={{ left: "5%", opacity: 0 }}
-              animate={{
-                left: ["5%", "95%"],
-                opacity: [0, 1, 1, 0.6],
-                z: [-10, 12, -10],
-              }}
-              transition={{
-                duration: 2.6,
-                times: [0, 0.1, 0.85, 1],
-                ease: "easeInOut",
-                repeat: Infinity,
-                repeatDelay: 0.4,
-              }}
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-3 w-[140px] rounded-full pointer-events-none"
+              initial={{ opacity: 0.35 }}
+              animate={{ opacity: [0.4, 0.7, 0.4] }}
+              transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-x-[8%] top-1/2 -translate-y-1/2 h-[80px] rounded-full pointer-events-none"
               style={{
                 background:
-                  "radial-gradient(ellipse at center, rgba(255,255,255,0.95), rgba(125,211,252,0.55) 40%, transparent 75%)",
-                filter: "blur(6px)",
-                mixBlendMode: "screen",
-                transformStyle: "preserve-3d",
+                  "radial-gradient(ellipse at 60% 50%, rgba(56,189,248,0.18), rgba(99,102,241,0.08) 50%, transparent 80%)",
+                filter: "blur(14px)",
               }}
             />
           )}
 
-          {/* Partículas de luz */}
+          {/* Trilho principal — linha em perspectiva com guides */}
+          <div
+            className="absolute inset-x-[10%] top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ transformStyle: "preserve-3d" }}
+          >
+            {/* Guides superior/inferior */}
+            <div
+              className="absolute left-0 right-0 -top-3 h-px"
+              style={{
+                background:
+                  "linear-gradient(90deg, transparent, rgba(125,211,252,0.35), transparent)",
+              }}
+            />
+            <div
+              className="absolute left-0 right-0 top-3 h-px"
+              style={{
+                background:
+                  "linear-gradient(90deg, transparent, rgba(125,211,252,0.35), transparent)",
+              }}
+            />
+            {/* Trilho central */}
+            <div
+              className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] rounded-full"
+              style={{
+                background:
+                  "linear-gradient(90deg, rgba(125,211,252,0) 0%, rgba(125,211,252,0.65) 15%, rgba(255,255,255,0.9) 50%, rgba(110,231,183,0.65) 85%, rgba(110,231,183,0) 100%)",
+                boxShadow:
+                  "0 0 12px rgba(125,211,252,0.55), 0 0 4px rgba(255,255,255,0.7)",
+              }}
+            />
+          </div>
+
+          {/* Sparks (pontos de luz) viajando — loop */}
           {!reduce &&
-            particles.map((p) => (
+            sparks.map((p) => (
               <motion.div
                 key={p.id}
                 aria-hidden
-                initial={{ left: "5%", opacity: 0 }}
+                initial={{ left: "6%", opacity: 0 }}
                 animate={{
-                  left: ["5%", "95%"],
-                  opacity: [0, 0.9, 0],
-                  z: [-15, 18, -15],
-                  y: [0, -4, 2, 0],
+                  left: ["6%", "94%"],
+                  opacity: [0, 0.95, 0],
                 }}
                 transition={{
-                  duration: 2.4 + (p.id % 3) * 0.3,
+                  duration: p.duration,
                   delay: p.delay,
                   ease: "easeInOut",
                   repeat: Infinity,
-                  repeatDelay: 0.2,
+                  repeatDelay: 0.3,
                 }}
                 className="absolute rounded-full bg-white pointer-events-none"
                 style={{
-                  top: `${p.top}%`,
+                  top: `calc(50% + ${p.offset}px)`,
                   width: p.size,
                   height: p.size,
-                  filter: "blur(0.5px) drop-shadow(0 0 4px rgba(125,211,252,0.9))",
+                  filter: "blur(0.5px) drop-shadow(0 0 5px rgba(125,211,252,0.95))",
                   mixBlendMode: "screen",
-                  transformStyle: "preserve-3d",
                 }}
               />
             ))}
 
-          {/* Grade de cards (paredes do túnel) */}
-          <div className="relative grid grid-cols-[auto_1fr_auto_1fr_auto_1fr_auto_1fr_auto] items-center gap-1.5 lg:gap-2">
-            <OriginCard typeKey={typeKey} typeLabel={typeLabel} />
-            <Connector />
-            <FlowStationCard
-              label={STATIONS[0].label}
-              Icon={STATIONS[0].Icon}
-              state={stationState(0)}
-              tilt={4}
-            />
-            <Connector />
-            <FlowStationCard
-              label={STATIONS[1].label}
-              Icon={STATIONS[1].Icon}
-              state={stationState(1)}
-              tilt={0}
-            />
-            <Connector />
-            <FlowStationCard
-              label={STATIONS[2].label}
-              Icon={STATIONS[2].Icon}
-              state={stationState(2)}
-              tilt={-4}
-            />
-            <Connector />
-            <div className="flex items-center justify-center">
-              <CWLogoDestination arrived={arrived} size="md" />
+          {/* Camada de conteúdo: origem | checkpoints | destino */}
+          <div className="relative h-full grid grid-cols-[auto_1fr_auto] items-center gap-3 px-[3%]">
+            {/* Origem */}
+            <div style={{ transformStyle: "preserve-3d" }}>
+              <DemandOriginCard
+                typeKey={typeKey}
+                typeLabel={typeLabel}
+                code={code}
+                priority={priority}
+              />
+            </div>
+
+            {/* Checkpoints distribuídos sobre o trilho */}
+            <div className="relative h-full">
+              <div className="absolute inset-0 flex items-center justify-around">
+                {STATIONS.map((st, i) => (
+                  <div key={st.id} className="flex flex-col items-center">
+                    <FlowStationCard
+                      label={st.label}
+                      Icon={st.Icon}
+                      state={stationState(i)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Núcleo CW */}
+            <div className="flex items-center justify-center" style={{ transformStyle: "preserve-3d" }}>
+              <CWLogoDestination arrived={arrived} size="md" showLabel />
             </div>
           </div>
 
-          {/* Puck — token da demanda atravessando com profundidade real */}
+          {/* Puck — token da demanda atravessando o canal */}
           {!reduce && (
             <>
-              {/* Trail (rastros) */}
-              {[160, 80].map((delay, i) => (
-                <motion.div
-                  key={`trail-${delay}`}
-                  initial={{ left: "4%", opacity: 0 }}
-                  animate={{
-                    left: ["4%", "26%", "48%", "70%", "92%"],
-                    opacity: [0, 0.28 - i * 0.08, 0.22 - i * 0.06, 0.15, 0],
-                    scale: [1, 0.92, 0.88, 0.82, 0.5],
-                  }}
-                  transition={{
-                    duration: 1.9,
-                    delay: 0.45 + delay / 1000,
-                    times: [0, 0.25, 0.5, 0.75, 1],
-                    ease: [0.45, 0.05, 0.3, 1],
-                  }}
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none z-[9]"
-                >
-                  <div
-                    className="rounded-xl bg-sky-300/40 backdrop-blur-md px-2 py-1.5 flex items-center gap-1.5 border border-sky-300/30"
-                    style={{ filter: "blur(2px)" }}
-                  >
-                    <DemandTypeIcon kind={(typeKey as DemandIconKey) || "outro"} size="sm" />
-                  </div>
-                </motion.div>
-              ))}
-
-              {/* Halo glow do puck */}
+              {/* Halo do puck */}
               <motion.div
-                initial={{ left: "4%", opacity: 0, scale: 0.8 }}
+                initial={{ left: "12%", opacity: 0, scale: 0.7 }}
                 animate={{
-                  left: ["4%", "26%", "48%", "70%", "92%"],
-                  opacity: [0, 0.9, 1, 0.9, 0],
-                  scale: [0.8, 1.4, 1.5, 1.3, 0.6],
+                  left: ["12%", "32%", "52%", "72%", "88%"],
+                  opacity: [0, 0.85, 1, 0.85, 0],
+                  scale: [0.7, 1.3, 1.5, 1.3, 0.5],
                 }}
                 transition={{
-                  duration: 1.9,
-                  delay: 0.45,
+                  duration: 1.6,
+                  delay: 0.7,
                   times: [0, 0.25, 0.5, 0.75, 1],
                   ease: "easeInOut",
                 }}
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-16 h-16 rounded-full pointer-events-none z-[9]"
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-16 h-16 rounded-full pointer-events-none z-[6]"
                 style={{
                   background:
-                    "radial-gradient(circle, rgba(125,211,252,0.55), rgba(59,130,246,0.25) 40%, transparent 70%)",
+                    "radial-gradient(circle, rgba(125,211,252,0.6), rgba(59,130,246,0.25) 40%, transparent 70%)",
                   filter: "blur(8px)",
                   mixBlendMode: "screen",
                 }}
               />
 
-              {/* Puck principal */}
+              {/* Puck */}
               <motion.div
-                initial={{ left: "4%", scale: 1, opacity: 0, z: 40, rotateY: 0 }}
+                initial={{ left: "12%", scale: 1, opacity: 0, rotateY: 0, y: 0 }}
                 animate={{
-                  left: ["4%", "26%", "48%", "70%", "92%"],
-                  scale: [1, 0.98, 0.95, 0.9, 0.55],
+                  left: ["12%", "32%", "52%", "72%", "88%"],
+                  scale: [1, 0.96, 0.92, 0.86, 0.55],
                   opacity: [0, 1, 1, 1, 0],
-                  rotateY: [0, 12, -8, 10, 0],
+                  rotateY: [0, 10, -8, 10, 0],
                   y: [0, -4, 3, -3, 0],
-                  z: [40, 0, 10, 0, 40],
                 }}
                 transition={{
-                  duration: 1.9,
-                  delay: 0.45,
+                  duration: 1.6,
+                  delay: 0.7,
                   times: [0, 0.25, 0.5, 0.75, 1],
                   type: "spring",
-                  stiffness: 55,
-                  damping: 16,
+                  stiffness: 60,
+                  damping: 18,
                   mass: 0.9,
                 }}
-                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none z-10"
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none z-[7]"
                 style={{ transformStyle: "preserve-3d" }}
               >
                 <div
@@ -289,119 +274,97 @@ export function DemandFlowSection({ typeKey, typeLabel }: Props) {
         </div>
       </div>
 
-      {/* ============ MOBILE (<md) — túnel vertical compacto ============ */}
-      <div className="md:hidden relative flex flex-col items-stretch gap-2 py-1">
-        {/* Feixe vertical */}
-        {!reduce && (
-          <motion.div
+      {/* ============ MOBILE (<md) — canal vertical compacto ============ */}
+      <div className="md:hidden relative flex flex-col items-stretch gap-3 py-1 px-1">
+        {/* Origem */}
+        <div className="flex justify-center">
+          <DemandOriginCard
+            typeKey={typeKey}
+            typeLabel={typeLabel}
+            code={code}
+            priority={priority}
+            orientation="vertical"
+          />
+        </div>
+
+        {/* Trilho vertical com checkpoints */}
+        <div className="relative pl-5">
+          {/* Linha vertical com gradiente */}
+          <div
             aria-hidden
-            initial={{ top: "5%", opacity: 0 }}
-            animate={{ top: ["5%", "95%"], opacity: [0, 1, 1, 0.5] }}
-            transition={{
-              duration: 2.6,
-              times: [0, 0.1, 0.85, 1],
-              ease: "easeInOut",
-              repeat: Infinity,
-              repeatDelay: 0.4,
-            }}
-            className="absolute left-1/2 -translate-x-1/2 h-[80px] w-2 rounded-full pointer-events-none"
+            className="absolute left-[18px] top-1 bottom-1 w-[2px] rounded-full"
             style={{
               background:
-                "radial-gradient(ellipse at center, rgba(255,255,255,0.9), rgba(125,211,252,0.5) 40%, transparent 75%)",
-              filter: "blur(6px)",
-              mixBlendMode: "screen",
+                "linear-gradient(180deg, rgba(125,211,252,0) 0%, rgba(125,211,252,0.7) 20%, rgba(255,255,255,0.85) 50%, rgba(110,231,183,0.65) 85%, rgba(110,231,183,0) 100%)",
+              boxShadow: "0 0 8px rgba(125,211,252,0.55)",
             }}
           />
-        )}
 
-        <OriginCard typeKey={typeKey} typeLabel={typeLabel} mobile />
-        <VerticalConnector />
-        <FlowStationCard
-          label={STATIONS[0].label}
-          Icon={STATIONS[0].Icon}
-          state={stationState(0)}
-          orientation="vertical"
-        />
-        <VerticalConnector />
-        <FlowStationCard
-          label={STATIONS[1].label}
-          Icon={STATIONS[1].Icon}
-          state={stationState(1)}
-          orientation="vertical"
-        />
-        <VerticalConnector />
-        <FlowStationCard
-          label={STATIONS[2].label}
-          Icon={STATIONS[2].Icon}
-          state={stationState(2)}
-          orientation="vertical"
-        />
-        <VerticalConnector />
-        <div className="flex justify-center pt-1">
-          <CWLogoDestination arrived={arrived} size="md" />
+          {/* Sparks descendo */}
+          {!reduce &&
+            sparks.slice(0, 3).map((p) => (
+              <motion.div
+                key={p.id}
+                aria-hidden
+                initial={{ top: "0%", opacity: 0 }}
+                animate={{
+                  top: ["0%", "100%"],
+                  opacity: [0, 0.95, 0],
+                }}
+                transition={{
+                  duration: p.duration,
+                  delay: p.delay,
+                  ease: "easeInOut",
+                  repeat: Infinity,
+                  repeatDelay: 0.3,
+                }}
+                className="absolute rounded-full bg-white pointer-events-none"
+                style={{
+                  left: 18,
+                  width: p.size,
+                  height: p.size,
+                  filter: "blur(0.5px) drop-shadow(0 0 5px rgba(125,211,252,0.95))",
+                  mixBlendMode: "screen",
+                  transform: "translateX(-50%)",
+                }}
+              />
+            ))}
+
+          {/* Checkpoints */}
+          <div className="relative flex flex-col gap-3">
+            {STATIONS.map((st, i) => (
+              <div key={st.id} className="relative pl-3">
+                {/* Conector horizontal pequeno */}
+                <div
+                  aria-hidden
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-3 h-px bg-sky-300/40"
+                />
+                <FlowStationCard
+                  label={st.label}
+                  Icon={st.Icon}
+                  state={stationState(i)}
+                  orientation="vertical"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Núcleo CW */}
+        <div className="flex justify-center pt-2">
+          <CWLogoDestination arrived={arrived} size="md" showLabel />
         </div>
       </div>
 
       {/* Confirmação textual */}
       <motion.div
-        initial={reduce ? false : { opacity: 0, y: 4 }}
-        animate={{ opacity: arrived ? 1 : 0, y: arrived ? 0 : 4 }}
-        transition={reduce ? undefined : { duration: 0.32, ease: "easeOut" }}
-        className="text-center mt-3 md:mt-4 text-[11.5px] font-medium tracking-wide text-emerald-700"
+        initial={reduce ? false : { opacity: 0, y: 6 }}
+        animate={{ opacity: arrived ? 1 : 0, y: arrived ? 0 : 6 }}
+        transition={reduce ? undefined : { duration: 0.4, ease: "easeOut" }}
+        className="text-center mt-4 text-[12px] font-semibold tracking-wide text-emerald-700"
       >
         Encaminhada para análise da equipe CW
       </motion.div>
-    </div>
-  );
-}
-
-function OriginCard({
-  typeKey,
-  typeLabel,
-  mobile,
-}: {
-  typeKey: string;
-  typeLabel: string;
-  mobile?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "relative inline-flex items-center gap-2 rounded-xl bg-white/85 border border-white/70 backdrop-blur-xl z-[2]",
-        mobile ? "px-3 py-2 w-full justify-center" : "px-2.5 py-2",
-      )}
-      style={{
-        boxShadow:
-          "0 8px 22px -10px rgba(15,23,42,0.18), inset 0 1px 0 rgba(255,255,255,0.9)",
-        transform: mobile ? undefined : "rotateY(6deg)",
-        transformStyle: "preserve-3d",
-      }}
-    >
-      <DemandTypeIcon kind={(typeKey as DemandIconKey) || "outro"} size="sm" />
-      <div className="flex flex-col leading-tight min-w-0">
-        <span className="text-[9.5px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">
-          Sua demanda
-        </span>
-        <span className="text-[11.5px] font-semibold text-foreground truncate">
-          {typeLabel}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Connector() {
-  return (
-    <div className="relative h-px self-center">
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-sky-400/25 to-transparent" />
-    </div>
-  );
-}
-
-function VerticalConnector() {
-  return (
-    <div className="flex justify-center">
-      <div className="w-px h-3 bg-gradient-to-b from-transparent via-sky-400/30 to-transparent" />
     </div>
   );
 }
