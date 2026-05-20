@@ -32,6 +32,78 @@ interface Demand {
   demand_type: string; amount: number | null; due_date: string | null;
   supplier_name: string | null; priority: string; status: string;
   created_by: string; asana_task_id: string | null; asana_task_url: string | null;
+  requester_metadata: { name?: string; company?: string } | null;
+}
+
+const ASANA_MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+
+async function uploadAttachments(
+  svc: ReturnType<typeof createClient>,
+  taskGid: string,
+  demandId: string,
+  asanaPat: string,
+  existingNames?: Set<string>,
+) {
+  const { data: docs, error } = await svc
+    .from("financial_demand_documents")
+    .select("id,file_name,file_path,file_size")
+    .eq("demand_id", demandId);
+  if (error || !docs?.length) return { uploaded: 0, skipped: 0, failed: 0 };
+  let uploaded = 0, skipped = 0, failed = 0;
+  for (const doc of docs as Array<{ id: string; file_name: string; file_path: string; file_size: number | null }>) {
+    try {
+      if (existingNames?.has(doc.file_name)) { skipped++; continue; }
+      if (doc.file_size && doc.file_size > ASANA_MAX_ATTACHMENT_BYTES) {
+        await logSync(svc, {
+          demand_id: demandId, action: "attachment", status: "error",
+          request_payload: { file_name: doc.file_name, file_size: doc.file_size },
+          error_message: "Arquivo excede 100MB (limite do Asana)",
+        });
+        failed++; continue;
+      }
+      const { data: blob, error: dlErr } = await svc.storage
+        .from("demand-documents").download(doc.file_path);
+      if (dlErr || !blob) {
+        await logSync(svc, {
+          demand_id: demandId, action: "attachment", status: "error",
+          request_payload: { file_name: doc.file_name, file_path: doc.file_path },
+          error_message: `Falha ao baixar do storage: ${dlErr?.message ?? "blob vazio"}`,
+        });
+        failed++; continue;
+      }
+      const form = new FormData();
+      form.append("file", blob, doc.file_name);
+      const res = await fetch(`https://app.asana.com/api/1.0/tasks/${taskGid}/attachments`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${asanaPat}` },
+        body: form,
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        await logSync(svc, {
+          demand_id: demandId, action: "attachment", status: "error",
+          request_payload: { file_name: doc.file_name },
+          response_payload: json,
+          error_message: json?.errors?.[0]?.message ?? `Asana ${res.status}`,
+        });
+        failed++; continue;
+      }
+      await logSync(svc, {
+        demand_id: demandId, action: "attachment", status: "success",
+        request_payload: { file_name: doc.file_name },
+        response_payload: { gid: json?.data?.gid },
+      });
+      uploaded++;
+    } catch (e) {
+      await logSync(svc, {
+        demand_id: demandId, action: "attachment", status: "error",
+        request_payload: { file_name: doc.file_name },
+        error_message: e instanceof Error ? e.message : String(e),
+      });
+      failed++;
+    }
+  }
+  return { uploaded, skipped, failed };
 }
 
 async function logSync(svc: ReturnType<typeof createClient>, p: {
@@ -121,10 +193,14 @@ Deno.serve(async (req) => {
     const statusMapping = (settings?.status_mapping ?? {}) as Record<string, string>;
 
     const titlePrefix = demand.supplier_name ? `[${demand.supplier_name}] ` : "";
+    const requesterName = demand.requester_metadata?.name?.trim() || "—";
+    const requesterCompany = demand.requester_metadata?.company?.trim() || "—";
     const notes = [
       `Código: ${demand.demand_code ?? demand.id.slice(0, 8)}`,
       `Tipo: ${demand.demand_type}`,
       `Cliente/Fornecedor: ${demand.supplier_name ?? "—"}`,
+      `Solicitante: ${requesterName}`,
+      `Empresa: ${requesterCompany}`,
       `Valor: ${fmtBRL(demand.amount)}`,
       `Vencimento: ${fmtDate(demand.due_date)}`,
       `Prioridade: ${demand.priority}`,
@@ -188,7 +264,26 @@ Deno.serve(async (req) => {
       response_payload: { gid: demand.asana_task_id },
     });
 
-    return new Response(JSON.stringify({ ok: true, task_id: demand.asana_task_id }), {
+    // Anexos: lista os já existentes na task e sobe apenas os novos
+    let attachments = { uploaded: 0, skipped: 0, failed: 0 };
+    try {
+      const listRes = await fetch(
+        `https://app.asana.com/api/1.0/tasks/${demand.asana_task_id}/attachments?opt_fields=name&limit=100`,
+        { headers: { Authorization: `Bearer ${ASANA_PAT}` } },
+      );
+      const listJson = await listRes.json().catch(() => ({}));
+      const existingNames = new Set<string>(
+        (listJson?.data ?? []).map((a: { name?: string }) => a?.name ?? "").filter(Boolean),
+      );
+      attachments = await uploadAttachments(svc, demand.asana_task_id, demand.id, ASANA_PAT, existingNames);
+    } catch (e) {
+      await logSync(svc, {
+        demand_id: demand.id, action: "attachment", status: "error",
+        error_message: `Falha ao listar anexos existentes: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: true, task_id: demand.asana_task_id, attachments }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
