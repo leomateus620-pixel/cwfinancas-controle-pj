@@ -198,10 +198,6 @@ export default function NewDemandPage() {
                 <h2 className="text-sm font-semibold">Revise antes de enviar</h2>
               </div>
               <ReviewBlock form={form} files={files} typeLabel={typeLabel} />
-              <div className="mt-4 rounded-xl bg-primary/[0.06] border border-primary/20 px-3 py-2.5 text-[12px] text-foreground/80 leading-snug">
-                Ao enviar, esta demanda será registrada no sistema e encaminhada à equipe responsável.
-                Uma tarefa também será criada automaticamente no Asana, se a integração estiver ativa.
-              </div>
             </GlassCard>
           )}
         </div>
