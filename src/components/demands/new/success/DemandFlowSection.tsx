@@ -77,76 +77,70 @@ export function DemandFlowSection({ typeKey, typeLabel, code, priority }: Props)
 
   return (
     <div className="relative">
-      {/* ============ DESKTOP / TABLET (md+) — canal 3D horizontal premium ============ */}
+      {/* ============ DESKTOP / TABLET (md+) — faixa única coesa ============ */}
       <div
         className="hidden md:block relative"
-        style={{ perspective: "1600px", perspectiveOrigin: "50% 75%" }}
+        style={{ perspective: "1800px", perspectiveOrigin: "50% 80%" }}
       >
         <div
-          className="relative h-[240px] grid items-center gap-6"
+          className="relative h-[220px] grid items-center"
           style={{
-            gridTemplateColumns: "280px 1fr 220px",
+            gridTemplateColumns: "1fr 1.7fr 1fr",
             transformStyle: "preserve-3d",
           }}
         >
-          {/* ───────── ZONA 1: ORIGEM com pedestal ───────── */}
-          <div className="relative flex items-center justify-center h-full">
-            {/* Pedestal radial */}
-            <div
+          {/* ───────── PISO 3D GLOBAL (atrás de tudo) ───────── */}
+          <div
+            aria-hidden
+            className="absolute inset-x-[2%] pointer-events-none"
+            style={{
+              top: "calc(50% - 30px)",
+              height: "150px",
+              transform: "rotateX(22deg)",
+              transformOrigin: "50% 50%",
+              borderRadius: "36px",
+              background:
+                "linear-gradient(180deg, rgba(255,255,255,0.65) 0%, rgba(241,245,249,0.35) 40%, rgba(226,232,240,0.12) 75%, rgba(15,23,42,0.04) 100%)",
+              boxShadow:
+                "inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -12px 28px rgba(15,23,42,0.10), 0 30px 60px -28px rgba(15,23,42,0.28)",
+              border: "1px solid rgba(255,255,255,0.7)",
+              zIndex: 0,
+            }}
+          />
+
+          {/* Atmosfera azul global respirando */}
+          {!reduce && (
+            <motion.div
               aria-hidden
-              className="absolute left-1/2 -translate-x-1/2 bottom-6 w-[240px] h-5 rounded-full pointer-events-none"
+              initial={{ opacity: 0.3 }}
+              animate={{ opacity: [0.35, 0.6, 0.35] }}
+              transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute inset-x-[8%] top-1/2 -translate-y-1/2 h-[110px] rounded-full pointer-events-none"
               style={{
                 background:
-                  "radial-gradient(ellipse at center, rgba(15,23,42,0.22), transparent 70%)",
-                filter: "blur(6px)",
+                  "radial-gradient(ellipse at 50% 50%, rgba(56,189,248,0.22), rgba(99,102,241,0.08) 50%, transparent 80%)",
+                filter: "blur(18px)",
+                zIndex: 0,
               }}
             />
-            <div className="relative" style={{ transformStyle: "preserve-3d" }}>
-              <DemandOriginCard
-                typeKey={typeKey}
-                typeLabel={typeLabel}
-                code={code}
-                priority={priority}
-              />
-            </div>
+          )}
+
+          {/* ───────── ZONA 1: ORIGEM (encostada à direita da coluna) ───────── */}
+          <div
+            className="relative flex items-center justify-end h-full pr-3"
+            style={{ zIndex: 3 }}
+          >
+            <DemandOriginCard
+              typeKey={typeKey}
+              typeLabel={typeLabel}
+              code={code}
+              priority={priority}
+            />
           </div>
 
-          {/* ───────── ZONA 2: CANAL 3D + CHECKPOINTS + PUCK ───────── */}
-          <div
-            className="relative h-full"
-            style={{ transformStyle: "preserve-3d" }}
-          >
-            {/* Piso inclinado (canal real) */}
-            <div
-              aria-hidden
-              className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[140px] rounded-[32px] pointer-events-none"
-              style={{
-                transform: "rotateX(28deg) translateZ(-8px)",
-                background:
-                  "linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(241,245,249,0.25) 35%, rgba(226,232,240,0.10) 70%, rgba(15,23,42,0.05) 100%)",
-                boxShadow:
-                  "inset 0 1px 0 rgba(255,255,255,0.85), inset 0 -10px 24px rgba(15,23,42,0.10), 0 24px 48px -20px rgba(15,23,42,0.22)",
-                border: "1px solid rgba(255,255,255,0.6)",
-              }}
-            />
-
-            {/* Atmosfera azul respirando */}
-            {!reduce && (
-              <motion.div
-                aria-hidden
-                initial={{ opacity: 0.35 }}
-                animate={{ opacity: [0.4, 0.7, 0.4] }}
-                transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-x-[4%] top-1/2 -translate-y-1/2 h-[90px] rounded-full pointer-events-none"
-                style={{
-                  background:
-                    "radial-gradient(ellipse at 50% 50%, rgba(56,189,248,0.22), rgba(99,102,241,0.08) 50%, transparent 80%)",
-                  filter: "blur(16px)",
-                }}
-              />
-            )}
-
-            {/* Trilho SVG alinhado aos centros dos checkpoints */}
+          {/* ───────── ZONA 2: TRILHO + CHECKPOINTS ───────── */}
+          <div className="relative h-full" style={{ zIndex: 2 }}>
+            {/* Trilho SVG ocupa a coluna inteira, alinhado aos checkpoints */}
             <svg
               aria-hidden
               className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
@@ -162,33 +156,31 @@ export function DemandFlowSection({ typeKey, typeLabel, code, priority }: Props)
                   <stop offset="100%" stopColor="rgba(110,231,183,0)" />
                 </linearGradient>
                 <filter id="railGlow" x="-20%" y="-200%" width="140%" height="500%">
-                  <feGaussianBlur stdDeviation="1.2" />
+                  <feGaussianBlur stdDeviation="1.1" />
                 </filter>
               </defs>
-              {/* Guides finas */}
-              <line x1="2" y1="42" x2="98" y2="42" stroke="rgba(125,211,252,0.30)" strokeWidth="0.18" />
-              <line x1="2" y1="58" x2="98" y2="58" stroke="rgba(125,211,252,0.30)" strokeWidth="0.18" />
-              {/* Trilho principal */}
+              <line x1="0" y1="42" x2="100" y2="42" stroke="rgba(125,211,252,0.22)" strokeWidth="0.18" />
+              <line x1="0" y1="58" x2="100" y2="58" stroke="rgba(125,211,252,0.22)" strokeWidth="0.18" />
               <line
-                x1="2" y1="50" x2="98" y2="50"
+                x1="0" y1="50" x2="100" y2="50"
                 stroke="url(#railGrad)" strokeWidth="0.55"
                 strokeLinecap="round" filter="url(#railGlow)"
               />
               <line
-                x1="2" y1="50" x2="98" y2="50"
+                x1="0" y1="50" x2="100" y2="50"
                 stroke="url(#railGrad)" strokeWidth="0.28"
                 strokeLinecap="round"
               />
             </svg>
 
-            {/* Sparks viajando (nítidos, sem mix-blend) */}
+            {/* Sparks viajando sobre o trilho */}
             {!reduce &&
               sparks.map((p) => (
                 <motion.div
                   key={p.id}
                   aria-hidden
-                  initial={{ left: "2%", opacity: 0 }}
-                  animate={{ left: ["2%", "98%"], opacity: [0, 1, 0] }}
+                  initial={{ left: "0%", opacity: 0 }}
+                  animate={{ left: ["0%", "100%"], opacity: [0, 1, 0] }}
                   transition={{
                     duration: p.duration,
                     delay: p.delay,
@@ -198,30 +190,22 @@ export function DemandFlowSection({ typeKey, typeLabel, code, priority }: Props)
                   }}
                   className="absolute rounded-full bg-white pointer-events-none"
                   style={{
-                    top: `calc(50% + ${p.offset * 0.5}px)`,
+                    top: "50%",
                     width: p.size + 1,
                     height: p.size + 1,
+                    transform: "translateY(-50%)",
                     boxShadow:
                       "0 0 6px 1px rgba(125,211,252,0.95), 0 0 12px rgba(125,211,252,0.55)",
                     willChange: "left, opacity",
+                    zIndex: 2,
                   }}
                 />
               ))}
 
-            {/* Checkpoints alinhados ao trilho */}
-            <div className="absolute inset-0 flex items-center justify-evenly px-[6%]">
+            {/* Checkpoints (12% / 50% / 88%) com labels respiráveis */}
+            <div className="absolute inset-0 flex items-center justify-between px-[12%]" style={{ zIndex: 3 }}>
               {STATIONS.map((st, i) => (
-                <div key={st.id} className="relative flex flex-col items-center gap-2">
-                  {/* Sombra elíptica projetada no piso */}
-                  <div
-                    aria-hidden
-                    className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-10 h-2 rounded-full pointer-events-none"
-                    style={{
-                      background:
-                        "radial-gradient(ellipse at center, rgba(15,23,42,0.25), transparent 70%)",
-                      filter: "blur(3px)",
-                    }}
-                  />
+                <div key={st.id} className="relative flex flex-col items-center" style={{ minWidth: 76 }}>
                   <FlowStationCard
                     label={st.label}
                     Icon={st.Icon}
@@ -231,76 +215,69 @@ export function DemandFlowSection({ typeKey, typeLabel, code, priority }: Props)
                 </div>
               ))}
             </div>
+          </div>
 
-            {/* Puck + halo dentro do canal (8% → 92%) */}
-            {!reduce && (
-              <>
-                <motion.div
-                  initial={{ left: "8%", opacity: 0, scale: 0.7 }}
-                  animate={{
-                    left: ["8%", "30%", "50%", "70%", "92%"],
-                    opacity: [0, 0.85, 1, 0.85, 0],
-                    scale: [0.7, 1.4, 1.65, 1.4, 0.5],
-                  }}
-                  transition={{
-                    duration: 1.6, delay: 0.7,
-                    times: [0, 0.25, 0.5, 0.75, 1], ease: "easeInOut",
-                  }}
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-20 h-20 rounded-full pointer-events-none z-[6]"
+          {/* ───────── ZONA 3: NÚCLEO CW (encostado à esquerda da coluna) ───────── */}
+          <div
+            className="relative flex items-center justify-start h-full pl-3"
+            style={{ zIndex: 3 }}
+          >
+            <CWLogoDestination arrived={arrived} size="lg" showLabel />
+          </div>
+
+          {/* ───────── PUCK atravessando a faixa INTEIRA (4% → 96%) ───────── */}
+          {!reduce && (
+            <>
+              <motion.div
+                initial={{ left: "4%", opacity: 0, scale: 0.7 }}
+                animate={{
+                  left: ["4%", "28%", "50%", "72%", "96%"],
+                  opacity: [0, 0.85, 1, 0.85, 0],
+                  scale: [0.7, 1.4, 1.65, 1.4, 0.5],
+                }}
+                transition={{
+                  duration: 1.7, delay: 0.7,
+                  times: [0, 0.25, 0.5, 0.75, 1], ease: "easeInOut",
+                }}
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-20 h-20 rounded-full pointer-events-none"
+                style={{
+                  background:
+                    "radial-gradient(circle, rgba(125,211,252,0.55), rgba(59,130,246,0.22) 40%, transparent 70%)",
+                  filter: "blur(10px)",
+                  mixBlendMode: "screen",
+                  willChange: "left, opacity, transform",
+                  zIndex: 4,
+                }}
+              />
+              <motion.div
+                initial={{ left: "4%", scale: 1, opacity: 0, rotateX: 10, y: 0 }}
+                animate={{
+                  left: ["4%", "28%", "50%", "72%", "96%"],
+                  scale: [1.05, 1.05, 1, 0.95, 0.6],
+                  opacity: [0, 1, 1, 1, 0],
+                  rotateX: [10, 12, 10, 12, 10],
+                  y: [0, -2, 1, -1, 0],
+                }}
+                transition={{
+                  duration: 1.7, delay: 0.7,
+                  times: [0, 0.25, 0.5, 0.75, 1],
+                  type: "spring", stiffness: 60, damping: 18, mass: 0.9,
+                }}
+                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none"
+                style={{ transformStyle: "preserve-3d", willChange: "left, transform", zIndex: 5 }}
+              >
+                <div
+                  className="rounded-xl bg-white/95 border border-sky-200/80 px-2.5 py-2 flex items-center gap-1.5"
                   style={{
-                    background:
-                      "radial-gradient(circle, rgba(125,211,252,0.55), rgba(59,130,246,0.22) 40%, transparent 70%)",
-                    filter: "blur(10px)",
-                    mixBlendMode: "screen",
-                    willChange: "left, opacity, transform",
+                    boxShadow:
+                      "0 18px 40px -12px rgba(56,189,248,0.6), 0 0 22px rgba(125,211,252,0.5), inset 0 1px 0 rgba(255,255,255,0.95)",
                   }}
-                />
-                <motion.div
-                  initial={{ left: "8%", scale: 1, opacity: 0, rotateX: 12, y: 0 }}
-                  animate={{
-                    left: ["8%", "30%", "50%", "70%", "92%"],
-                    scale: [1.1, 1.05, 1, 0.92, 0.6],
-                    opacity: [0, 1, 1, 1, 0],
-                    rotateX: [12, 14, 12, 14, 12],
-                    y: [0, -3, 2, -2, 0],
-                  }}
-                  transition={{
-                    duration: 1.6, delay: 0.7,
-                    times: [0, 0.25, 0.5, 0.75, 1],
-                    type: "spring", stiffness: 60, damping: 18, mass: 0.9,
-                  }}
-                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none z-[7]"
-                  style={{ transformStyle: "preserve-3d", willChange: "left, transform" }}
                 >
-                  <div
-                    className="rounded-xl bg-white/95 border border-sky-200/80 px-2.5 py-2 flex items-center gap-1.5"
-                    style={{
-                      boxShadow:
-                        "0 18px 40px -12px rgba(56,189,248,0.6), 0 0 22px rgba(125,211,252,0.5), inset 0 1px 0 rgba(255,255,255,0.95)",
-                    }}
-                  >
-                    <DemandTypeIcon kind={(typeKey as DemandIconKey) || "outro"} size="sm" />
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </div>
-
-          {/* ───────── ZONA 3: NÚCLEO CW com pedestal ───────── */}
-          <div className="relative flex items-center justify-center h-full">
-            <div
-              aria-hidden
-              className="absolute left-1/2 -translate-x-1/2 bottom-6 w-[180px] h-5 rounded-full pointer-events-none"
-              style={{
-                background:
-                  "radial-gradient(ellipse at center, rgba(15,23,42,0.28), transparent 70%)",
-                filter: "blur(6px)",
-              }}
-            />
-            <div style={{ transformStyle: "preserve-3d" }}>
-              <CWLogoDestination arrived={arrived} size="lg" showLabel />
-            </div>
-          </div>
+                  <DemandTypeIcon kind={(typeKey as DemandIconKey) || "outro"} size="sm" />
+                </div>
+              </motion.div>
+            </>
+          )}
         </div>
       </div>
 
