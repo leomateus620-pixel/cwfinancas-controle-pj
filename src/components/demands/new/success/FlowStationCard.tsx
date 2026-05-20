@@ -88,9 +88,9 @@ export function FlowStationCard({
         }
       >
         {isUpcoming && !isPassing ? (
-          <Check className="w-3.5 h-3.5" strokeWidth={2.8} />
+          <Check className={checkSize} strokeWidth={2.8} />
         ) : (
-          <Icon className={cn(isVertical ? "w-4 h-4" : "w-3.5 h-3.5")} strokeWidth={2.2} />
+          <Icon className={iconSize} strokeWidth={2.2} />
         )}
 
         {/* Halo de passagem */}
