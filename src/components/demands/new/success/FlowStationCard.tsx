@@ -64,7 +64,7 @@ export function FlowStationCard({
         }
         className={cn(
           "relative flex items-center justify-center rounded-full backdrop-blur-md transition-colors duration-300 shrink-0",
-          isVertical ? "w-8 h-8" : "w-7 h-7",
+          dotSize,
           isPassing
             ? "bg-gradient-to-br from-sky-400 to-blue-600 text-white border border-sky-200/80"
             : isUpcoming
