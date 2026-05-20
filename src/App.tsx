@@ -11,6 +11,7 @@ import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ErrorBoundary } from "@/components/error/ErrorBoundary";
 import { GlobalErrorHandler } from "@/components/error/GlobalErrorHandler";
+import { AppUpdateHandler } from "@/components/system/AppUpdateHandler";
 import LandingPage from "@/pages/LandingPage";
 import HomePage from "@/pages/HomePage";
 import OverviewPage from "@/pages/OverviewPage";
@@ -75,6 +76,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <AppUpdateHandler />
             <AuthProvider>
               <Routes>
                 {/* Public routes */}
