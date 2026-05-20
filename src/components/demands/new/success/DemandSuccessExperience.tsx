@@ -57,11 +57,13 @@ export function DemandSuccessExperience({ demandId, form, onNew }: Props) {
               summaryText={summaryText}
             />
 
-            {/* Separador refinado */}
-            <Divider label="Encaminhamento" />
-
-            {/* 3. FLUXO 3D */}
-            <DemandFlowSection typeKey={form.demand_type} typeLabel={typeLabel} />
+            {/* 3. FLUXO CW PREMIUM */}
+            <DemandFlowSection
+              typeKey={form.demand_type}
+              typeLabel={typeLabel}
+              code={code}
+              priority={form.priority}
+            />
 
             {/* 4. BOTÕES */}
             <div className="pt-1">
@@ -70,7 +72,7 @@ export function DemandSuccessExperience({ demandId, form, onNew }: Props) {
 
             {/* Rodapé */}
             <p className="text-center text-[11.5px] text-muted-foreground -mt-2">
-              Você pode acompanhar o andamento pela Central de Demandas.
+              Caso seja necessário complementar alguma informação, a equipe da CW entrará em contato.
             </p>
           </div>
         </GlassCard>
