@@ -30,9 +30,12 @@ const DEFAULT_STATUS_SECTION_LABELS: Record<string, string> = {
 interface Demand {
   id: string; demand_code: string | null; title: string; description: string | null;
   demand_type: string; amount: number | null; due_date: string | null;
-  supplier_name: string | null; priority: string; status: string;
+  supplier_name: string | null; supplier_document: string | null;
+  priority: string; status: string;
   created_by: string; asana_task_id: string | null; asana_task_url: string | null;
-  requester_metadata: { name?: string; company?: string } | null;
+  requester_metadata:
+    | { name?: string; company?: string; email?: string; phone?: string; role?: string }
+    | null;
 }
 
 const ASANA_MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
@@ -126,6 +129,57 @@ function fmtDate(d: string | null) {
   return new Date(d + "T00:00:00").toLocaleDateString("pt-BR");
 }
 
+function contrapartLabel(demand_type: string): { title: string; hint: string } {
+  switch ((demand_type || "").toLowerCase()) {
+    case "pagamento": return { title: "FORNECEDOR", hint: "quem será pago" };
+    case "recebimento": return { title: "CLIENTE", hint: "quem vai pagar / pagou" };
+    case "boleto": return { title: "CLIENTE / SACADO", hint: "quem receberá a cobrança" };
+    case "nota_fiscal":
+    case "emissao_nf": return { title: "TOMADOR", hint: "para quem a NF será emitida" };
+    case "reembolso": return { title: "BENEFICIÁRIO", hint: "quem receberá o reembolso" };
+    case "conciliacao": return { title: "CONTRAPARTE", hint: "lançamento conciliado" };
+    default: return { title: "CLIENTE / FORNECEDOR", hint: "contraparte da demanda" };
+  }
+}
+
+const DIVIDER = "────────────────────────────";
+
+function buildNotes(d: Demand): string {
+  const r = d.requester_metadata ?? {};
+  const requesterName = r.name?.trim() || "—";
+  const requesterCompany = r.company?.trim() || "—";
+  const requesterRole = r.role?.trim();
+  const requesterEmail = r.email?.trim();
+  const requesterPhone = r.phone?.trim();
+  const cp = contrapartLabel(d.demand_type);
+  const cpName = d.supplier_name?.trim() || "—";
+  const cpDoc = d.supplier_document?.trim() || "—";
+
+  const lines: string[] = [];
+  lines.push("📋 DEMANDA");
+  lines.push(`Código: ${d.demand_code ?? d.id.slice(0, 8)}`);
+  lines.push(`Tipo: ${d.demand_type}`);
+  lines.push(`Valor: ${fmtBRL(d.amount)}`);
+  lines.push(`Vencimento: ${fmtDate(d.due_date)}`);
+  lines.push(`Prioridade: ${d.priority}`);
+  lines.push(`Status: ${d.status}`);
+  lines.push(DIVIDER);
+  lines.push("👤 QUEM ENVIOU (Solicitante)");
+  lines.push(`Nome: ${requesterName}`);
+  lines.push(`Empresa: ${requesterCompany}`);
+  if (requesterRole) lines.push(`Cargo/Setor: ${requesterRole}`);
+  if (requesterEmail) lines.push(`E-mail: ${requesterEmail}`);
+  if (requesterPhone) lines.push(`WhatsApp: ${requesterPhone}`);
+  lines.push(DIVIDER);
+  lines.push(`🏢 ${cp.title} (${cp.hint})`);
+  lines.push(`Nome: ${cpName}`);
+  lines.push(`CNPJ/CPF: ${cpDoc}`);
+  lines.push(DIVIDER);
+  lines.push("📝 DESCRIÇÃO");
+  lines.push(d.description?.trim() || "(sem descrição)");
+  return lines.join("\n");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -193,22 +247,7 @@ Deno.serve(async (req) => {
     const statusMapping = (settings?.status_mapping ?? {}) as Record<string, string>;
 
     const titlePrefix = demand.supplier_name ? `[${demand.supplier_name}] ` : "";
-    const requesterName = demand.requester_metadata?.name?.trim() || "—";
-    const requesterCompany = demand.requester_metadata?.company?.trim() || "—";
-    const notes = [
-      `Código: ${demand.demand_code ?? demand.id.slice(0, 8)}`,
-      `Tipo: ${demand.demand_type}`,
-      `Cliente/Fornecedor: ${demand.supplier_name ?? "—"}`,
-      `Solicitante: ${requesterName}`,
-      `Empresa: ${requesterCompany}`,
-      `Valor: ${fmtBRL(demand.amount)}`,
-      `Vencimento: ${fmtDate(demand.due_date)}`,
-      `Prioridade: ${demand.priority}`,
-      `Status: ${demand.status}`,
-      "",
-      `Descrição:`,
-      demand.description ?? "(sem descrição)",
-    ].join("\n");
+    const notes = buildNotes(demand);
 
     const updatePayload: Record<string, unknown> = {
       data: {
