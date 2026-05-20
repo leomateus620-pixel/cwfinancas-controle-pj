@@ -1,121 +1,79 @@
-## Resumo
+## Diagnóstico — onde estão as demandas
 
-Refinar **apenas** o início e o fim do fluxo "Criar demanda inteligente". Não tocar no formulário por tipo, no `useCreateDemand`, na integração com Asana, nem em RLS.
-
-## Pontos-chave de contexto que afetam o desenho
-
-- O login dos clientes é **compartilhado** (um único usuário `cwfinancas` atende todos). Portanto a identificação **não pode** ser persistida no `profile` do usuário (como faz hoje o `ClientIdentityGate`). Ela vira uma **etapa do fluxo**, salva **por demanda**.
-- A tabela `financial_demands` não tem colunas `requester_*`. Adicionar **uma única coluna aditiva** `requester_metadata jsonb` (sem quebrar nada existente).
-- Não existe `framer-motion` no projeto. Adicionar via `bun add framer-motion` para alimentar a animação 3D do túnel (com fallback de `prefers-reduced-motion`).
-- O atual `SuccessScreen` (final do `NewDemandPage.tsx`) será substituído pelo novo componente `DemandSuccessExperience`.
-
-## Etapas do plano
-
-### 1. Migration aditiva
-Nova coluna em `financial_demands`:
-- `requester_metadata jsonb default '{}'::jsonb` (nullable).
-Sem mexer em RLS, triggers ou outras colunas. Sem dropar nada.
-
-### 2. Estado e payload do formulário
-- Estender `DemandFormState` (em `SmartDemandForm.tsx`) com `requester_name`, `requester_company`, `requester_email`, `requester_phone`, `requester_role` (strings, default `""`).
-- Em `buildDemandPayload`, montar `requester_metadata = { name, company, email, phone, role }` (somente chaves preenchidas) e adicionar ao payload retornado.
-- Estender `CreateDemandInput` em `useDemand.ts` com `requester_metadata?: Record<string, string> | null` e passar adiante no `insert`. Asana segue intocado (fire-and-forget como hoje).
-
-### 3. Nova etapa "Identificação" (passo 0)
-- **Remover** o gate antigo (`ClientIdentityGate` que escreve no profile global) do `NewDemandPage`. O componente fica no codebase mas deixa de ser usado aqui.
-- Novo `src/components/demands/new/DemandRequesterStep.tsx`:
-  - Card central Liquid Glass, ícone 3D discreto (`UserCircle2` + glow), 5 campos: nome (obrigatório), empresa (obrigatório), e‑mail, whatsapp, cargo/setor.
-  - Validação `zod` na transição para o próximo passo (nome ≥ 2, empresa ≥ 2, e‑mail formato se preenchido, whatsapp dígitos se preenchido, todos ≤ 120 chars).
-  - Pré-preenche apenas se algum campo já estiver no `form` (ex.: voltar etapa). Não busca dados do profile.
-  - Texto de apoio exato da spec.
-- Atualizar `STEPS` em `NewDemandPage.tsx` para `["Identificação", "Tipo", "Informações", "Documentos", "Revisão"]`.
-- Lógica `next()` adiciona validação para `step === 0`.
-- `SummarySidebar` mostra também `Solicitante` e `Empresa` quando preenchidos.
-- Ajustar `StepIndicator` — já é proporcional, só receber 5 itens.
-
-### 4. Tela final — `DemandSuccessExperience`
-Substituir `SuccessScreen` por `src/components/demands/new/DemandSuccessExperience.tsx`, organizado em 3 áreas + componentes auxiliares:
+As demandas **foram salvas corretamente** no banco (e sincronizadas com o Asana). Confirmei diretamente na tabela `financial_demands`:
 
 ```
-src/components/demands/new/success/
-  DemandSuccessExperience.tsx     # orquestra a sequência de animação
-  DemandMiniCard.tsx              # mini card flutuante da demanda
-  DemandJourneyTunnel3D.tsx       # túnel 3D + card percorrendo
-  CWLogoDestination.tsx           # logo CW com spring de chegada
-  DemandSuccessSummaryCard.tsx    # card grande de agradecimento
-  SuccessActionButtons.tsx        # 3 botões finais
-  buildDemandSummary.ts           # helper que monta o resumo dinâmico por tipo
+DM-202605-0008  teste leo                  recebida   synced   (criada por CW Finanças cliente)
+DM-202605-0007  Pagar contador             recebida   synced   (criada por CW Finanças cliente)
+DM-202605-0006  teste                      recebida   synced
+DM-202605-0005  teste                      recebida   synced
+DM-202605-0004  teste                      recebida   synced   (Leonardo Stroschein)
+DM-202605-0003  teste                      recebida   synced   (Leonardo Stroschein)
+DM-202605-0002  teste 2                    recebida   synced   (Leonardo Stroschein)
+DM-202605-0001  teste                      recebida   synced   (Leonardo Stroschein)
 ```
 
-#### Sequência (framer-motion, total 1.6–2.4s)
-1. Mini card entra (opacity 0→1, y −20→0, 280ms).
-2. Túnel aparece (scale 0.96→1, opacity 0→1, 360ms).
-3. Réplica reduzida do card atravessa o túnel (x/y/scale com `perspective(900px)`, easing `[0.22, 1, 0.36, 1]`, 900ms).
-4. Logo CW recebe o card com spring leve (stiffness 220, damping 18, 380ms) + glow azul/verde suave.
-5. Card de agradecimento fade-in + slide-up (320ms).
+Logo, **não há falha no fluxo de criação nem na integração Asana**. O problema está em **quem pode enxergar essas demandas na Central**.
 
-#### Túnel 3D
-- Container com `perspective: 1000px` e `transform-style: preserve-3d`.
-- 6–8 "anéis" `border` posicionados com `translateZ()` decrescente para criar profundidade.
-- Glow controlado: 1 gradiente cônico suave + 2 orbs `blur-3xl` (azul/emerald), sem partículas.
-- Sombra 3D do card via box-shadow em camadas (`0_24px_60px_-20px`).
+## Causa raiz
 
-#### `prefers-reduced-motion`
-- Detectar via `useReducedMotion()` do framer-motion.
-- Se ativo: pular animações, mostrar diretamente mini card + logo + card final estáticos com mesmas dimensões.
+A tabela `financial_demands` tem a seguinte política de leitura (RLS):
 
-#### Mobile
-- Túnel vira coluna vertical (logo embaixo do mini card). 
-- Anéis reduzidos para 4. Animação encurtada para ~1.2s.
-- Botões em coluna full‑width.
+```sql
+SELECT USING ( is_internal() OR created_by = auth.uid() )
+-- is_internal() = has_role(uid, 'admin') OR has_role(uid, 'manager')
+```
 
-### 5. Card final (`DemandSuccessSummaryCard`)
-- Texto principal: **"Obrigado pela solicitação."**
-- Texto secundário gerado por `buildDemandSummary(form)` cobrindo todos os tipos da spec (pagamento, recebimento, nota_fiscal, boleto, conciliacao, reembolso, outro) com fallback genérico.
-- Mostra: código (`demand_code` via `useDemand(id)`), status "Recebida", solicitante, empresa, tipo, resumo curto, próximo passo "Análise da equipe CW", linha "Você pode acompanhar pela Central de Demandas."
-- Chip Asana **só** se não estiver com erro: `pending_sync` → "Solicitação registrada. A equipe será notificada automaticamente."; `synced` → "Encaminhada para a equipe." Nunca exibir erro técnico.
+Ou seja, só vê **todas as demandas** quem tem papel `admin` ou `manager`. Vendo a tabela `user_roles`:
 
-### 6. Botões finais (`SuccessActionButtons`)
-- **Acompanhar demanda** → `Link` para `/demands/:id`.
-- **Criar nova demanda** → reseta `form`, `files`, `createdId`, volta para `step = 0` (Identificação).
-- **Voltar para a central** → navega para `/demands` (rota da Central existente).
+```
+0a7ac1ec…  CW Finanças (perfil cliente)        → cliente
+ae3ae0d0…  Leonardo Stroschein                  → user
+22a77402…  Camila Weinert                       → user
+6841723d…  Ana Oliveira                         → user
+6f25eb37…  Leonardo Mateus Stroschein           → user
+c9158ca3…  Leonardo                             → user
+dd7f331a…  Leonardo Mateus Stroschein           → user
+7a8723f4…  Ricardo Zimmermann                   → user
+7b421592…  Josivan (LinkEvents)                 → user
+```
 
-### 7. Dependências
-- `bun add framer-motion`
+**Nenhum usuário tem papel `admin` nem `manager`.** Resultado: cada usuário só enxerga as demandas que ele mesmo criou. Por isso a DM-0007 e a DM-0008 (criadas pelo perfil "CW Finanças cliente") **não aparecem** quando você acessa a Central com a sua conta operadora — elas existem, estão no Asana, mas a RLS bloqueia a leitura.
 
-## Arquivos afetados
+A demanda DM-0008 inclusive foi sincronizada com o Asana com link apontando para `id-preview--...lovable.app`, indicando que o cliente a criou pelo ambiente de preview enquanto você está no ambiente publicado — mas isso é só um detalhe; o dado está lá.
 
-**Novos**
-- `src/components/demands/new/DemandRequesterStep.tsx`
-- `src/components/demands/new/success/DemandSuccessExperience.tsx`
-- `src/components/demands/new/success/DemandMiniCard.tsx`
-- `src/components/demands/new/success/DemandJourneyTunnel3D.tsx`
-- `src/components/demands/new/success/CWLogoDestination.tsx`
-- `src/components/demands/new/success/DemandSuccessSummaryCard.tsx`
-- `src/components/demands/new/success/SuccessActionButtons.tsx`
-- `src/components/demands/new/success/buildDemandSummary.ts`
+## Correção proposta
 
-**Editados**
-- `src/pages/demands/NewDemandPage.tsx` — novo step 0, novo `STEPS`, troca `SuccessScreen` por `DemandSuccessExperience`, remove uso do `ClientIdentityGate`.
-- `src/components/demands/new/SmartDemandForm.tsx` — extensão de `DemandFormState`, `EMPTY_FORM`, `buildDemandPayload`.
-- `src/hooks/useDemand.ts` — `CreateDemandInput` ganha `requester_metadata`.
-- `package.json` — adiciona `framer-motion`.
+Promover a equipe operadora da CW Finanças para `admin`, para que a Central de Demandas (Dashboard + Recebidas + Aprovações) mostre **todas as demandas de todos os clientes**. Nada do fluxo de criação, formulário, animação 3D ou Asana é alterado.
 
-**Migration**
-- `financial_demands.requester_metadata jsonb default '{}'::jsonb`.
+### Migração (1 passo)
 
-## O que NÃO mudará
-- `SmartDemandForm` por tipo permanece exatamente igual (só o tipo do state cresce).
-- `useCreateDemand`, fluxo Asana, RLS, `company_id`, hooks de inbox/list, telas existentes.
-- `ClientIdentityGate` (não usado mais aqui, mantido para evitar quebrar imports caso reativem no futuro).
-- Stepper/visual existente — só recebe um item extra.
+```sql
+INSERT INTO public.user_roles (user_id, role)
+VALUES
+  ('ae3ae0d0-f0ef-4c99-a388-1e472a3888fc', 'admin'),  -- Leonardo Stroschein
+  ('22a77402-8b27-4ea5-8787-8d18cf9de417', 'admin'),  -- Camila Weinert
+  ('6841723d-77ef-470f-bf2b-a477adadfdc6', 'admin'),  -- Ana Oliveira
+  ('6f25eb37-1653-4669-b9a9-e9fcf7303550', 'admin'),  -- Leonardo Mateus
+  ('c9158ca3-15ff-4a24-918d-512e701eca31', 'admin'),
+  ('dd7f331a-751e-434f-8430-232247339729', 'admin')
+ON CONFLICT (user_id, role) DO NOTHING;
+```
 
-## Critérios de aceite
-- Abrir `/demands/new` mostra **Identificação** como passo 1.
-- Nome e empresa obrigatórios bloqueiam o "Próximo".
-- Os 5 campos chegam em `financial_demands.requester_metadata`.
-- Submit cria a demanda (qualquer tipo) sem regressão.
-- Após sucesso, aparece `DemandSuccessExperience` com mini card, túnel 3D, logo CW e card de agradecimento com texto dinâmico por tipo.
-- `prefers-reduced-motion` ativo exibe versão estática.
-- Mobile (360/390/430) sem quebras; botões full-width.
-- Asana segue em background; nenhum erro técnico do Asana é exibido ao cliente nesta tela.
+> Posso ajustar a lista — se você quiser que apenas **um** usuário seja admin (ex.: somente o seu login principal), me diga o e-mail/nome e eu restrinjo. Os demais usuários "operadores" da CW podem ficar como `manager` (também enxergam tudo) em vez de `admin`, se preferir separar privilégios.
+
+### Verificação após aplicar
+1. Recarregar `/demands` → as 8 demandas aparecem na inbox.
+2. Abrir DM-0008 e DM-0007 → detalhes carregam normalmente.
+3. Nenhuma alteração no fluxo de criação cliente → Asana (já está funcionando).
+
+## O que **não** será alterado
+
+- Formulário de criação de demanda
+- Etapa de Identificação e tela de sucesso 3D
+- Integração Asana (continua igual; as tarefas já estão sincronizando)
+- RLS de outras tabelas, schema, hooks ou telas existentes
+
+## Pergunta antes de executar
+
+Quer que **todos** os 6 usuários CW Finanças listados acima virem `admin`, ou prefere apontar apenas 1–2 contas? Se não responder, sigo com a lista completa acima como `admin`.
