@@ -1,73 +1,89 @@
-## Objetivo
-Corrigir, **só no desktop**, a tela de sucesso da demanda: hoje o canal 3D se sobrepõe ao card de origem e ao logo CW, os checkpoints ficam minúsculos e desalinhados, o puck atravessa atrás do card e o conjunto parece "stepper de baixa resolução". Mobile já está bom e não será tocado.
+## Diagnóstico (PC, 1087px)
 
-## Diagnóstico (PC)
-1. O retângulo do "canal/sulco" usa `inset-x-[5%]` e cobre origem **e** destino — vira fundo branco atrás do card.
-2. Trilho em `inset-x-[10%]` + grid com colunas de larguras diferentes → os 3 nós não casam com início/fim do trilho.
-3. Nós de 28px num viewport de 1087px viram "stepper genérico".
-4. Logo CW em `size="md"` (~110px) é pequeno demais para ser o destino premium.
-5. Puck viaja de `12% → 88%` da seção inteira → nasce atrás do card e morre dentro do logo.
-6. `rotateX(22deg)` só no retângulo, sem perspectiva real no trilho/nós → sem profundidade.
-7. `backdrop-blur` + `mix-blend-mode: screen` em camadas pequenas degradam a nitidez.
+Olhando o screenshot atual, os problemas são todos da branch desktop do `DemandFlowSection.tsx`:
 
-## Mudanças (apenas branch `hidden md:block` do `DemandFlowSection.tsx`)
+1. **Canal "flutuando" abaixo dos cards** — o piso usa `rotateX(28deg)` num retângulo de 140px posicionado em `top-1/2`. Como origem e destino estão em colunas separadas e mais altas, o piso vira uma "pílula branca" solta no meio, desconectada de tudo.
+2. **Checkpoints amontoados** — `justify-evenly` + `px-[6%]` em coluna 1fr + nós de 48px (`size="lg"`) + labels "Recebida / Triagem / Equipe CW" sem espaço → os 3 ficam colados no centro, com labels se tocando.
+3. **Origem encolhida à esquerda** — coluna de 280px fixos, card com largura natural ~220px, sobrando ar à esquerda e dando sensação de desalinhamento.
+4. **Logo CW deslocada à direita** — mesma coisa na coluna de 220px; e o "halo verde" do logo invade o canal porque não há respiro.
+5. **Trilho SVG some atrás do piso** — z-index do piso > trilho; o usuário vê só a pílula branca, não a linha de luz.
+6. **Puck "8% → 92%" da coluna central** começa atrás do card de origem (porque a coluna central encosta nele) e termina dentro do logo.
+7. **Eixos verticais diferentes** — card de origem está centralizado verticalmente, mas o piso/trilho/checkpoints também, e como o card é mais alto que os nós, visualmente fica tudo em alturas diferentes.
 
-### 1. Nova composição em 3 zonas com pedestais
+Resumindo: a composição em 3 zonas foi na direção certa, mas as proporções, o eixo vertical comum e o tratamento do "piso" ficaram errados.
+
+## Objetivo do polimento
+
+Uma única faixa horizontal coesa, onde:
+- card de origem, canal e logo CW dividem o **mesmo eixo vertical**;
+- o "piso 3D" passa por baixo das **três zonas** (não só do meio), unindo tudo;
+- os 3 checkpoints ficam bem espaçados, com labels respiráveis;
+- o puck atravessa visivelmente da origem até o logo;
+- nenhum elemento "flutua" solto.
+
+Mobile (`md:hidden`) não é tocado.
+
+## Mudanças (somente `DemandFlowSection.tsx`, branch `hidden md:block`)
+
+### 1. Piso 3D contínuo cobrindo toda a faixa
+Em vez de o piso viver dentro da coluna central, ele passa a ser **uma camada `absolute inset-0`** do contêiner desktop, atrás de tudo. Assim a origem e o logo "pousam" no mesmo piso e o canal deixa de parecer uma pílula isolada.
+
 ```text
-┌────────────┐    ┌───────────────────────────────┐    ┌────────────┐
-│  ORIGEM    │ ─> │  CANAL 3D + 3 CHECKPOINTS     │ ─> │  NÚCLEO CW │
-│ (pedestal) │    │  (puck viaja somente aqui)    │    │ (pedestal) │
-└────────────┘    └───────────────────────────────┘    └────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  piso 3D inclinado (rotateX 22deg), gradiente único          │
+│  ┌─────────┐        ●────●────●        ┌─────────┐           │
+│  │ ORIGEM  │  ════════════════════════ │  CW     │           │
+│  └─────────┘                           └─────────┘           │
+└──────────────────────────────────────────────────────────────┘
 ```
-- Grid `grid-cols-[280px_1fr_220px] gap-6`.
-- Canal/sulco confinado à coluna central (`inset-x-0`), não cobre mais origem/destino.
-- Origem e destino ganham pedestal próprio (gradiente radial no piso + sombra elíptica) para dar peso.
 
-### 2. Perspectiva real
-- Altura sobe de `180px` para `240px`.
-- `perspective: 1600px`, `perspectiveOrigin: 50% 75%`.
-- `transformStyle: preserve-3d` na coluna central; piso com `rotateX(28deg)`.
-- Reflexo dos nós no piso (cópia `scaleY(-1)`, opacity 0.18, mask gradiente).
+- Piso: `absolute inset-x-[2%] top-[58%] h-[120px] rounded-[32px]`, `rotateX(22deg)` (mais sutil que 28), gradiente vertical bem suave, borda 1px branca, sombra elíptica única por baixo.
+- Atmosfera azul: uma só, larga, cobrindo toda a faixa (não mais limitada à coluna central).
 
-### 3. Checkpoints premium (não stepper)
-- Nó passa para `w-12 h-12` (≈48px) no desktop via prop `size` opcional.
-- Disco glass duplo: anel externo translúcido + disco interno gradiente azul.
-- Sombra elíptica projetada no piso por baixo de cada nó.
-- `passing`: ring expansivo maior + spark vertical curto.
-- `upcoming`: borda azul mais saturada + check com leve emissão.
+### 2. Grid rebalanceado e eixo vertical comum
+- `grid-cols-[260px_1fr_200px]` → `grid-cols-[1fr_1.6fr_1fr]` com `max-w` controlado nas colunas laterais, para o conjunto respirar igual nos dois lados.
+- Altura da seção: `h-[220px]` (em vez de 240) e `items-center` em todas as colunas.
+- Origem e logo CW recebem `justify-self: end` / `justify-self: start` para "encostarem" nas bordas do canal — fim do ar morto.
 
-### 4. Trilho alinhado aos centros
-- Reescrito como **SVG path** dentro da coluna central, com `linearGradient` no stroke e `filter: drop-shadow` para o glow.
-- Sparks viajam ao longo do mesmo eixo do path (mesma `inset` que os nós).
+### 3. Trilho na frente do piso, alinhado aos nós
+- `z-index`: piso (0) < trilho SVG (1) < sparks (2) < checkpoints (3) < puck (4).
+- Trilho desenhado em SVG `viewBox="0 0 100 100"` ocupando **a coluna central inteira**, com `x1=0 x2=100` e mesmos `inset` dos nós (calculados via `flex justify-between` com padding fixo 12%, não `justify-evenly`).
+- Sparks viajam exatamente sobre o trilho (mesma `top`).
 
-### 5. Puck reposicionado
-- Trajetória `8% → 92%` **dentro da coluna central** (não mais da seção inteira).
-- Tamanho +20%, leve `rotateX` para casar com o piso inclinado.
-- Halo do puck mais largo e menos opaco.
+### 4. Checkpoints respiráveis
+- Trocar `justify-evenly px-[6%]` por `flex justify-between px-[12%]` → os 3 pontos ficam: 12%, 50%, 88% da coluna central, alinhados ao trilho.
+- Labels: `text-[11px]`, `min-w-[72px]`, `text-center`, `tracking-tight`, `whitespace-nowrap` → "Recebida", "Triagem", "Equipe CW" deixam de se tocar.
+- Sombra elíptica do nó projetada **no mesmo piso global** (mesma cor/blur), não em sombras isoladas por nó.
 
-### 6. Núcleo CW maior no desktop
-- `CWLogoDestination` passa a receber `size="lg"` quando `md+`.
-- Adiciono pedestal radial igual ao da origem.
-- Removo `backdrop-blur-xl` do disco principal (estava degradando o PNG do logo).
+### 5. Puck atravessando a faixa inteira
+- Trajetória do puck volta a ser da seção inteira: `left: 4% → 96%`, **mas com `top` fixo na altura do trilho** (que agora é a mesma altura do centro do card de origem e do disco do logo).
+- Assim ele nasce visivelmente saindo do card, passa pelos 3 checkpoints e pousa no logo CW — leitura única, sem cortes.
 
-### 7. Nitidez
-- Sparks: 3–4px, sem `blur`, glow via `box-shadow`; removido `mix-blend-mode: screen` (fica só no halo do puck).
-- `will-change: transform, opacity` nos elementos animados (layer próprio do compositor).
+### 6. Origem e logo no mesmo eixo
+- Card de origem: vertical center exato com o trilho (ajustar `align-items` do contêiner para usar o `top` do trilho como referência via `translateY`).
+- Logo CW: idem, e remover o "halo verde" expandido (`size="lg"` aceita um `compact` visual) ou reduzir a opacidade do ring externo do logo no desktop, para não invadir o canal.
+
+### 7. Pedestais simplificados
+- Remover os 2 pedestais elípticos individuais (origem e CW). Eles ficam redundantes porque o **piso global já é o pedestal**. Isso elimina as 2 "manchas escuras" que aparecem soltas no screenshot.
+
+### 8. Nitidez
+- Reduzir `blur` do piso para 0 (gradiente puro), manter blur só na sombra inferior.
+- Manter `will-change: transform, opacity` nos animados.
+- Manter `mixBlendMode: screen` somente no halo do puck.
 
 ## Arquivos
-- **Editado:** `src/components/demands/new/success/DemandFlowSection.tsx` (somente branch desktop).
-- **Editado (mínimo, via prop opcional `size`):** `src/components/demands/new/success/FlowStationCard.tsx` para suportar nó maior no desktop sem afetar mobile.
-- **Sem alteração de API:** `CWLogoDestination.tsx` (já aceita `size="lg"`), `DemandOriginCard.tsx`.
+- **Editado:** `src/components/demands/new/success/DemandFlowSection.tsx` (apenas branch `hidden md:block` + leve ajuste de z-index na raiz).
+- **Sem alteração:** `FlowStationCard.tsx`, `CWLogoDestination.tsx`, `DemandOriginCard.tsx`, mobile, lógica de animação, timers, backend.
 
 ## Não muda
-- Mobile (`md:hidden`).
-- Tempos/lógica de animação (`PASS_AT`, `ARRIVED_AT`, `SETTLE_AT`, `passingIdx`, `arrived`, `settled`).
-- Backend, dados, hooks, rotas, fluxo de criação de demanda.
+- Branch `md:hidden` (mobile).
+- Timing `PASS_AT / ARRIVED_AT / SETTLE_AT`, `passingIdx`, `arrived`, `settled`.
+- Nenhum hook, rota, dado ou edge function.
 
-## Resultado esperado
-- Card de origem **fora** do canal, como ponto de partida claro.
-- Canal 3D real com piso inclinado e reflexo dos nós.
-- 3 checkpoints grandes, glass, perfeitamente alinhados ao trilho.
-- Puck visível atravessando o canal de ponta a ponta.
-- Logo CW grande, valorizada, pousada num pedestal.
-- Renderização nítida — fim do aspecto "borrado/baixa resolução".
+## Resultado esperado no desktop
+- Uma faixa única, com origem encostada à esquerda do canal e logo CW encostada à direita.
+- Piso 3D contínuo unindo tudo — fim da "pílula branca solta".
+- 3 checkpoints bem espaçados (12% / 50% / 88%), labels legíveis e sem colisão.
+- Trilho de luz visível atrás dos nós, sparks correndo sobre ele.
+- Puck atravessando a faixa inteira, do card ao logo, no mesmo eixo vertical.
+- Sensação de peça única, alinhada e polida — não mais "stepper desmontado".
