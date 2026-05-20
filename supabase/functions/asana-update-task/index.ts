@@ -30,9 +30,12 @@ const DEFAULT_STATUS_SECTION_LABELS: Record<string, string> = {
 interface Demand {
   id: string; demand_code: string | null; title: string; description: string | null;
   demand_type: string; amount: number | null; due_date: string | null;
-  supplier_name: string | null; priority: string; status: string;
+  supplier_name: string | null; supplier_document: string | null;
+  priority: string; status: string;
   created_by: string; asana_task_id: string | null; asana_task_url: string | null;
-  requester_metadata: { name?: string; company?: string } | null;
+  requester_metadata:
+    | { name?: string; company?: string; email?: string; phone?: string; role?: string }
+    | null;
 }
 
 const ASANA_MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
