@@ -26,7 +26,20 @@ export function FlowStationCard({
   Icon,
   state,
   orientation = "horizontal",
+  size = "sm",
 }: Props) {
+  const reduce = useReducedMotion();
+  const isPassing = state === "passing";
+  const isUpcoming = state === "upcoming" || state === "current";
+
+  const isVertical = orientation === "vertical";
+  const dotSize =
+    size === "lg" ? "w-12 h-12" : size === "md" ? "w-10 h-10" : isVertical ? "w-8 h-8" : "w-7 h-7";
+  const iconSize =
+    size === "lg" ? "w-5 h-5" : size === "md" ? "w-4 h-4" : isVertical ? "w-4 h-4" : "w-3.5 h-3.5";
+  const checkSize = size === "lg" ? "w-5 h-5" : "w-3.5 h-3.5";
+  const labelSize =
+    size === "lg" ? "text-[12px]" : isVertical ? "text-[12px]" : "text-[10px]";
   const reduce = useReducedMotion();
   const isPassing = state === "passing";
   const isUpcoming = state === "upcoming" || state === "current";
