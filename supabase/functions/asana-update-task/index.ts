@@ -264,7 +264,26 @@ Deno.serve(async (req) => {
       response_payload: { gid: demand.asana_task_id },
     });
 
-    return new Response(JSON.stringify({ ok: true, task_id: demand.asana_task_id }), {
+    // Anexos: lista os já existentes na task e sobe apenas os novos
+    let attachments = { uploaded: 0, skipped: 0, failed: 0 };
+    try {
+      const listRes = await fetch(
+        `https://app.asana.com/api/1.0/tasks/${demand.asana_task_id}/attachments?opt_fields=name&limit=100`,
+        { headers: { Authorization: `Bearer ${ASANA_PAT}` } },
+      );
+      const listJson = await listRes.json().catch(() => ({}));
+      const existingNames = new Set<string>(
+        (listJson?.data ?? []).map((a: { name?: string }) => a?.name ?? "").filter(Boolean),
+      );
+      attachments = await uploadAttachments(svc, demand.asana_task_id, demand.id, ASANA_PAT, existingNames);
+    } catch (e) {
+      await logSync(svc, {
+        demand_id: demand.id, action: "attachment", status: "error",
+        error_message: `Falha ao listar anexos existentes: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: true, task_id: demand.asana_task_id, attachments }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
