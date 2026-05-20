@@ -1,104 +1,88 @@
 
-# Refatoração da tela de sucesso da criação de demanda
+# Correção da faixa de fluxo 3D na tela de sucesso
 
-Escopo estritamente visual. Nenhuma alteração em hooks, RLS, Supabase, Asana, payload ou fluxo de envio. Mudanças apenas em `src/components/demands/new/success/*`.
+Escopo estritamente visual em `src/components/demands/new/success/*`. Sem mexer em hooks, RLS, Supabase, Asana ou payload.
 
-## Problema atual
+## Problemas observados (print do usuário)
 
-Hoje `DemandSuccessExperience.tsx` renderiza, de cima para baixo:
-1. `DemandMiniCard` (solto, no topo)
-2. `DemandJourneyTunnel3D` (grande, ocupando largura cheia)
-3. `DemandSuccessSummaryCard` (mensagem de agradecimento)
+1. **Cores erradas**: "Em análise" e "Equipe CW" estão verdes com check ✓, como se já tivessem sido concluídas. Só "Recebida" deveria ficar verde — as outras ainda não aconteceram.
+2. **Animação estática**: o "puck" e a perspectiva 3D não estão visíveis. Falta a sensação de luz percorrendo um túnel, profundidade real e física.
 
-Isso quebra a hierarquia: o efeito visual vira protagonista e a mensagem fica em segundo plano, sem conexão visual entre os blocos.
+## 1. Corrigir semântica dos estados das estações
 
-## Nova composição
+Hoje `FlowStationCard` tem só dois estados (`active` true/false) e quando `active=true` vira verde com check. Como o efeito dispara nas 3 estações em sequência, todas terminam verdes.
 
-Um único bloco central (card principal Liquid Glass, max-w ~720px), com a seguinte ordem interna:
+**Novo modelo de estados** (em `FlowStationCard.tsx`):
+
+- `pending` — estado inicial neutro (cinza, ícone original)
+- `passing` — momento em que o puck está cruzando (glow azul/branco pulsante, ícone original ainda, leve scale)
+- `current` — a estação onde a demanda PAROU (apenas "Recebida" no fim da animação): verde suave com check
+- `upcoming` — estações futuras já reveladas mas ainda não atingidas ("Em análise", "Equipe CW"): tom neutro com leve borda azul translúcida, ícone original, SEM check, SEM verde
+
+Trocar a prop `active: boolean` por `state: "pending" | "passing" | "current" | "upcoming"`.
+
+**Sequência final correta** após a animação:
 
 ```text
-┌─────────────────────────────────────────────┐
-│ ✓  Solicitação recebida com sucesso         │  ← SuccessMainCard (header)
-│    Obrigado pela solicitação. A equipe...   │
-│                                             │
-│ ┌──────┬──────┬──────┬──────┬──────┬──────┐ │
-│ │Código│Status│ Tipo │Empr. │Solic.│Próx. │ │  ← DemandSummaryBlock
-│ └──────┴──────┴──────┴──────┴──────┴──────┘ │
-│ Resumo: pagamento de R$ X para fornecedor Y │
-│                                             │
-│ ─────────── fluxo de encaminhamento ─────── │
-│                                             │
-│  [Sua    ]→[Recebida]→[Análise]→[Equipe]→🟦 │  ← DemandFlowSection
-│  [demanda]                              CW  │     (horizontal desktop)
-│                                             │
-│ ─────────────────────────────────────────── │
-│                                             │
-│ [Acompanhar] [Nova demanda] [Voltar]        │  ← SuccessActionButtons
-└─────────────────────────────────────────────┘
+[Sua demanda] → [Recebida ✓ verde] → [Em análise · neutro] → [Equipe CW · neutro] → [Logo CW destacada]
 ```
 
-No mobile o fluxo vira vertical compacto: `Sua demanda ↓ Recebida ↓ Análise ↓ Equipe CW ↓ Logo CW`, com cards menores.
+O puck passa pelas 3 estações dando um flash `passing` em cada, mas só "Recebida" termina em `current` (verde + check). As outras voltam para `upcoming`.
 
-## Arquivos a alterar / criar
+Em `DemandFlowSection.tsx`, ajustar o controle de estado: em vez de `activeIdx` cumulativo, usar `passingIdx` (qual estação o puck está cruzando agora, dura ~250ms) + `settledIdx = 0` fixo no fim (só "Recebida" fica verde).
 
-**Reescrever (visual apenas):**
-- `src/components/demands/new/success/DemandSuccessExperience.tsx` — orquestra um único card principal contendo tudo, em vez de 3 blocos soltos.
-- `src/components/demands/new/success/DemandSuccessSummaryCard.tsx` — vira `SuccessMainCard` (header de agradecimento + container do bloco inteiro). Mantém a assinatura/props existente para não quebrar imports; renderiza children.
-- `src/components/demands/new/success/DemandJourneyTunnel3D.tsx` — substituído por `DemandFlowSection` mais refinado e menor (altura ~140px desktop / vertical compacto mobile), com cards intermediários reagindo à passagem da demanda.
-- `src/components/demands/new/success/CWLogoDestination.tsx` — logo maior, com pulse/glow spring no momento da chegada.
-- `src/components/demands/new/success/DemandMiniCard.tsx` — versão reduzida usada como ponto de origem do fluxo (não mais como hero no topo).
-- `src/components/demands/new/success/SuccessActionButtons.tsx` — mantém os 3 botões, só ajusta espaçamento dentro do card.
+## 2. Efeito real de túnel 3D com luz passando
 
-**Criar:**
-- `src/components/demands/new/success/SuccessMainCard.tsx` — wrapper Liquid Glass com header (ícone check, título, subtítulo).
-- `src/components/demands/new/success/DemandSummaryBlock.tsx` — grid de metadados (Código, Status, Tipo, Empresa, Solicitante, Próximo passo) + linha de "Resumo".
-- `src/components/demands/new/success/DemandFlowSection.tsx` — orquestra mini card → estações intermediárias → logo CW, com animação Framer Motion.
-- `src/components/demands/new/success/FlowStationCard.tsx` — cards intermediários ("Recebida", "Em análise", "Equipe CW") que reagem quando a demanda passa (pulse + glow + check sutil).
+Reformular `DemandFlowSection.tsx` para entregar a sensação de luz atravessando um túnel:
 
-## Detalhes da animação (Framer Motion)
+**Container 3D real:**
+- `perspective: 1200px`, `perspectiveOrigin: 50% 50%`, `transformStyle: preserve-3d` em todo o eixo do fluxo
+- Cards das estações com `rotateY` sutil dependendo da posição (laterais inclinados ~6–10°, centro 0°) para criar paredes do túnel
+- Wrapper interno com leve `rotateX(2deg)` para dar chão/teto
 
-Sequência ~2.2s, respeitando `useReducedMotion`:
+**Trilha de luz (tunnel beam) — múltiplas camadas:**
+- Camada 1: linha base de gradiente azul→ciano com `box-shadow` interno suave
+- Camada 2: **feixe de luz** (`motion.div`) percorrendo o eixo X com `translateZ` oscilando entre -20 e +20px, largura ~120px, gradiente radial branco-azulado, `mix-blend-mode: screen`, `filter: blur(8px)`. Loop suave 2.6s ease-in-out
+- Camada 3: partículas/sparkles (3–5 `motion.div` pequenos) viajando em offsets aleatórios no eixo, com z variável, opacidade pulsando — sensação de poeira de luz
+- Camada 4: halo glow que acompanha o puck (`motion.div` posicionado junto, blur 20px, escala respirando)
 
-1. `SuccessMainCard` — fade + translateY(12→0), 0.35s easeOut.
-2. `DemandSummaryBlock` — stagger children 0.04s, fade in.
-3. `DemandFlowSection` aparece (opacity + scale 0.98→1).
-4. `DemandMiniCard` surge à esquerda com spring leve.
-5. Um "puck" (clone do mini card em escala reduzida) percorre o fluxo via `motion` com `transform: translateX + translateZ` e `perspective: 1000px` no container — spring `{ stiffness: 80, damping: 18 }`.
-6. Ao cruzar cada `FlowStationCard`, dispara variant `active` na estação: scale 1→1.06, border-glow, check fade-in. Controlado por `useAnimate` + delays escalonados (origem 0.6s, estação 1 ~1.0s, estação 2 ~1.35s, estação 3 ~1.7s, chegada ~2.0s).
-7. `CWLogoDestination` recebe spring pulse (scale 1→1.08→1) + halo glow ao "receber" o puck.
-8. Texto discreto "Encaminhada para análise" aparece abaixo do fluxo (fade 0.3s).
+**Puck (demanda viajando):**
+- Atualmente já existe mas sem profundidade percebida. Reforçar:
+  - `translateZ` animado de +40px → 0 → +40px (entra, passa rente, sai) → sensação de profundidade
+  - `rotateY` oscilando ±12° conforme posição
+  - `scale` 1.05 → 0.92 → 0.55 (perspectiva natural)
+  - `boxShadow` dinâmico com glow azul que intensifica no meio do trajeto
+  - Trail/rastro: 2 cópias defasadas em 80ms e 160ms com opacidade decrescente (motion ghosts)
+- Spring real: `transition: { type: "spring", stiffness: 55, damping: 16, mass: 0.9 }` em vez de `ease` puro
 
-Reduced motion: sem puck em movimento, sem pulses; estações já aparecem em estado `active` e logo CW em estado final. Layout idêntico.
+**Reação ao puck cruzar uma estação:**
+- Dispara `passingIdx = i` por ~280ms → card recebe glow azul pulsante + leve `translateZ(-6px)` (afundar/empurrar) + borda brilhante
+- Depois volta para `upcoming` (ou `current` se for a estação 0 "Recebida")
 
-## Layout & responsividade
+**Ambient:**
+- Adicionar `motion.div` de "neblina" no fundo (gradient radial muito sutil) oscilando opacidade 0.4→0.7 em loop 4s para reforçar atmosfera
 
-- Desktop (≥768px): card principal `max-w-3xl mx-auto`. Fluxo em linha horizontal, altura controlada (~160px), cards intermediários ~80px largura. Perspectiva CSS leve (`perspective: 1000px`, `rotateY` mínimo nos cards laterais para sensação 3D).
-- Tablet/Mobile (<768px): fluxo vertical, cards full-width compactos (~56px altura), puck desce verticalmente. Logo CW centralizada e maior (h-16). Botões empilhados full-width.
-- Testar em 360 / 390 / 430 / 1087 / 1440 via browser tools antes de finalizar.
+## 3. Reduced motion
 
-## Texto final padrão
+Mantém respeito a `useReducedMotion`:
+- Sem feixe de luz animado, sem partículas, sem puck em movimento
+- Estado final estático: "Recebida" verde com check, "Em análise" e "Equipe CW" neutras, logo CW destacada, texto "Encaminhada para análise" visível
 
-- Título: "Solicitação recebida com sucesso"
-- Subtítulo: "Obrigado pela solicitação. A equipe da CW Finanças irá analisar sua demanda de {resumo} e dará andamento o mais breve possível."
-- Rodapé do card: "Você pode acompanhar o andamento pela Central de Demandas."
-- Campos no grid: Código, Status (badge "Em análise"), Tipo, Empresa, Solicitante, Próximo passo ("Triagem pela equipe CW"), Resumo.
+## 4. Mobile (<md)
 
-`buildDemandSummary.ts` já existe e é reaproveitado sem alteração.
+Aplicar o mesmo modelo de estados (só "Recebida" verde no fim). O túnel vertical mantém versão simplificada do feixe descendo (translateY + translateZ animados). Sem partículas no mobile para preservar performance.
 
-## O que NÃO muda
+## Arquivos afetados
 
-- `NewDemandPage.tsx`: continua chamando `<DemandSuccessExperience demandId={createdId} form={form} onNew={...} />`.
-- `useDemand`, `useCreateDemand`, integração Asana, RLS, migrations — intocados.
-- Props públicas de `DemandSuccessExperience` e `SuccessActionButtons` permanecem.
+- `src/components/demands/new/success/FlowStationCard.tsx` — trocar `active: boolean` por `state: "pending" | "passing" | "current" | "upcoming"`, estilos por estado.
+- `src/components/demands/new/success/DemandFlowSection.tsx` — reescrever animação: container com perspective real, feixe de luz multi-camada, partículas, puck com translateZ + rotateY + spring + trail, controle de `passingIdx` + `settledIdx=0`.
+
+Nenhum outro arquivo é tocado.
 
 ## Critério de aceite
 
-Validar visualmente no preview (desktop 1087px + mobile 390px) após implementação:
-- card principal é o foco e contém todos os blocos;
-- fluxo aparece abaixo da mensagem, menor e proporcional;
-- mini card, estações e logo CW alinhados no mesmo eixo;
-- puck percorre o fluxo e estações reagem em sequência;
-- logo CW destacada com pulse final;
-- botões dentro do card, alinhados;
-- mobile sem quebra, animação leve;
-- reduced-motion mostra versão estática limpa.
+- Após a animação, apenas "Recebida" fica verde com check. "Em análise" e "Equipe CW" permanecem neutras (cinza/azul translúcido, ícone original).
+- Visualmente perceptível: feixe de luz atravessa a trilha, partículas viajam, puck tem profundidade (parece avançar e recuar no eixo Z), cards reagem quando o puck passa (não ficam verdes).
+- Logo CW pulsa ao receber o puck.
+- Em `prefers-reduced-motion`, estado final é o mesmo (só "Recebida" verde).
+- Mobile sem travamento, com versão simplificada do túnel.
