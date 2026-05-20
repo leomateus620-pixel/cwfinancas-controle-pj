@@ -40,11 +40,6 @@ export function FlowStationCard({
   const checkSize = size === "lg" ? "w-5 h-5" : "w-3.5 h-3.5";
   const labelSize =
     size === "lg" ? "text-[12px]" : isVertical ? "text-[12px]" : "text-[10px]";
-  const reduce = useReducedMotion();
-  const isPassing = state === "passing";
-  const isUpcoming = state === "upcoming" || state === "current";
-
-  const isVertical = orientation === "vertical";
 
   return (
     <div
