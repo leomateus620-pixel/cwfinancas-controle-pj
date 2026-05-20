@@ -37,21 +37,34 @@ export function LoginPage() {
       const loginEmail = resolveLoginEmail(identifier);
       const { error } = await signIn(loginEmail, password);
       if (error) {
-        const msg = error.message === "Invalid login credentials"
-          ? (isUsername ? "Usuário ou senha incorretos" : "E-mail ou senha incorretos")
-          : error.message === "Email not confirmed"
-            ? "Conta ainda não confirmada. Verifique seu e-mail."
-            : error.message;
+        const raw = error.message ?? "";
+        const isNetwork = /failed to fetch|networkerror|load failed/i.test(raw);
+        const msg = isNetwork
+          ? "Não foi possível conectar ao servidor. Verifique sua conexão (ou desative extensões do navegador que bloqueiem requisições) e tente novamente."
+          : raw === "Invalid login credentials"
+            ? (isUsername ? "Usuário ou senha incorretos" : "E-mail ou senha incorretos")
+            : raw === "Email not confirmed"
+              ? "Conta ainda não confirmada. Verifique seu e-mail."
+              : raw;
         toast({ variant: "destructive", title: "Não foi possível entrar", description: msg });
       } else {
         navigate(from, { replace: true });
       }
-    } catch {
-      toast({ variant: "destructive", title: "Erro inesperado", description: "Tente novamente mais tarde." });
+    } catch (e) {
+      const raw = (e as Error)?.message ?? "";
+      const isNetwork = /failed to fetch|networkerror|load failed/i.test(raw);
+      toast({
+        variant: "destructive",
+        title: "Erro inesperado",
+        description: isNetwork
+          ? "Falha de rede ao contatar o servidor. Verifique sua conexão e tente novamente."
+          : "Tente novamente mais tarde.",
+      });
     } finally {
       setIsLoading(false);
     }
   };
+
 
   return (
     <div className="min-h-screen flex items-center justify-center home-glass-bg relative overflow-hidden p-4">

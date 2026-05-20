@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { useNavigate } from "react-router-dom";
 
 interface AuthContextType {
   user: User | null;
@@ -14,6 +13,34 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Clear all Supabase auth tokens from local/session storage without making a
+ * network request. Used to recover from corrupted/stale refresh tokens that
+ * make supabase.auth.signOut() itself fail with "Failed to fetch".
+ */
+function purgeLocalAuthStorage() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith("sb-") || k.includes("supabase.auth"))) keys.push(k);
+    }
+    keys.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && (k.startsWith("sb-") || k.includes("supabase.auth"))) keys.push(k);
+    }
+    keys.forEach((k) => sessionStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -21,9 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         if (event === 'TOKEN_REFRESHED' && !session) {
-          await supabase.auth.signOut();
+          // Refresh failed → purge corrupted tokens locally instead of calling
+          // signOut() (which would issue a network request that may also fail).
+          purgeLocalAuthStorage();
           setSession(null);
           setUser(null);
         } else {
@@ -34,18 +63,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.warn("Stale session detected, clearing:", error.message);
-        supabase.auth.signOut();
+    supabase.auth
+      .getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.warn("Stale session detected, purging local tokens:", error.message);
+          purgeLocalAuthStorage();
+          setSession(null);
+          setUser(null);
+        } else {
+          setSession(session);
+          setUser(session?.user ?? null);
+        }
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.warn("getSession threw, purging local tokens:", err?.message ?? err);
+        purgeLocalAuthStorage();
         setSession(null);
         setUser(null);
-      } else {
-        setSession(session);
-        setUser(session?.user ?? null);
-      }
-      setLoading(false);
-    });
+        setLoading(false);
+      });
 
     return () => {
       subscription.unsubscribe();
@@ -77,7 +115,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore — fall through to local purge
+    }
+    purgeLocalAuthStorage();
+    setSession(null);
+    setUser(null);
   };
 
   return (
