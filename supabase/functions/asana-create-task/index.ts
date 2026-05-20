@@ -353,7 +353,10 @@ Deno.serve(async (req) => {
       request_payload: taskPayload, response_payload: { gid: taskGid, url: taskUrl },
     });
 
-    return new Response(JSON.stringify({ ok: true, task_id: taskGid, task_url: taskUrl }), {
+    // Upload de anexos (best-effort: erros individuais não derrubam o sync)
+    const attachments = await uploadAttachments(svc, taskGid, d.id, ASANA_PAT);
+
+    return new Response(JSON.stringify({ ok: true, task_id: taskGid, task_url: taskUrl, attachments }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
