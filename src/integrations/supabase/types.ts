@@ -1332,6 +1332,7 @@ export type Database = {
           rejected_at: string | null
           rejected_by: string | null
           rejection_reason: string | null
+          requester_metadata: Json
           requires_review: boolean
           sla_due_at: string | null
           status: string
@@ -1367,6 +1368,7 @@ export type Database = {
           rejected_at?: string | null
           rejected_by?: string | null
           rejection_reason?: string | null
+          requester_metadata?: Json
           requires_review?: boolean
           sla_due_at?: string | null
           status?: string
@@ -1402,6 +1404,7 @@ export type Database = {
           rejected_at?: string | null
           rejected_by?: string | null
           rejection_reason?: string | null
+          requester_metadata?: Json
           requires_review?: boolean
           sla_due_at?: string | null
           status?: string
