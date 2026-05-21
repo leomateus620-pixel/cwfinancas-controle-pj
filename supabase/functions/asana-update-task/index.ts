@@ -145,10 +145,69 @@ function contrapartLabel(demand_type: string): { title: string; hint: string } {
 
 const DIVIDER = "────────────────────────────";
 
-function buildNotes(d: Demand): string {
+interface Interpretation {
+  summary?: string;
+  detected_type?: string;
+  detected_urgency?: string;
+  amounts?: string[];
+  dates?: string[];
+  parties?: string[];
+}
+
+function readInterpretation(meta: Demand["requester_metadata"]): Interpretation | null {
+  if (!meta || !meta.interpretation) return null;
+  const i = meta.interpretation;
+  if (typeof i === "string") {
+    try { return JSON.parse(i) as Interpretation; } catch { return null; }
+  }
+  if (typeof i === "object") return i as Interpretation;
+  return null;
+}
+
+function listOrPlaceholder(arr: string[] | undefined): string {
+  if (!arr || arr.length === 0) return "Não informado";
+  return arr.join(", ");
+}
+
+function buildNotes(d: Demand, origin: string, attachmentNames: string[] = []): string {
   const r = d.requester_metadata ?? {};
   const requesterName = r.name?.trim() || "—";
   const requesterCompany = r.company?.trim() || "—";
+  const interp = readInterpretation(r);
+
+  const lines: string[] = [];
+
+  if (interp) {
+    lines.push("Nova demanda recebida pelo sistema CW");
+    lines.push(DIVIDER);
+    lines.push("👤 SOLICITANTE");
+    lines.push(`Nome: ${requesterName}`);
+    lines.push(`Empresa: ${requesterCompany}`);
+    lines.push(DIVIDER);
+    lines.push("🧠 RESUMO INTERPRETADO");
+    lines.push(interp.summary?.trim() || "Não informado");
+    lines.push(DIVIDER);
+    lines.push("📝 SOLICITAÇÃO ORIGINAL DO CLIENTE");
+    lines.push(d.description?.trim() || "(sem descrição)");
+    lines.push(DIVIDER);
+    lines.push("🔎 INFORMAÇÕES IDENTIFICADAS AUTOMATICAMENTE");
+    lines.push(`- Tipo provável: ${interp.detected_type || "outro"}`);
+    lines.push(`- Urgência provável: ${interp.detected_urgency || "normal"}`);
+    lines.push(`- Valores citados: ${listOrPlaceholder(interp.amounts)}`);
+    lines.push(`- Datas/vencimentos: ${listOrPlaceholder(interp.dates)}`);
+    lines.push(`- Pessoas/empresas: ${listOrPlaceholder(interp.parties)}`);
+    lines.push(`- Documentos anexados: ${attachmentNames.length}${attachmentNames.length ? ` (${attachmentNames.join(", ")})` : ""}`);
+    lines.push(DIVIDER);
+    lines.push("Status atual: " + d.status);
+    lines.push("Origem: Portal do cliente");
+    if (d.created_at) {
+      lines.push(`Enviada em: ${new Date(d.created_at).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`);
+    }
+    lines.push(`🔗 Link interno: ${origin}/demands/${d.id}`);
+    return lines.join("\n");
+  }
+
+  // Legacy
   const requesterRole = r.role?.trim();
   const requesterEmail = r.email?.trim();
   const requesterPhone = r.phone?.trim();
@@ -156,7 +215,6 @@ function buildNotes(d: Demand): string {
   const cpName = d.supplier_name?.trim() || "—";
   const cpDoc = d.supplier_document?.trim() || "—";
 
-  const lines: string[] = [];
   lines.push("📋 DEMANDA");
   lines.push(`Código: ${d.demand_code ?? d.id.slice(0, 8)}`);
   lines.push(`Tipo: ${d.demand_type}`);
