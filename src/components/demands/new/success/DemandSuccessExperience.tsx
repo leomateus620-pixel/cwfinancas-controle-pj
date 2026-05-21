@@ -44,7 +44,8 @@ export function DemandSuccessExperience({ demandId, form, onNew }: Props) {
   const { data: demand } = useDemand(demandId);
   const code = demand?.demand_code ?? demandId.slice(0, 8).toUpperCase();
   const typeLabel = getTypeLabel(form.demand_type);
-  const summaryText = buildDemandSummary(form);
+  const interpretedSummary = readInterpretationSummary(demand?.requester_metadata);
+  const summaryText = interpretedSummary || buildDemandSummary(form);
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto animate-fade-in">
