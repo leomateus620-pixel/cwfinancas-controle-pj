@@ -14,6 +14,22 @@ interface Props {
   onNew: () => void;
 }
 
+function readInterpretationSummary(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const meta = raw as Record<string, unknown>;
+  const i = meta.interpretation;
+  if (typeof i === "string") {
+    try {
+      const parsed = JSON.parse(i);
+      if (parsed && typeof parsed.summary === "string" && parsed.summary.trim()) return parsed.summary.trim();
+    } catch { /* ignore */ }
+  } else if (i && typeof i === "object" && typeof (i as { summary?: unknown }).summary === "string") {
+    const s = (i as { summary: string }).summary.trim();
+    if (s) return s;
+  }
+  return null;
+}
+
 /**
  * Tela final de confirmação após envio da demanda.
  *
