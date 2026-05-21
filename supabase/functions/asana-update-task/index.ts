@@ -193,8 +193,16 @@ function buildNotes(d: Demand, origin: string, attachmentNames: string[] = []): 
     lines.push("🔎 INFORMAÇÕES IDENTIFICADAS AUTOMATICAMENTE");
     lines.push(`- Tipo provável: ${interp.detected_type || "outro"}`);
     lines.push(`- Urgência provável: ${interp.detected_urgency || "normal"}`);
-    lines.push(`- Valores citados: ${listOrPlaceholder(interp.amounts)}`);
-    lines.push(`- Datas/vencimentos: ${listOrPlaceholder(interp.dates)}`);
+    if (d.amount != null) {
+      lines.push(`- Valor identificado: ${fmtBRL(d.amount)}`);
+    } else {
+      lines.push(`- Valores citados: ${listOrPlaceholder(interp.amounts)}`);
+    }
+    if (d.due_date) {
+      lines.push(`- Vencimento identificado: ${fmtDate(d.due_date)}`);
+    } else {
+      lines.push(`- Datas/vencimentos: ${listOrPlaceholder(interp.dates)}`);
+    }
     lines.push(`- Pessoas/empresas: ${listOrPlaceholder(interp.parties)}`);
     lines.push(`- Documentos anexados: ${attachmentNames.length}${attachmentNames.length ? ` (${attachmentNames.join(", ")})` : ""}`);
     lines.push(DIVIDER);
