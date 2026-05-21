@@ -31,8 +31,9 @@ interface Demand {
   asana_task_id: string | null;
   asana_task_url: string | null;
   requester_metadata:
-    | { name?: string; company?: string; email?: string; phone?: string; role?: string }
+    | { name?: string; company?: string; email?: string; phone?: string; role?: string; interpretation?: string | Record<string, unknown> }
     | null;
+  created_at?: string;
 }
 
 const PRIORITY_LABEL: Record<string, string> = {
