@@ -65,6 +65,8 @@ export function QuickDemandForm({ onCreated }: Props) {
         demand_type: interpretation.detected_type,
         title,
         priority: interpretation.detected_urgency,
+        amount: interpretation.amount_numeric ?? null,
+        due_date: interpretation.due_date_iso ?? null,
         description: form.description.trim(),
         requester_metadata: {
           name: form.requester_name.trim(),
