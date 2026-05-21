@@ -133,13 +133,11 @@ function SummaryBlock({
 }) {
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-2.5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-2.5">
         <Meta label="Código" value={code} mono />
         <Meta label="Status" value="Em análise" pill="emerald" />
-        <Meta label="Tipo" value={typeLabel} />
-        {company && <Meta label="Empresa" value={company} />}
         {requester && <Meta label="Solicitante" value={requester} />}
-        <Meta label="Próximo passo" value="Triagem da equipe CW" />
+        {company && <Meta label="Empresa" value={company} />}
       </div>
       <div className="rounded-xl bg-white/55 border border-black/[0.05] backdrop-blur-md px-3.5 py-2.5">
         <div className="text-[9.5px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">
