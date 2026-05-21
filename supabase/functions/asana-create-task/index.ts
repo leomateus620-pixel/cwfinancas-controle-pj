@@ -401,11 +401,22 @@ Deno.serve(async (req) => {
     }
 
     const origin = req.headers.get("origin") ?? "https://app.lovable.dev";
+
+    // Pre-fetch document names for the notes block
+    const { data: docRows } = await svc
+      .from("financial_demand_documents")
+      .select("file_name")
+      .eq("demand_id", d.id);
+    const attachmentNames = (docRows ?? []).map((r: { file_name: string }) => r.file_name);
+
     const titlePrefix = d.supplier_name ? `[${d.supplier_name}] ` : "";
+    const taskName = d.title?.trim()
+      ? `${titlePrefix}${d.title}`
+      : `${titlePrefix}${d.demand_type}`;
     const taskPayload: Record<string, unknown> = {
       data: {
-        name: `${titlePrefix}${d.demand_type} - ${d.title}`,
-        notes: buildNotes(d, origin),
+        name: taskName,
+        notes: buildNotes(d, origin, attachmentNames),
         projects: [projectGid],
         ...(sectionGid ? { memberships: [{ project: projectGid, section: sectionGid }] } : {}),
         ...(d.due_date ? { due_on: d.due_date } : {}),
