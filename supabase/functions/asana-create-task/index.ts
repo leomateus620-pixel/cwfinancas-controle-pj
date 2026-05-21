@@ -31,8 +31,9 @@ interface Demand {
   asana_task_id: string | null;
   asana_task_url: string | null;
   requester_metadata:
-    | { name?: string; company?: string; email?: string; phone?: string; role?: string }
+    | { name?: string; company?: string; email?: string; phone?: string; role?: string; interpretation?: string | Record<string, unknown> }
     | null;
+  created_at?: string;
 }
 
 const PRIORITY_LABEL: Record<string, string> = {
@@ -70,21 +71,75 @@ function contrapartLabel(demand_type: string): { title: string; hint: string } {
 
 const DIVIDER = "────────────────────────────";
 
-export function buildNotes(d: Demand, appOrigin: string): string {
+interface Interpretation {
+  summary?: string;
+  detected_type?: string;
+  detected_urgency?: string;
+  amounts?: string[];
+  dates?: string[];
+  parties?: string[];
+}
+
+function readInterpretation(meta: Demand["requester_metadata"]): Interpretation | null {
+  if (!meta || !meta.interpretation) return null;
+  const i = meta.interpretation;
+  if (typeof i === "string") {
+    try { return JSON.parse(i) as Interpretation; } catch { return null; }
+  }
+  if (typeof i === "object") return i as Interpretation;
+  return null;
+}
+
+function listOrPlaceholder(arr: string[] | undefined): string {
+  if (!arr || arr.length === 0) return "Não informado";
+  return arr.join(", ");
+}
+
+export function buildNotes(d: Demand, appOrigin: string, attachmentNames: string[] = []): string {
   const r = d.requester_metadata ?? {};
   const requesterName = r.name?.trim() || "—";
   const requesterCompany = r.company?.trim() || "—";
+  const interp = readInterpretation(r);
+
+  const lines: string[] = [];
+
+  // NEW FORMAT (when interpretation present)
+  if (interp) {
+    lines.push("Nova demanda recebida pelo sistema CW");
+    lines.push(DIVIDER);
+    lines.push("👤 SOLICITANTE");
+    lines.push(`Nome: ${requesterName}`);
+    lines.push(`Empresa: ${requesterCompany}`);
+    lines.push(DIVIDER);
+    lines.push("🧠 RESUMO INTERPRETADO");
+    lines.push(interp.summary?.trim() || "Não informado");
+    lines.push(DIVIDER);
+    lines.push("📝 SOLICITAÇÃO ORIGINAL DO CLIENTE");
+    lines.push(d.description?.trim() || "(sem descrição)");
+    lines.push(DIVIDER);
+    lines.push("🔎 INFORMAÇÕES IDENTIFICADAS AUTOMATICAMENTE");
+    lines.push(`- Tipo provável: ${interp.detected_type || "outro"}`);
+    lines.push(`- Urgência provável: ${interp.detected_urgency || "normal"}`);
+    lines.push(`- Valores citados: ${listOrPlaceholder(interp.amounts)}`);
+    lines.push(`- Datas/vencimentos: ${listOrPlaceholder(interp.dates)}`);
+    lines.push(`- Pessoas/empresas: ${listOrPlaceholder(interp.parties)}`);
+    lines.push(`- Documentos anexados: ${attachmentNames.length}${attachmentNames.length ? ` (${attachmentNames.join(", ")})` : ""}`);
+    lines.push(DIVIDER);
+    lines.push("Status inicial: Em análise");
+    lines.push("Origem: Portal do cliente");
+    lines.push(`Enviada em: ${new Date(d.created_at ?? Date.now()).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`);
+    lines.push(`🔗 Link interno: ${appOrigin}/demands/${d.id}`);
+    return lines.join("\n");
+  }
+
+  // LEGACY FORMAT (admin / old demands)
   const requesterRole = r.role?.trim();
   const requesterEmail = r.email?.trim();
   const requesterPhone = r.phone?.trim();
-
   const cp = contrapartLabel(d.demand_type);
   const cpName = d.supplier_name?.trim() || "—";
   const cpDoc = d.supplier_document?.trim() || "—";
 
-  const lines: string[] = [];
-
-  // BLOCO 1 — DEMANDA
   lines.push("📋 DEMANDA");
   lines.push(`Código: ${d.demand_code ?? d.id.slice(0, 8)}`);
   lines.push(`Tipo: ${d.demand_type}`);
@@ -93,8 +148,6 @@ export function buildNotes(d: Demand, appOrigin: string): string {
   lines.push(`Prioridade: ${PRIORITY_LABEL[d.priority] ?? d.priority}`);
   lines.push(`Status: ${d.status}`);
   lines.push(DIVIDER);
-
-  // BLOCO 2 — SOLICITANTE
   lines.push("👤 QUEM ENVIOU (Solicitante)");
   lines.push(`Nome: ${requesterName}`);
   lines.push(`Empresa: ${requesterCompany}`);
@@ -102,21 +155,14 @@ export function buildNotes(d: Demand, appOrigin: string): string {
   if (requesterEmail) lines.push(`E-mail: ${requesterEmail}`);
   if (requesterPhone) lines.push(`WhatsApp: ${requesterPhone}`);
   lines.push(DIVIDER);
-
-  // BLOCO 3 — CONTRAPARTE
   lines.push(`🏢 ${cp.title} (${cp.hint})`);
   lines.push(`Nome: ${cpName}`);
   lines.push(`CNPJ/CPF: ${cpDoc}`);
   lines.push(DIVIDER);
-
-  // BLOCO 4 — DESCRIÇÃO
   lines.push("📝 DESCRIÇÃO");
   lines.push(d.description?.trim() || "(sem descrição)");
   lines.push(DIVIDER);
-
-  // BLOCO 5 — LINK
   lines.push(`🔗 Link interno: ${appOrigin}/demands/${d.id}`);
-
   return lines.join("\n");
 }
 
@@ -355,11 +401,22 @@ Deno.serve(async (req) => {
     }
 
     const origin = req.headers.get("origin") ?? "https://app.lovable.dev";
+
+    // Pre-fetch document names for the notes block
+    const { data: docRows } = await svc
+      .from("financial_demand_documents")
+      .select("file_name")
+      .eq("demand_id", d.id);
+    const attachmentNames = (docRows ?? []).map((r: { file_name: string }) => r.file_name);
+
     const titlePrefix = d.supplier_name ? `[${d.supplier_name}] ` : "";
+    const taskName = d.title?.trim()
+      ? `${titlePrefix}${d.title}`
+      : `${titlePrefix}${d.demand_type}`;
     const taskPayload: Record<string, unknown> = {
       data: {
-        name: `${titlePrefix}${d.demand_type} - ${d.title}`,
-        notes: buildNotes(d, origin),
+        name: taskName,
+        notes: buildNotes(d, origin, attachmentNames),
         projects: [projectGid],
         ...(sectionGid ? { memberships: [{ project: projectGid, section: sectionGid }] } : {}),
         ...(d.due_date ? { due_on: d.due_date } : {}),

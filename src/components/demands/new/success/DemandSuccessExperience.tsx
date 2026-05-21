@@ -14,6 +14,22 @@ interface Props {
   onNew: () => void;
 }
 
+function readInterpretationSummary(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const meta = raw as Record<string, unknown>;
+  const i = meta.interpretation;
+  if (typeof i === "string") {
+    try {
+      const parsed = JSON.parse(i);
+      if (parsed && typeof parsed.summary === "string" && parsed.summary.trim()) return parsed.summary.trim();
+    } catch { /* ignore */ }
+  } else if (i && typeof i === "object" && typeof (i as { summary?: unknown }).summary === "string") {
+    const s = (i as { summary: string }).summary.trim();
+    if (s) return s;
+  }
+  return null;
+}
+
 /**
  * Tela final de confirmação após envio da demanda.
  *
@@ -28,7 +44,8 @@ export function DemandSuccessExperience({ demandId, form, onNew }: Props) {
   const { data: demand } = useDemand(demandId);
   const code = demand?.demand_code ?? demandId.slice(0, 8).toUpperCase();
   const typeLabel = getTypeLabel(form.demand_type);
-  const summaryText = buildDemandSummary(form);
+  const interpretedSummary = readInterpretationSummary((demand as { requester_metadata?: unknown } | null)?.requester_metadata);
+  const summaryText = interpretedSummary || buildDemandSummary(form);
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto animate-fade-in">
@@ -116,13 +133,11 @@ function SummaryBlock({
 }) {
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-2.5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-2.5">
         <Meta label="Código" value={code} mono />
         <Meta label="Status" value="Em análise" pill="emerald" />
-        <Meta label="Tipo" value={typeLabel} />
-        {company && <Meta label="Empresa" value={company} />}
         {requester && <Meta label="Solicitante" value={requester} />}
-        <Meta label="Próximo passo" value="Triagem da equipe CW" />
+        {company && <Meta label="Empresa" value={company} />}
       </div>
       <div className="rounded-xl bg-white/55 border border-black/[0.05] backdrop-blur-md px-3.5 py-2.5">
         <div className="text-[9.5px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">
