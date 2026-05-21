@@ -44,7 +44,7 @@ export function DemandSuccessExperience({ demandId, form, onNew }: Props) {
   const { data: demand } = useDemand(demandId);
   const code = demand?.demand_code ?? demandId.slice(0, 8).toUpperCase();
   const typeLabel = getTypeLabel(form.demand_type);
-  const interpretedSummary = readInterpretationSummary(demand?.requester_metadata);
+  const interpretedSummary = readInterpretationSummary((demand as { requester_metadata?: unknown } | null)?.requester_metadata);
   const summaryText = interpretedSummary || buildDemandSummary(form);
 
   return (
