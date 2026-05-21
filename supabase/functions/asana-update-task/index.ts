@@ -33,8 +33,9 @@ interface Demand {
   supplier_name: string | null; supplier_document: string | null;
   priority: string; status: string;
   created_by: string; asana_task_id: string | null; asana_task_url: string | null;
+  created_at?: string;
   requester_metadata:
-    | { name?: string; company?: string; email?: string; phone?: string; role?: string }
+    | { name?: string; company?: string; email?: string; phone?: string; role?: string; interpretation?: string | Record<string, unknown> }
     | null;
 }
 
