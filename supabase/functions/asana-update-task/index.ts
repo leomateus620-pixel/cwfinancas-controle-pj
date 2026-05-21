@@ -306,11 +306,17 @@ Deno.serve(async (req) => {
     const statusMapping = (settings?.status_mapping ?? {}) as Record<string, string>;
 
     const titlePrefix = demand.supplier_name ? `[${demand.supplier_name}] ` : "";
-    const notes = buildNotes(demand);
+    const origin = req.headers.get("origin") ?? "https://app.lovable.dev";
+    const { data: docRows } = await svc
+      .from("financial_demand_documents")
+      .select("file_name")
+      .eq("demand_id", demand.id);
+    const attachmentNames = (docRows ?? []).map((r: { file_name: string }) => r.file_name);
+    const notes = buildNotes(demand, origin, attachmentNames);
 
     const updatePayload: Record<string, unknown> = {
       data: {
-        name: `${titlePrefix}${demand.demand_type} - ${demand.title}`,
+        name: `${titlePrefix}${demand.title || demand.demand_type}`,
         notes,
         ...(demand.due_date ? { due_on: demand.due_date } : { due_on: null }),
       },
