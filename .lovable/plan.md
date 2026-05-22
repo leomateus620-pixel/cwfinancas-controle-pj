@@ -1,51 +1,40 @@
-## Ajustes de alinhamento e refinamento do glow "liquid glass 3D" — Landing Page
+## Objetivo
 
-### 1. Reequilíbrio do grid (espaço respirando à esquerda)
+Restaurar exatamente o alinhamento e a respiração da tela inicial conforme estavam antes da adição do Card 3D (versão do print enviado), mantendo o novo carrossel com os 2 cards 3D (Demanda Inteligente + Dashboard), e reduzir drasticamente os efeitos de luz ao redor do card para algo sutil e polido — sem aquele "halo" exagerado.
 
-**Arquivo:** `src/pages/LandingPage.tsx`
+## O que mudar
 
-O grid atual usa `lg:grid-cols-[1fr_1.1fr]` com `gap-12`, o que faz a coluna direita (carrossel 3D) "comer" o espaço da coluna esquerda no viewport ~1160px. Vamos:
+### 1. `src/pages/LandingPage.tsx` — voltar layout original
 
-- Trocar a proporção para `lg:grid-cols-[1.05fr_1fr]` (texto ganha leve folga, mock 3D não estoura).
-- Aumentar `gap` em desktop para `lg:gap-16 xl:gap-20`.
-- Adicionar `lg:pl-4 xl:pl-8` na coluna direita (`<HeroMockCarousel />` envolto em `<div>`), empurrando o mock para a direita sem aumentar seu tamanho.
-- Garantir `max-w-[560px]` no card 3D dentro de `HeroMockCarousel` para impedir crescimento no `1.1fr` antigo.
+- Grid: `lg:grid-cols-[1fr_1.1fr]` (era `1.05fr_1fr`)
+- Gap: `gap-8 lg:gap-12` (era `lg:gap-16 xl:gap-20`)
+- Remover `lg:pl-4 xl:pl-8` do wrapper da coluna direita
 
-Resultado: o card 3D desliza ~32–48px à direita; o bloco "Gestão Financeira Inteligente / Cartão de Crédito" deixa de ficar espremido.
+Isso devolve à coluna esquerda a largura natural (textos, highlights e CTAs deixam de ficar retraídos) e reaproxima o card 3D para o centro óptico da tela, como no print.
 
-### 2. Reformular o "blur azul" → Liquid Glass 3D com física real
+### 2. `src/components/landing/HeroMockCarousel.tsx` — efeitos sutis
 
-**Arquivo:** `src/components/landing/HeroMockCarousel.tsx`
+Substituir o sistema de 5 camadas atual (conic haze + fresnel lateral + caustic floor + contact shadow + specular arc) por uma versão **mínima e refinada**, mais próxima do print original:
 
-O glow atual (`absolute -inset-12 rounded-[40px] opacity-40 blur-3xl`) gera aquele halo azul lavado que o usuário rejeitou. Vamos substituir por uma estrutura em camadas inspirada em vidro real (refração + caustics + ground reflection):
+- **Halo único e suave**: 1 radial `blur(80px)` com `opacity ~0.18`, paleta do slide ativo, atrás do card. Sem conic gradient, sem saturação alta.
+- **Contact shadow**: sombra curta abaixo (`h-2`, blur 14px, opacity 0.25) para ancorar o card.
+- **Specular arc no topo**: mantido, mas com `opacity 0.35` em vez de 0.55.
+- **Remover**: fresnel lateral esquerda/direita (causavam o "blur azul" reclamado), conic haze, caustic floor saturado.
+- Transição de tonalidade entre slides via `transition: opacity/background 700ms`.
 
-**Camada A — Caustic floor (chão refrativo)**
-Elipse fina, baixa, abaixo do card (`bottom: -8%`, `height: 18%`), com gradiente radial multicolor (primary + teal + violet) e `filter: blur(40px) saturate(140%)`. Simula a luz que atravessa o vidro e bate no piso.
+Resultado: o card "flutua" com leveza, sem competir visualmente com o texto à esquerda.
 
-**Camada B — Side fresnel (borda de refração lateral)**
-Dois gradientes verticais finos posicionados nas bordas esquerda/direita do card (largura ~6%), com `mix-blend-mode: screen` e cor `hsl(199 89% 65% / 0.35)`. Dão o efeito de luz contornando vidro espesso.
+### 3. Manter intacto
 
-**Camada C — Atmospheric haze (em vez do orb difuso azul)**
-Manter um único radial sutil atrás (`opacity: 0.18`, não 0.40), mas com gradiente **conico** em vez de radial puro, usando 3 stops (teal → primary → violet) e `blur(60px)`. Isso quebra a monotonia "azul lavado".
+- `MockDemandCard.tsx` e `MockDashboardCard.tsx` (sem alterações)
+- Carrossel: autoplay 6.5s, pausa no hover, dots, swipe, `prefers-reduced-motion`
+- Tudo o que está em volta (logo, hero, highlights carousel, CTAs, footer)
 
-**Camada D — Specular highlight (brilho do topo do vidro)**
-Faixa horizontal de ~2px no topo do card (já existe parcialmente), reforçada via `box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.4)` no próprio mock, mais um pseudo-arco `before:` curvo no topo.
+## Arquivos editados
 
-**Camada E — Contact shadow (sombra de contato físico)**
-Sombra escura, curta e nítida logo abaixo do card (`height: 8px`, `blur: 12px`, `opacity: 0.35`), separada da sombra difusa profunda — dá ancoragem ao "objeto sobre superfície".
+- `src/pages/LandingPage.tsx` (3 ajustes de classe no grid e wrapper)
+- `src/components/landing/HeroMockCarousel.tsx` (simplificação do bloco de efeitos)
 
-Todas as camadas vivem em um wrapper `pointer-events-none` (padrão do projeto, conforme memory `glass-card-orbs-pattern`). A transição entre slides (`selected`) reorquestra apenas a tonalidade dos stops (demand = teal/primary, dashboard = primary/violet), não a estrutura — evita reflows.
+## Validação
 
-### 3. Polimento secundário
-
-- Trocar o `bg` translúcido azul de fundo do glow por gradientes em hsl que reutilizam tokens do design system (`--primary`, `hsl(173 80% 40%)`, `hsl(262 83% 58%)`).
-- Adicionar `will-change: filter, opacity` apenas nas camadas animadas (transição 700ms).
-- Respeitar `prefers-reduced-motion`: desabilitar a transição da camada C.
-
-### Arquivos editados
-- `src/pages/LandingPage.tsx` (grid proportions, gap, padding direito)
-- `src/components/landing/HeroMockCarousel.tsx` (remoção do blur azul antigo, novas camadas A–E, max-width do card)
-
-### Fora de escopo
-- Nenhuma mudança em `MockDemandCard.tsx`, `MockDashboardCard.tsx`, conteúdo dos cards, animações internas, autoplay, dots ou rotas.
-- Sem alterações de backend, dados ou business logic.
+Após implementar: comparar visualmente com o print — coluna esquerda com mesma largura/respiração, card 3D centralizado no lado direito, halo discreto.
