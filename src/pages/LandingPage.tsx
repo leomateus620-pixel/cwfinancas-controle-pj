@@ -321,7 +321,7 @@ export default function LandingPage() {
               <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-foreground tracking-tight leading-tight">
                 Gestão Financeira{" "}
                 <span className="gradient-text-primary">Inteligente</span>{" "}
-                para PJ
+                <span className="whitespace-nowrap">para PJ</span>
               </h1>
               <p className="text-muted-foreground text-base md:text-lg leading-relaxed max-w-lg mx-auto lg:mx-0">
                 Controle receitas, despesas, fluxo de caixa, DRE e contas a
