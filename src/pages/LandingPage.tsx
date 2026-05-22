@@ -361,7 +361,7 @@ export default function LandingPage() {
           </div>
 
           {/* Right Column – 3D Mock App Preview (carousel) */}
-          <div className="lg:pl-4 xl:pl-8">
+          <div>
             <HeroMockCarousel />
           </div>
         </div>
