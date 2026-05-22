@@ -116,21 +116,12 @@ export function HeroMockCarousel() {
       />
 
       {/* Embla viewport */}
-      <div
-        ref={emblaRef}
-        className="overflow-hidden"
-        style={{
-          WebkitMaskImage:
-            "linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%)",
-          maskImage:
-            "linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%)",
-        }}
-      >
+      <div ref={emblaRef} className="overflow-hidden">
         <div className="flex">
           {slides.map((s) => (
             <div
               key={s.key}
-              className="min-w-0 shrink-0 grow-0 basis-full px-2"
+              className="min-w-0 shrink-0 grow-0 basis-full"
               aria-roledescription="slide"
               aria-label={s.label}
             >
