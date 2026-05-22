@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import logoFull from "@/assets/logo-full.png";
 import { AIChipPulse } from "@/components/landing/AIChipPulse";
+import { HeroMockCarousel } from "@/components/landing/HeroMockCarousel";
 
 const features = [
   { icon: Home, label: "Home", color: "hsl(221 85% 53%)" },
