@@ -156,7 +156,7 @@ export function HeroMockCarousel() {
           className="absolute top-0 left-[10%] right-[10%] h-px pointer-events-none"
           style={{
             background:
-              "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.55), transparent)",
+              "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.35), transparent)",
           }}
         />
       </div>
