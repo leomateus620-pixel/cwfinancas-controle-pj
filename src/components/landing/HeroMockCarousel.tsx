@@ -109,67 +109,27 @@ export function HeroMockCarousel() {
       aria-roledescription="carousel"
       aria-label="Prévia do produto"
     >
-      {/* ── Liquid Glass 3D physical light system ── */}
+      {/* ── Subtle ambient glow ── */}
       <div
         className="absolute inset-0 pointer-events-none"
         aria-hidden="true"
       >
-        {/* C — Atmospheric haze (conic, refraction tint) */}
+        {/* Soft halo behind card */}
         <div
-          className="absolute -inset-16 rounded-[48px] transition-opacity duration-700"
+          className="absolute inset-8 rounded-[40px] transition-opacity duration-700"
           style={{
-            opacity: 0.55,
-            background: `conic-gradient(from 210deg at 60% 45%,
-              hsl(${palette.a} / 0.28) 0deg,
-              hsl(${palette.b} / 0.22) 110deg,
-              hsl(${palette.c} / 0.26) 220deg,
-              hsl(${palette.a} / 0.28) 360deg)`,
-            filter: "blur(60px) saturate(135%)",
+            background: `radial-gradient(ellipse at 50% 50%, hsl(${palette.a} / 0.18), hsl(${palette.c} / 0.10) 50%, transparent 75%)`,
+            filter: "blur(80px)",
             willChange: "opacity",
           }}
         />
 
-        {/* B — Side fresnel (left edge refraction) */}
-        <div
-          className="absolute top-[8%] bottom-[12%] -left-2 w-[10%] rounded-l-[28px] transition-opacity duration-700"
-          style={{
-            background: `linear-gradient(90deg, hsl(${palette.a} / 0.45), transparent 80%)`,
-            mixBlendMode: "screen",
-            filter: "blur(14px)",
-            opacity: 0.7,
-          }}
-        />
-        {/* B — Side fresnel (right edge refraction) */}
-        <div
-          className="absolute top-[8%] bottom-[12%] -right-2 w-[10%] rounded-r-[28px] transition-opacity duration-700"
-          style={{
-            background: `linear-gradient(270deg, hsl(${palette.c} / 0.45), transparent 80%)`,
-            mixBlendMode: "screen",
-            filter: "blur(14px)",
-            opacity: 0.7,
-          }}
-        />
-
-        {/* A — Caustic floor (light spilling under glass) */}
-        <div
-          className="absolute left-[8%] right-[8%] -bottom-6 h-[22%] rounded-full transition-opacity duration-700"
-          style={{
-            background: `radial-gradient(ellipse at 50% 30%,
-              hsl(${palette.a} / 0.55) 0%,
-              hsl(${palette.b} / 0.35) 35%,
-              hsl(${palette.c} / 0.20) 60%,
-              transparent 80%)`,
-            filter: "blur(34px) saturate(150%)",
-            opacity: 0.85,
-          }}
-        />
-
-        {/* E — Contact shadow (sharp ground anchor) */}
+        {/* Contact shadow (ground anchor) */}
         <div
           className="absolute left-[14%] right-[14%] -bottom-1 h-2 rounded-full"
           style={{
-            background: "hsl(220 30% 8% / 0.45)",
-            filter: "blur(10px)",
+            background: "hsl(220 30% 8% / 0.25)",
+            filter: "blur(14px)",
           }}
         />
       </div>
@@ -196,7 +156,7 @@ export function HeroMockCarousel() {
           className="absolute top-0 left-[10%] right-[10%] h-px pointer-events-none"
           style={{
             background:
-              "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.55), transparent)",
+              "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.35), transparent)",
           }}
         />
       </div>
