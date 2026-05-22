@@ -90,6 +90,11 @@ export function HeroMockCarousel() {
     { key: "dashboard", label: "Dashboard Financeiro", node: <MockDashboardCard /> },
   ];
 
+  // Per-slide tint palette (HSL stops)
+  const palette = selected === 0
+    ? { a: "199 89% 55%", b: "173 80% 45%", c: "221 85% 53%" } // demand: teal/primary
+    : { a: "221 85% 53%", b: "262 83% 58%", c: "199 89% 48%" }; // dashboard: primary/violet
+
   return (
     <div
       className="relative opacity-0 animate-fade-in-up hidden lg:block"
@@ -104,19 +109,73 @@ export function HeroMockCarousel() {
       aria-roledescription="carousel"
       aria-label="Prévia do produto"
     >
-      {/* Glow behind preview */}
+      {/* ── Liquid Glass 3D physical light system ── */}
       <div
-        className="absolute -inset-12 rounded-[40px] opacity-40 blur-3xl pointer-events-none transition-opacity duration-700"
-        style={{
-          background:
-            selected === 0
-              ? "radial-gradient(ellipse at 60% 40%, hsl(199 89% 48% / 0.28), hsl(173 80% 40% / 0.14), transparent 70%)"
-              : "radial-gradient(ellipse at 60% 40%, hsl(221 85% 53% / 0.25), hsl(173 80% 40% / 0.12), transparent 70%)",
-        }}
-      />
+        className="absolute inset-0 pointer-events-none"
+        aria-hidden="true"
+      >
+        {/* C — Atmospheric haze (conic, refraction tint) */}
+        <div
+          className="absolute -inset-16 rounded-[48px] transition-opacity duration-700"
+          style={{
+            opacity: 0.55,
+            background: `conic-gradient(from 210deg at 60% 45%,
+              hsl(${palette.a} / 0.28) 0deg,
+              hsl(${palette.b} / 0.22) 110deg,
+              hsl(${palette.c} / 0.26) 220deg,
+              hsl(${palette.a} / 0.28) 360deg)`,
+            filter: "blur(60px) saturate(135%)",
+            willChange: "opacity",
+          }}
+        />
+
+        {/* B — Side fresnel (left edge refraction) */}
+        <div
+          className="absolute top-[8%] bottom-[12%] -left-2 w-[10%] rounded-l-[28px] transition-opacity duration-700"
+          style={{
+            background: `linear-gradient(90deg, hsl(${palette.a} / 0.45), transparent 80%)`,
+            mixBlendMode: "screen",
+            filter: "blur(14px)",
+            opacity: 0.7,
+          }}
+        />
+        {/* B — Side fresnel (right edge refraction) */}
+        <div
+          className="absolute top-[8%] bottom-[12%] -right-2 w-[10%] rounded-r-[28px] transition-opacity duration-700"
+          style={{
+            background: `linear-gradient(270deg, hsl(${palette.c} / 0.45), transparent 80%)`,
+            mixBlendMode: "screen",
+            filter: "blur(14px)",
+            opacity: 0.7,
+          }}
+        />
+
+        {/* A — Caustic floor (light spilling under glass) */}
+        <div
+          className="absolute left-[8%] right-[8%] -bottom-6 h-[22%] rounded-full transition-opacity duration-700"
+          style={{
+            background: `radial-gradient(ellipse at 50% 30%,
+              hsl(${palette.a} / 0.55) 0%,
+              hsl(${palette.b} / 0.35) 35%,
+              hsl(${palette.c} / 0.20) 60%,
+              transparent 80%)`,
+            filter: "blur(34px) saturate(150%)",
+            opacity: 0.85,
+          }}
+        />
+
+        {/* E — Contact shadow (sharp ground anchor) */}
+        <div
+          className="absolute left-[14%] right-[14%] -bottom-1 h-2 rounded-full"
+          style={{
+            background: "hsl(220 30% 8% / 0.45)",
+            filter: "blur(10px)",
+          }}
+        />
+      </div>
 
       {/* Embla viewport */}
-      <div ref={emblaRef} className="overflow-hidden">
+      <div ref={emblaRef} className="overflow-hidden relative">
         <div className="flex">
           {slides.map((s) => (
             <div
@@ -125,10 +184,21 @@ export function HeroMockCarousel() {
               aria-roledescription="slide"
               aria-label={s.label}
             >
-              {s.node}
+              <div className="mx-auto max-w-[560px]">
+                {s.node}
+              </div>
             </div>
           ))}
         </div>
+
+        {/* D — Specular highlight (top arc of the glass) */}
+        <div
+          className="absolute top-0 left-[10%] right-[10%] h-px pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.55), transparent)",
+          }}
+        />
       </div>
 
       {/* Dots */}
