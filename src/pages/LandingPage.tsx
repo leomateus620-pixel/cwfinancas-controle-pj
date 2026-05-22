@@ -298,7 +298,7 @@ export default function LandingPage() {
 
       {/* Main content */}
       <main className="flex-1 flex items-center justify-center p-4 md:p-8 relative z-10">
-        <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-[1fr_1.1fr] gap-8 lg:gap-12 items-center">
+        <div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-[1.05fr_1fr] gap-8 lg:gap-16 xl:gap-20 items-center">
           {/* Left Column – Text & CTAs */}
           <div className="text-center lg:text-left space-y-7">
             {/* Logo */}
