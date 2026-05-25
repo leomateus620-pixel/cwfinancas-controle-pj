@@ -1,40 +1,69 @@
-## Ajustes finais no PDF do TCC
 
-Vou regerar `Viabilidade_Economica_Pesque-Pague_Santa_Rosa_RS.pdf` (mantendo o arquivo anterior como `_v1` para comparação) corrigindo os 5 pontos apontados.
+## PDF v3 — Viabilidade Econômica Pesque-Pague (gráficos 3D leves)
 
-### 1. Tabela 3 — Fluxo de caixa projetado
-- Colocar essa página específica em **paisagem (A4 landscape)** usando `NextPageTemplate`/`PageTemplate` do reportlab, com margens ABNT adaptadas (2 cm topo/base, 3 cm laterais).
-- Cabeçalhos em **duas linhas** com quebra explícita (`Fluxo\nlíquido`, `Fluxo\ndescontado`, `Acumulado\nsimples`, `Acumulado\ndescontado`) para nunca colarem.
-- Coluna “Ano” estreita; demais colunas com largura uniforme; alinhamento à direita nos valores; zebra discreta (cinza 5%) nas linhas pares.
-- Voltar para retrato logo após a tabela.
+Vou regerar o PDF como `Viabilidade_Economica_Pesque-Pague_Santa_Rosa_RS_v3.pdf`, mantendo todos os cálculos validados na v2 (VPL R$ 53.919,21; TIR 25,56%; payback simples 3,06 anos; descontado 4,15 anos) e refazendo a camada visual conforme especificação.
 
-### 2. Gráfico 5 — Payback por cenário
-- Remover a barra zero do cenário pessimista.
-- Plotar apenas duas barras (Realista e Otimista) com os pares Simples × Descontado.
-- Adicionar **nota abaixo do eixo X** (texto centralizado, fonte 9): *"No cenário pessimista, o investimento não é recuperado em 10 anos."*
-- Sem rótulo "Não recupera" sobreposto.
+### 1. Estética 3D leve (acadêmica)
 
-### 3. Gráfico 6 — Receita / Custos / Fluxo
-- Fonte dos rótulos das barras: 8 pt, cinza escuro, posicionados logo acima da barra (offset 2 pt).
-- Aumentar o espaçamento entre os grupos "Ano 1" e "Anos 2–10" (`width=0.22`, gap maior entre grupos).
-- Eixo Y com grid pontilhado claro; legenda compacta no topo.
+Aplicar nos gráficos 2, 3, 4, 5 e 6 (gráfico 1 permanece 2D):
 
-### 4. Padronização das fontes
-- Substituir todas as ocorrências de `Fonte: TCC (2026).` por:
-  `Fonte: Elaborado pelo autor com base nos itens 4.1, 4.2, 4.3 e 4.6 (2025).`
-- Aplicar a mesma string em todos os 6 gráficos e nas tabelas; ano **2025** (padronizado).
+- Barras renderizadas com matplotlib `bar3d` em projeção isométrica suave (elev=18, azim=-55), profundidade pequena (dy ≈ 0.35), sem brilho.
+- Sombra discreta usando offset cinza claro (alpha 0.15) projetada atrás de cada barra; faces frontais opacas, topos levemente mais claros para sensação de volume.
+- Fundo branco, grid `#E5E5E5` pontilhado fino, painéis laterais transparentes (`ax.xaxis.pane.fill = False`), eixos pretos finos.
+- Tipografia: Times New Roman 10 pt nos eixos e legendas, 11 pt nos rótulos das barras, sem negrito agressivo.
+- Sem gradientes, sem neon, sem cards.
 
-### 5. Quebra de página — gráfico + fonte + explicação juntos
-- Envolver cada bloco (título do gráfico, imagem, linha de fonte, parágrafo explicativo) em `KeepTogether`, **mas com a imagem já dimensionada em largura fixa** (15 cm em retrato, 24 cm na página landscape) — assim não repete o bug anterior de encolher para 5 mm.
-- Definir `Image(..., width=15*cm, height=...)` calculando altura a partir da proporção real do PNG salvo pelo matplotlib, evitando que o KeepTogether force redimensionamento.
-- Se o bloco não couber, ele migra inteiro para a próxima página (comportamento desejado pela banca).
+### 2. Paleta sóbria
 
-### Detalhes técnicos
+- Pessimista / negativo: `#8B1E1E`
+- Realista: `#1F3A5F`
+- Otimista: `#2F5D3A`
+- Fluxo acumulado: `#1A1A1A`
+- TMA / linha referência: cinza `#666666` tracejado
+- Receita (Gráfico 6): `#1F3A5F` · Custos: `#8B1E1E` · Fluxo líquido: `#2F5D3A`
 
-- `gen.py` revisado: função `make_block(title, img_path, caption, paragraph)` retornando `KeepTogether([...])` com imagem em tamanho real medido por PIL.
-- `BaseDocTemplate` com dois `PageTemplate`: `portrait` (padrão) e `landscape` (somente para a página da Tabela 3), alternados via `NextPageTemplate`.
-- Constante `FONTE_PADRAO = "Fonte: Elaborado pelo autor com base nos itens 4.1, 4.2, 4.3 e 4.6 (2025)."`.
-- Gráfico 5: recriar dados como `cenarios = [("Realista", 3.06, 4.15), ("Otimista", 1.58, 1.98)]` e `fig.text(0.5, 0.02, nota, ha='center', fontsize=9, style='italic')`.
-- Gráfico 6: `bar(..., width=0.22)`, `ax.bar_label(..., fontsize=8, padding=2, fmt=brl)`, grupos separados por gap visual maior.
-- QA obrigatório: rodar `pdftoppm -jpeg -r 150` e revisar **todas** as páginas (retrato e landscape) verificando colunas da tabela, ausência de "Não recupera", fonte padronizada, e que cada gráfico está na mesma página da sua explicação. Iterar até passar limpo.
-- Entrega: novo `Viabilidade_Economica_Pesque-Pague_Santa_Rosa_RS_v2.pdf` via `<presentation-artifact>`.
+### 3. Gráficos
+
+| Nº | Tipo | Conteúdo | Observações |
+|----|------|----------|-------------|
+| 1 | 2D | Fluxo líquido (barras) + acumulado (linha) | Reforçar contraste da linha (2 pt, marker losango no ano de payback simples), linha y=0 sólida cinza |
+| 2 | 3D leve | Payback simples × descontado (realista) | 2 barras, eixo Y em "anos", rótulos `3,06 anos` / `4,15 anos` |
+| 3 | 3D leve | VPL por cenário | 3 colunas (-51.479,07 / 53.919,21 / 142.809,36), linha y=0 visível, coluna pessimista desce abaixo de zero, rótulo BRL acima/abaixo |
+| 4 | 3D leve | TIR por cenário vs TMA | -13,17% / 25,56% / 47,61%; linha tracejada cinza em 10%, rótulos 2 casas decimais, nota lateral indicando atratividade quando TIR > TMA |
+| 5 | 3D leve agrupado | Payback por cenário | Só Realista e Otimista (simples × descontado). Nota abaixo: *"No cenário pessimista, o investimento não é recuperado dentro do horizonte de 10 anos."* |
+| 6 | 3D leve agrupado | Receita / Custos / Fluxo líquido | Grupos "Ano 1" e "Anos 2 a 10" bem separados (gap maior), rótulos 8 pt acima das barras |
+
+### 4. Padronização de fontes (legendas abaixo dos gráficos)
+
+- G1: `Fonte: Elaborado pelo autor com base nos itens 4.1, 4.2, 4.3 e 4.6 (2026).`
+- G2 e G5: `Fonte: Elaborado pelo autor com base nos itens 2.2.4, 4.1, 4.2, 4.3 e 4.6 (2026).`
+- G3 e G4: `Fonte: Elaborado pelo autor com base nos itens 2.2.5, 4.1, 4.2, 4.3 e 4.6 (2026).`
+- G6: `Fonte: Elaborado pelo autor com base nas Tabelas 1, 2 e 4, no item 4.3 e no item 4.6 (2026).`
+- Tabelas: mesma família, ajustada ao conteúdo.
+- Ano padronizado em **2026** (atualizando o ano 2025 da v2).
+
+### 5. Layout ABNT/UFFS
+
+- Margens 3/2/3/2 cm (esquerda/direita/topo/base), Times New Roman 12 pt corpo, 11 pt rodapé/fonte de gráfico.
+- Cada bloco `KeepTogether([título, imagem 15 cm, fonte, parágrafo explicativo])` para nunca quebrar entre página.
+- Imagens dimensionadas com altura calculada via PIL a partir do PNG real (sem o bug de encolhimento).
+- Tabela 3 (fluxo de caixa) mantida em **A4 paisagem** com cabeçalho em duas linhas e zebra 5%, como na v2.
+
+### 6. Implementação técnica (`gen.py`)
+
+- Refatorar funções de gráfico para usar `mpl_toolkits.mplot3d` com `bar3d`; helper `draw_bar3d(ax, xs, heights, color, depth=0.35)` que também desenha sombra (`Poly3DCollection` alpha 0.15) atrás de cada barra.
+- Renderização em 300 dpi, salvar em `/tmp/charts_v3/*.png`.
+- Constantes `FONTE_G1`, `FONTE_G2_5`, `FONTE_G3_4`, `FONTE_G6`, `FONTE_TABELAS`.
+- `BaseDocTemplate` reaproveitado da v2 (portrait + landscape via `NextPageTemplate`).
+- Conferir TIR pessimista (-13,17%): ajustar bisseção com bracket [-0.95, 0.10] para capturar raiz negativa; logar valor.
+
+### 7. QA obrigatório
+
+- `pdftoppm -jpeg -r 150 .../v3.pdf /tmp/qa_v3/page` e inspeção página a página.
+- Checklist: nenhum rótulo cortado, nenhum "Não recupera" sobreposto, linha TMA visível no G4, linha zero do G3 visível, tabela de fluxo legível em paisagem, fontes padronizadas, blocos (gráfico + fonte + parágrafo) sempre juntos.
+- Iterar até passar limpo.
+
+### 8. Entrega
+
+- Manter `_v1.pdf` e `_v2.pdf` para comparação.
+- Novo arquivo: `Viabilidade_Economica_Pesque-Pague_Santa_Rosa_RS_v3.pdf` em `/mnt/documents/`, entregue via `<presentation-artifact>`.
