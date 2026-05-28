@@ -1,2 +1,53 @@
 import { Button } from "@/components/ui/button";
-export function MeetingRecorderPanel({status,start,pause,finish,error}:{status:string;start:()=>void;pause:()=>void;finish:()=>void;error?:string|null}){return <div className="rounded-2xl border bg-white/70 p-4 space-y-2"><div className="font-medium">Modo reunião</div><div className="text-sm">Status: {status}</div>{error && <div className="text-sm text-red-600">{error}</div>}<div className="flex gap-2"><Button onClick={start}>Iniciar reunião</Button><Button variant="outline" onClick={pause}>Pausar</Button><Button variant="destructive" onClick={finish}>Finalizar reunião</Button></div></div>}
+import type { MeetingStatus } from "../hooks/useMeetingRecorder";
+
+interface MeetingRecorderPanelProps {
+  status: MeetingStatus;
+  start: () => void;
+  pause: () => void;
+  resume: () => void;
+  finish: () => void;
+  error?: string | null;
+}
+
+export function MeetingRecorderPanel({
+  status,
+  start,
+  pause,
+  resume,
+  finish,
+  error,
+}: MeetingRecorderPanelProps) {
+  return (
+    <div className="liquid-glass space-y-3 rounded-2xl p-4 md:p-5">
+      <div>
+        <div className="text-base font-semibold">Modo reunião</div>
+        <div className="text-sm text-muted-foreground">Status: {status}</div>
+      </div>
+
+      {error ? <div className="text-sm text-red-600">{error}</div> : null}
+
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={start} disabled={status === "recording" || status === "finishing"}>
+          Iniciar reunião
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={status === "paused" ? resume : pause}
+          disabled={status === "idle" || status === "blocked" || status === "finishing"}
+        >
+          {status === "paused" ? "Retomar" : "Pausar"}
+        </Button>
+
+        <Button
+          variant="destructive"
+          onClick={finish}
+          disabled={status === "idle" || status === "blocked" || status === "finishing"}
+        >
+          {status === "finishing" ? "Finalizando..." : "Finalizar reunião"}
+        </Button>
+      </div>
+    </div>
+  );
+}
