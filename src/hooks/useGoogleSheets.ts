@@ -118,11 +118,13 @@ export function useGoogleSheets() {
       const { data, error } = await supabase
         .from("google_sheet_connections")
         .select("*")
+        .or("purpose.eq.financial,purpose.is.null")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       return data as GoogleSheetConnection[];
     },
+
     enabled: !!session,
   });
 

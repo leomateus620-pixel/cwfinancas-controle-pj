@@ -7,7 +7,7 @@ import { ReportPdfPreview } from "@/features/reports-meetings/components/ReportP
 import { MeetingsHistoryPanel } from "@/features/reports-meetings/components/MeetingsHistoryPanel";
 import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
 import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
-import { SourceSelectorCard } from "@/features/reports-meetings/components/SourceSelectorCard";
+import { MeetingSourcePickerCard } from "@/features/reports-meetings/components/MeetingSourcePickerCard";
 import { useMeetingRecorder } from "@/features/reports-meetings/hooks/useMeetingRecorder";
 
 export default function ReportsMeetingsPage() {
@@ -27,7 +27,7 @@ export default function ReportsMeetingsPage() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
         <div className="space-y-4">
-          <SourceSelectorCard />
+          <MeetingSourcePickerCard />
           <PreMeetingReportPanel />
           <MeetingRecorderPanel
             status={recorder.status}

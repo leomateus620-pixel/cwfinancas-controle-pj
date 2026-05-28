@@ -13,9 +13,11 @@ export function useActiveConnection() {
         .from("google_sheet_connections")
         .select("id, spreadsheet_name, spreadsheet_id")
         .eq("user_id", user.id)
+        .or("purpose.eq.financial,purpose.is.null")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
+
       if (error) throw error;
       return data;
     },

@@ -1632,6 +1632,7 @@ export type Database = {
           last_source_fingerprint: string | null
           last_sync_at: string | null
           lock_until: string | null
+          purpose: string
           refresh_token: string
           sheet_name: string | null
           spreadsheet_id: string
@@ -1653,6 +1654,7 @@ export type Database = {
           last_source_fingerprint?: string | null
           last_sync_at?: string | null
           lock_until?: string | null
+          purpose?: string
           refresh_token: string
           sheet_name?: string | null
           spreadsheet_id: string
@@ -1674,6 +1676,7 @@ export type Database = {
           last_source_fingerprint?: string | null
           last_sync_at?: string | null
           lock_until?: string | null
+          purpose?: string
           refresh_token?: string
           sheet_name?: string | null
           spreadsheet_id?: string
@@ -1911,6 +1914,8 @@ export type Database = {
           metadata: Json
           participants: Json
           pre_report_id: string | null
+          source_connection_id: string | null
+          source_sheet_tabs: Json
           started_at: string | null
           status: string
           summary_error: string | null
@@ -1944,6 +1949,8 @@ export type Database = {
           metadata?: Json
           participants?: Json
           pre_report_id?: string | null
+          source_connection_id?: string | null
+          source_sheet_tabs?: Json
           started_at?: string | null
           status?: string
           summary_error?: string | null
@@ -1977,6 +1984,8 @@ export type Database = {
           metadata?: Json
           participants?: Json
           pre_report_id?: string | null
+          source_connection_id?: string | null
+          source_sheet_tabs?: Json
           started_at?: string | null
           status?: string
           summary_error?: string | null
