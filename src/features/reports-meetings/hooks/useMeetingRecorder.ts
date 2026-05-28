@@ -1,6 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+const db = supabase as any;
+
 export type MeetingStatus = "idle" | "recording" | "paused" | "finishing" | "blocked";
 
 export interface TopicSummary {
@@ -97,7 +99,7 @@ async function createDatabaseSession(title: string): Promise<StartSessionResult>
   const user = authData.user;
   if (authError || !user) throw new Error("Usuário não autenticado para abrir sessão da reunião.");
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("meeting_sessions")
     .insert({
       user_id: user.id,
@@ -110,7 +112,7 @@ async function createDatabaseSession(title: string): Promise<StartSessionResult>
 
   if (error) throw error;
 
-  const { error: auditError } = await supabase.from("meeting_audit_logs").insert({
+  const { error: auditError } = await db.from("meeting_audit_logs").insert({
     user_id: user.id,
     entity_type: "meeting_session",
     entity_id: data.id,
@@ -158,7 +160,7 @@ async function openMeetingSession(title: string): Promise<StartSessionResult> {
 }
 
 async function finalizeDatabaseSession(sessionId: string, transcript: string, topicSummary: TopicSummary) {
-  const { error } = await supabase
+  const { error } = await db
     .from("meeting_sessions")
     .update({
       status: "finished",
