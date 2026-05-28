@@ -40,7 +40,7 @@ export function useMeetingRecorder() {
   const audioChunksRef = useRef<string[]>([]);
   const transcriptLinesRef = useRef<string[]>([]);
   const confirmedTranscriptRef = useRef<string[]>([]);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
