@@ -39,15 +39,18 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const auth = req.headers.get("Authorization");
-  if (!auth) return new Response(JSON.stringify({ error: "JWT obrigatório" }), { status: 401, headers: corsHeaders });
+  if (!auth?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "JWT obrigatório" }), { status: 401, headers: corsHeaders });
+  }
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
     global: { headers: { Authorization: auth } },
   });
 
-  const { data: userData } = await supabase.auth.getUser();
+  const token = auth.replace("Bearer ", "");
+  const { data: userData, error: authErr } = await supabase.auth.getUser(token);
   const user = userData.user;
-  if (!user) {
+  if (authErr || !user) {
     return new Response(JSON.stringify({ error: "Usuário não autenticado" }), { status: 401, headers: corsHeaders });
   }
 
