@@ -186,21 +186,32 @@ export function useMeetingRecorder() {
 
   const start = async () => {
     setStatus("idle"); setPermissionError(null); setTranscriptLines([]); transcriptLinesRef.current = []; confirmedTranscriptRef.current = []; setInterimTranscript(""); lastInterimTranscriptRef.current = ""; setManualTranscript(""); setDurationMs(0); setRecognitionRestarted(false); setRecognitionUnstable(false); setFinalizationStage("inativo");
+    setCloudError(null);
+    setCloudStatus("pending");
     let sessionId: string | null = null;
     try {
       const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` } });
       if (error) throw error;
       sessionId = typeof data?.meeting_session_id === "string" ? data.meeting_session_id : null;
-    } catch {}
+    } catch (e) {
+      setCloudError(`start_session falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+    }
     if (!sessionId) {
       try {
-        const { data, error } = await db.from("meeting_sessions").insert({ title: `Reunião ${new Date().toLocaleString("pt-BR")}`, status: "recording", started_at: new Date().toISOString() }).select("id").single();
-        if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); }
-      } catch {}
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData.user) {
+          const { data, error } = await db.from("meeting_sessions").insert({ user_id: authData.user.id, title: `Reunião ${new Date().toLocaleString("pt-BR")}`, status: "recording", started_at: new Date().toISOString() }).select("id").single();
+          if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); setCloudStatus("active"); }
+          else setCloudError(`insert direto falhou: ${error.message}`);
+        }
+      } catch (e) {
+        setCloudError(`fallback insert falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+      }
     }
     if (!sessionId) { setPersistenceMode("local"); setCloudStatus("local"); setPermissionError("Sessão backend ausente. Finalização será local."); }
     else if (persistenceMode !== "database") { setPersistenceMode("edge"); setCloudStatus("active"); }
     setMeetingSessionId(sessionId);
+    queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     if (typeof MediaRecorder !== "undefined") {
