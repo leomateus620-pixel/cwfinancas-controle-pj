@@ -1893,17 +1893,27 @@ export type Database = {
         Row: {
           action_items: Json
           adjustments: Json
+          audio_chunks: string[]
+          audio_purged_at: string | null
           audio_storage_path: string | null
           company_id: string | null
           created_at: string
           decisions: Json
+          description: string | null
+          duration_seconds: number
           ended_at: string | null
           id: string
+          language: string
+          last_autosave_at: string | null
+          live_transcript_segments: string[]
           mentioned_numbers: Json
+          metadata: Json
           participants: Json
           pre_report_id: string | null
           started_at: string | null
           status: string
+          summary_generated_at: string | null
+          summary_markdown: string | null
           title: string
           transcript_segments: Json
           transcript_text: string | null
@@ -1913,17 +1923,27 @@ export type Database = {
         Insert: {
           action_items?: Json
           adjustments?: Json
+          audio_chunks?: string[]
+          audio_purged_at?: string | null
           audio_storage_path?: string | null
           company_id?: string | null
           created_at?: string
           decisions?: Json
+          description?: string | null
+          duration_seconds?: number
           ended_at?: string | null
           id?: string
+          language?: string
+          last_autosave_at?: string | null
+          live_transcript_segments?: string[]
           mentioned_numbers?: Json
+          metadata?: Json
           participants?: Json
           pre_report_id?: string | null
           started_at?: string | null
           status?: string
+          summary_generated_at?: string | null
+          summary_markdown?: string | null
           title: string
           transcript_segments?: Json
           transcript_text?: string | null
@@ -1933,17 +1953,27 @@ export type Database = {
         Update: {
           action_items?: Json
           adjustments?: Json
+          audio_chunks?: string[]
+          audio_purged_at?: string | null
           audio_storage_path?: string | null
           company_id?: string | null
           created_at?: string
           decisions?: Json
+          description?: string | null
+          duration_seconds?: number
           ended_at?: string | null
           id?: string
+          language?: string
+          last_autosave_at?: string | null
+          live_transcript_segments?: string[]
           mentioned_numbers?: Json
+          metadata?: Json
           participants?: Json
           pre_report_id?: string | null
           started_at?: string | null
           status?: string
+          summary_generated_at?: string | null
+          summary_markdown?: string | null
           title?: string
           transcript_segments?: Json
           transcript_text?: string | null

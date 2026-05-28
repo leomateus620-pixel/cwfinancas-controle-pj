@@ -1,42 +1,121 @@
-## Diagnóstico
+# Suporte à Nuvem no menu de Reuniões
 
-A mensagem **"Failed to send a request to the Edge Function"** aparece quando o `supabase.functions.invoke` falha no `fetch` (rede/CORS), antes de receber uma resposta HTTP utilizável.
+## Objetivo
+Tornar o menu de Reuniões 100% nuvem: corrigir o bug "Sessão backend ausente", armazenar o áudio durante a gravação, gerar **descrição curta + resumo estruturado** via IA ao finalizar, e manter um **histórico consultável** com apenas descrição e resumo (áudio descartado após o processamento, conforme solicitado).
 
-Testei a função diretamente com `curl_edge_functions` (autenticado) e ela responde **200 OK** retornando `meeting_session_id`. Ou seja, o código da função está correto, a tabela `meeting_sessions` recebe o insert, e os GRANTs aplicados no último migration estão funcionando.
+---
 
-O problema está na configuração de gateway:
+## 1. Causa do erro atual (validado)
+O painel mostra "Sessão backend ausente" porque a tabela `meeting_sessions` está sem colunas que o autosave/finalize usam (`duration_seconds`, `audio_chunks`, `last_autosave_at`, `metadata`, `live_transcript_segments`). O `start_session` em si funciona, mas o autosave subsequente quebra e o hook degrada para modo local. Também não existe nenhum fluxo de **resumo persistido** nem **listagem de gravações**.
 
-- `supabase/config.toml` lista todas as edge functions do projeto com `verify_jwt = false` (google-*, asana-*, dre-sync, etc.).
-- As três funções novas do módulo de reuniões **não estão registradas**: `reports-meetings-transcribe`, `reports-meetings-generate`, `reports-meetings-compare`.
-- Sem o bloco no `config.toml`, o gateway aplica `verify_jwt = true` por padrão. Quando o navegador envia o request (mesmo logado), a validação JWT acontece **antes** do código da função rodar, e em caso de rejeição o gateway responde **sem os CORS headers**. O browser então bloqueia a resposta e o cliente `supabase-js` lança exatamente a mensagem `Failed to send a request to the Edge Function` (FunctionsFetchError).
-- O `curl` funciona porque não passa por CORS de browser.
+---
 
-A função já valida o JWT internamente via `authClient.auth.getUser(token)`, então desabilitar a verificação de gateway é seguro e segue o mesmo padrão usado nas demais funções do projeto.
+## 2. Mudanças no backend (Lovable Cloud)
 
-## Correção
+### 2.1. Migração `meeting_sessions`
+Adicionar colunas que faltam + colunas do novo fluxo:
+- `duration_seconds INT DEFAULT 0`
+- `audio_chunks TEXT[] DEFAULT '{}'`
+- `last_autosave_at TIMESTAMPTZ`
+- `metadata JSONB DEFAULT '{}'`
+- `live_transcript_segments TEXT[] DEFAULT '{}'`
+- `description TEXT` — frase única, ~200 chars, gerada por IA
+- `summary_markdown TEXT` — resumo estruturado (tópicos, decisões, ações, números)
+- `summary_generated_at TIMESTAMPTZ`
+- `audio_purged_at TIMESTAMPTZ` — marca quando o áudio bruto foi removido
+- `language TEXT DEFAULT 'pt-BR'`
 
-1. **Adicionar ao `supabase/config.toml`** os três blocos faltantes:
-   ```toml
-   [functions.reports-meetings-transcribe]
-   verify_jwt = false
+Índice: `(user_id, started_at DESC)` para o histórico.
 
-   [functions.reports-meetings-generate]
-   verify_jwt = false
+GRANTs já existem; políticas RLS owner-only permanecem.
 
-   [functions.reports-meetings-compare]
-   verify_jwt = false
-   ```
+### 2.2. Bucket `meeting-reports` (já existe, privado)
+Políticas de storage (owner-only por prefixo `{user_id}/...`):
+- SELECT/INSERT/UPDATE/DELETE somente quando `(storage.foldername(name))[1] = auth.uid()::text`.
 
-2. **Redeploy** das três funções para aplicar a nova configuração de gateway.
+Os chunks de áudio continuam temporários: usados apenas para gerar transcrição/resumo e depois apagados.
 
-## Validação
+### 2.3. Edge Functions
 
-- `supabase--curl_edge_functions` em `/reports-meetings-transcribe` com `start_session` → esperar 200 + `meeting_session_id`.
-- Conferir nos logs da edge function `booted` recente após o deploy.
-- Testar no preview clicando em **Iniciar reunião**: status deve ir para `Gravando` (sem o erro vermelho). Em ambiente sem microfone, o banner âmbar de "modo demonstração" aparece, mas a sessão é criada normalmente.
-- `supabase--read_query` em `meeting_sessions ORDER BY created_at DESC LIMIT 3` confirmando a linha inserida com `status = recording`.
-- Clicar **Finalizar reunião** e validar que `meeting_audit_logs` recebe `meeting_finished`.
+**`reports-meetings-transcribe`** (existente — ajustes)
+- Manter `start_session` / `autosave_session` / `finalize_session`.
+- No `finalize_session`, após persistir transcrição, **invocar internamente** `reports-meetings-summarize` (fire-and-forget com `await` curto + timeout) para gerar descrição + resumo.
+- Retornar `meeting_session_id`, `status`, `description`, `summary_markdown` quando disponíveis.
 
-## Escopo
+**`reports-meetings-summarize`** (novo)
+- Input: `{ meeting_session_id }`.
+- Lê `transcript_text`. Chama Lovable AI Gateway (`google/gemini-2.5-flash`) com prompt estruturado pt-BR pedindo:
+  1. `description`: 1 frase objetiva (≤ 240 chars)
+  2. `summary_markdown`: tópicos discutidos, decisões, ações (responsável + prazo quando citados), números/valores mencionados, próximos passos
+- Persiste `description`, `summary_markdown`, `summary_generated_at`.
+- Após sucesso, chama `purge_audio` (abaixo).
+- Auth: `verify_jwt = false` + validação manual com `authClient.auth.getUser(token)` + CORS completo (padrão do projeto).
 
-Apenas configuração de gateway das três funções do módulo. Sem mudanças no hook do recorder, no painel, no edge code ou no banco — todos os fixes anteriores permanecem.
+**`reports-meetings-purge-audio`** (novo, interno)
+- Lista objetos em `meeting-reports/{user_id}/{session_id}/audio/` e remove via `storage.from('meeting-reports').remove(...)`.
+- Marca `audio_purged_at = now()`, limpa `audio_chunks` e `audio_storage_path`.
+- Idempotente — pode ser chamado também pelo botão "Apagar áudio agora".
+
+**`reports-meetings-list`** (novo, leitura)
+- Retorna histórico paginado do usuário: `id, title, started_at, ended_at, duration_seconds, description, status, summary_generated_at, audio_purged_at`. (Sem `transcript_text` nem `summary_markdown` para reduzir payload.)
+
+**`reports-meetings-detail`** (novo, leitura)
+- Retorna a reunião completa (inclui `summary_markdown`) sob demanda quando o usuário abre o card no histórico.
+
+**`reports-meetings-delete`** (novo)
+- Apaga áudio remanescente + remove a linha de `meeting_sessions` (owner-only).
+
+Registrar todas as novas funções em `supabase/config.toml` com `verify_jwt = false` (padrão Lovable atual) — o JWT é validado dentro do código.
+
+---
+
+## 3. Mudanças no frontend
+
+### 3.1. Hook `useMeetingRecorder`
+- Corrigir o motivo do "Sessão backend ausente": as novas colunas removem o erro silencioso do autosave; manter o fallback local apenas para casos sem rede.
+- Após `finish()`, fazer polling curto (até 12s) por `description`/`summary_markdown` e exibir no painel.
+- Botão extra "Gerar resumo novamente" chama `reports-meetings-summarize`.
+
+### 3.2. `MeetingRecorderPanel`
+- Substituir o aviso atual de fallback local pelo estado real do backend (badge "Salvo na Nuvem ✓" quando há `meeting_session_id`).
+- Após finalização: card com **Descrição** (1 linha) + **Resumo** (markdown) + chip "Áudio descartado após processamento" quando `audio_purged_at` está preenchido.
+
+### 3.3. Nova seção `MeetingsHistoryPanel` (em `ReportsMeetingsPage`)
+- Lista (via `reports-meetings-list`) ordenada por data desc com:
+  - Título + data + duração formatada
+  - Descrição (1 linha) com `line-clamp-2`
+  - Botão "Ver resumo completo" → modal/expand carregando `reports-meetings-detail`
+  - Ação "Excluir" (confirmação) → `reports-meetings-delete`
+- Estados Loading / Error / Empty obrigatórios (regra Core do projeto).
+- Mobile-friendly, segue Liquid Glass Premium (GlassCard, tabular-nums em duração).
+
+### 3.4. Tipos & queries
+- `useMeetingsLibrary` (React Query, key `["meetings-library"]`) com `staleTime: 60_000`.
+- Invalidar após `finish()` e após exclusão.
+
+---
+
+## 4. Política de retenção (importante)
+Por pedido explícito do usuário, **apenas descrição e resumo ficam persistidos**. O áudio é:
+1. Gravado em chunks no bucket privado durante a sessão (necessário para resiliência).
+2. Usado para gerar/melhorar a transcrição.
+3. **Removido automaticamente** logo após `summarize` concluir com sucesso.
+4. Transcrição bruta (`transcript_text`) permanece em banco para permitir regenerar resumo; pode ser ocultada da UI (somente descrição + summary_markdown aparecem ao usuário).
+
+---
+
+## 5. Validação
+1. `supabase--curl_edge_functions` em `start_session` → 200 + `meeting_session_id`.
+2. `autosave_session` → 200 (colunas novas).
+3. `finalize_session` em sessão com transcrição mock → retorna `description` + `summary_markdown`; `audio_purged_at` setado; bucket `meeting-reports/{uid}/{sid}/audio/` vazio.
+4. `reports-meetings-list` retorna a sessão recém-criada.
+5. UI: gravar 30s no preview → status "Salvo na Nuvem ✓" → finalizar → ver descrição + resumo → recarregar página → reunião aparece no histórico.
+6. Excluir reunião → some da lista e bucket limpo.
+
+---
+
+## 6. Fora de escopo
+- Reprocessamento por IA mais avançado (Whisper server-side) — fica para iteração futura; o pipeline já está preparado para troca de modelo.
+- Compartilhamento entre usuários — mantém owner-only.
+
+Aprove para eu implementar nessa ordem: migração → edge functions → hook/painel → histórico → validação.
