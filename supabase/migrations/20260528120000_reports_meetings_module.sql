@@ -1,55 +1,115 @@
-create table if not exists meeting_sources (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
-  company_id uuid null,
-  source_type text not null check (source_type in ('google_sheets','google_docs','manual')),
+-- Idempotent safety migration for the Reports & Meetings module.
+-- The base schema is created by 20260528053113_56cd874c-efbf-4fec-a2d0-7ede898cabb8.sql.
+-- This migration intentionally avoids `CREATE POLICY IF NOT EXISTS`, which is not valid
+-- PostgreSQL syntax and can break Supabase migration/deploy pipelines.
+
+CREATE TABLE IF NOT EXISTS public.meeting_sources (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  company_id uuid NULL,
+  source_type text NOT NULL CHECK (source_type IN ('google_sheets','google_docs','manual')),
   external_id text,
-  external_name text not null,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  external_name text NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-create table if not exists pre_meeting_reports (
-  id uuid primary key default gen_random_uuid(), user_id uuid not null, company_id uuid null, title text not null,
-  period_start date, period_end date, source_ids uuid[] default '{}', status text not null default 'draft' check (status in ('draft','processing','ready','error')),
-  executive_summary text, report_json jsonb not null default '{}'::jsonb, insights jsonb not null default '[]'::jsonb, risks jsonb not null default '[]'::jsonb,
-  suggested_agenda jsonb not null default '[]'::jsonb, pdf_storage_path text, error_message text,
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.pre_meeting_reports (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  company_id uuid NULL,
+  title text NOT NULL,
+  period_start date,
+  period_end date,
+  source_ids uuid[] DEFAULT '{}',
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','processing','ready','error')),
+  executive_summary text,
+  report_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  insights jsonb NOT NULL DEFAULT '[]'::jsonb,
+  risks jsonb NOT NULL DEFAULT '[]'::jsonb,
+  suggested_agenda jsonb NOT NULL DEFAULT '[]'::jsonb,
+  pdf_storage_path text,
+  error_message text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-create table if not exists meeting_sessions (
-  id uuid primary key default gen_random_uuid(), user_id uuid not null, company_id uuid null, pre_report_id uuid references pre_meeting_reports(id) on delete set null,
-  title text not null, status text not null default 'scheduled' check (status in ('scheduled','recording','processing','finished','error','waiting_transcription')),
-  started_at timestamptz, ended_at timestamptz, transcript_text text, transcript_segments jsonb not null default '[]'::jsonb, audio_storage_path text,
-  action_items jsonb not null default '[]'::jsonb, decisions jsonb not null default '[]'::jsonb, mentioned_numbers jsonb not null default '[]'::jsonb,
-  adjustments jsonb not null default '[]'::jsonb, participants jsonb not null default '[]'::jsonb, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.meeting_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  company_id uuid NULL,
+  pre_report_id uuid REFERENCES public.pre_meeting_reports(id) ON DELETE SET NULL,
+  title text NOT NULL,
+  status text NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','recording','processing','finished','error','waiting_transcription')),
+  started_at timestamptz,
+  ended_at timestamptz,
+  transcript_text text,
+  transcript_segments jsonb NOT NULL DEFAULT '[]'::jsonb,
+  audio_storage_path text,
+  action_items jsonb NOT NULL DEFAULT '[]'::jsonb,
+  decisions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  mentioned_numbers jsonb NOT NULL DEFAULT '[]'::jsonb,
+  adjustments jsonb NOT NULL DEFAULT '[]'::jsonb,
+  participants jsonb NOT NULL DEFAULT '[]'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-create table if not exists meeting_comparisons (
-  id uuid primary key default gen_random_uuid(), user_id uuid not null, company_id uuid null,
-  meeting_session_id uuid references meeting_sessions(id) on delete cascade, pre_report_id uuid references pre_meeting_reports(id) on delete set null,
-  status text not null default 'processing' check (status in ('processing','ready','error')), alignment_score numeric,
-  matched_points jsonb not null default '[]'::jsonb, divergences jsonb not null default '[]'::jsonb, new_decisions jsonb not null default '[]'::jsonb,
-  financial_impacts jsonb not null default '[]'::jsonb, final_summary text, final_pdf_storage_path text, error_message text,
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.meeting_comparisons (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  company_id uuid NULL,
+  meeting_session_id uuid REFERENCES public.meeting_sessions(id) ON DELETE CASCADE,
+  pre_report_id uuid REFERENCES public.pre_meeting_reports(id) ON DELETE SET NULL,
+  status text NOT NULL DEFAULT 'processing' CHECK (status IN ('processing','ready','error')),
+  alignment_score numeric,
+  matched_points jsonb NOT NULL DEFAULT '[]'::jsonb,
+  divergences jsonb NOT NULL DEFAULT '[]'::jsonb,
+  new_decisions jsonb NOT NULL DEFAULT '[]'::jsonb,
+  financial_impacts jsonb NOT NULL DEFAULT '[]'::jsonb,
+  final_summary text,
+  final_pdf_storage_path text,
+  error_message text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-create table if not exists meeting_audit_logs (
-  id uuid primary key default gen_random_uuid(), user_id uuid not null, entity_type text not null, entity_id uuid, action text not null,
-  metadata jsonb not null default '{}'::jsonb, created_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS public.meeting_audit_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  entity_type text NOT NULL,
+  entity_id uuid,
+  action text NOT NULL,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
-alter table meeting_sources enable row level security;
-alter table pre_meeting_reports enable row level security;
-alter table meeting_sessions enable row level security;
-alter table meeting_comparisons enable row level security;
-alter table meeting_audit_logs enable row level security;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.meeting_sources TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.pre_meeting_reports TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.meeting_sessions TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.meeting_comparisons TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.meeting_audit_logs TO authenticated;
+GRANT ALL ON public.meeting_sources, public.pre_meeting_reports, public.meeting_sessions, public.meeting_comparisons, public.meeting_audit_logs TO service_role;
 
-create policy if not exists "meeting_sources_owner" on meeting_sources for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy if not exists "pre_meeting_reports_owner" on pre_meeting_reports for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy if not exists "meeting_sessions_owner" on meeting_sessions for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy if not exists "meeting_comparisons_owner" on meeting_comparisons for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy if not exists "meeting_audit_logs_owner" on meeting_audit_logs for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+ALTER TABLE public.meeting_sources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pre_meeting_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meeting_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meeting_comparisons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meeting_audit_logs ENABLE ROW LEVEL SECURITY;
 
-insert into storage.buckets (id, name, public) values ('meeting-reports','meeting-reports', false) on conflict (id) do nothing;
+DROP POLICY IF EXISTS meeting_sources_owner ON public.meeting_sources;
+DROP POLICY IF EXISTS pre_meeting_reports_owner ON public.pre_meeting_reports;
+DROP POLICY IF EXISTS meeting_sessions_owner ON public.meeting_sessions;
+DROP POLICY IF EXISTS meeting_comparisons_owner ON public.meeting_comparisons;
+DROP POLICY IF EXISTS meeting_audit_logs_owner ON public.meeting_audit_logs;
+
+CREATE POLICY meeting_sources_owner ON public.meeting_sources FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY pre_meeting_reports_owner ON public.pre_meeting_reports FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY meeting_sessions_owner ON public.meeting_sessions FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY meeting_comparisons_owner ON public.meeting_comparisons FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY meeting_audit_logs_owner ON public.meeting_audit_logs FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('meeting-reports','meeting-reports', false)
+ON CONFLICT (id) DO NOTHING;

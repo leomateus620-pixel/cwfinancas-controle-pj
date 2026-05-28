@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+const db = supabase as any;
+
 export type MeetingStatus = "idle" | "recording" | "paused" | "finishing" | "blocked";
 
 export interface TopicSummary {
@@ -22,6 +24,16 @@ interface FinalizeSessionResponse {
   topic_summary: TopicSummary;
 }
 
+type SessionPersistenceMode = "edge" | "database" | "local";
+
+interface StartSessionResult {
+  id: string;
+  mode: SessionPersistenceMode;
+  warning: string | null;
+}
+
+const PUBLIC_URL = "https://cwfinancas-controle-pj.lovable.app/relatorios-reunioes";
+
 const mockRollingLines = [
   "Receita do mês ficou acima do previsto em 8%.",
   "Despesa com marketing subiu e precisa de revisão de contrato.",
@@ -33,34 +45,176 @@ const mockRollingLines = [
 
 const sanitizeText = (input: string) => input.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 
-const PUBLIC_URL = "https://cwfinancas-controle-pj.lovable.app/relatorios-reunioes";
+function summarizeError(err: unknown) {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "object" && err && "message" in err) {
+    return String((err as { message?: unknown }).message);
+  }
+  return "Erro desconhecido";
+}
+
+function createLocalId() {
+  if (globalThis.crypto?.randomUUID) return `local-${globalThis.crypto.randomUUID()}`;
+  return `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function describeMicError(err: unknown): string {
   if (!(err instanceof Error)) return "Não foi possível acessar o microfone.";
+
   const name = (err as DOMException).name;
+
   switch (name) {
     case "NotAllowedError":
     case "SecurityError":
-      return "Permissão de microfone negada. Libere o microfone nas configurações do navegador.";
+      return "Permissão de microfone negada. A reunião continuará em modo de acompanhamento; libere o microfone para capturar áudio real.";
     case "NotFoundError":
     case "OverconstrainedError":
-      return "Nenhum microfone foi detectado neste dispositivo.";
+      return "Nenhum microfone foi detectado. A reunião continuará em modo de acompanhamento.";
     case "NotReadableError":
-      return "O microfone está sendo usado por outro aplicativo.";
+      return "O microfone está sendo usado por outro aplicativo. A reunião continuará em modo de acompanhamento.";
     default:
-      return err.message || "Falha ao acessar o microfone.";
+      return err.message || "Falha ao acessar o microfone. A reunião continuará em modo de acompanhamento.";
   }
 }
 
-async function tryGetMic(): Promise<MediaStream | null> {
+function buildTopicSummary(text: string): TopicSummary {
+  const parts = text
+    .split(/[\n\.]/)
+    .map((x) => sanitizeText(x))
+    .filter(Boolean);
+
+  return {
+    decisions: parts.filter((p) => /decisão|decisao/i.test(p)),
+    actions: parts.filter((p) =>
+      /ação:|acao:|responsável|responsavel|prazo|ajustar|revisar/i.test(p),
+    ),
+    risks: parts.filter((p) => /risco|inadimpl|atraso|queda|negativo/i.test(p)),
+    numbers: parts.filter((p) => /\d/.test(p)),
+    points: parts.filter((p) => !/decisão|decisao|ação:|acao:|risco/i.test(p)),
+  };
+}
+
+async function getMicStream(): Promise<{ stream: MediaStream | null; warning: string | null }> {
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-    return null;
+    return {
+      stream: null,
+      warning: "Microfone não disponível neste navegador. A reunião continuará em modo de acompanhamento.",
+    };
   }
+
   try {
-    return await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch {
-    return null;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    return { stream, warning: null };
+  } catch (err) {
+    return { stream: null, warning: describeMicError(err) };
   }
+}
+
+async function createDatabaseSession(title: string): Promise<StartSessionResult> {
+  const { data: authData, error: authError } = await supabase.auth.getUser();
+  const user = authData.user;
+
+  if (authError || !user) {
+    throw new Error("Usuário não autenticado para abrir sessão da reunião.");
+  }
+
+  const { data, error } = await db
+    .from("meeting_sessions")
+    .insert({
+      user_id: user.id,
+      title: sanitizeText(title),
+      status: "recording",
+      started_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+
+  const { error: auditError } = await db.from("meeting_audit_logs").insert({
+    user_id: user.id,
+    entity_type: "meeting_session",
+    entity_id: data.id,
+    action: "meeting_started_frontend_fallback",
+    metadata: { source: "frontend_fallback" },
+  });
+
+  if (auditError) {
+    console.warn("[reports-meetings] audit log fallback failed", auditError.message);
+  }
+
+  return {
+    id: data.id,
+    mode: "database",
+    warning: "Edge Function indisponível. A reunião foi iniciada por fallback seguro direto no banco.",
+  };
+}
+
+async function openMeetingSession(title: string): Promise<StartSessionResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
+      body: {
+        action: "start_session",
+        title,
+      },
+    });
+
+    if (error) throw error;
+
+    const parsed = data as StartSessionResponse;
+
+    if (!parsed?.meeting_session_id) {
+      throw new Error("Resposta inválida da Edge Function.");
+    }
+
+    return {
+      id: parsed.meeting_session_id,
+      mode: "edge",
+      warning: null,
+    };
+  } catch (edgeError) {
+    console.warn(
+      "[reports-meetings] Edge Function start failed, trying database fallback",
+      summarizeError(edgeError),
+    );
+
+    try {
+      return await createDatabaseSession(title);
+    } catch (dbError) {
+      console.warn(
+        "[reports-meetings] database fallback failed, using local session",
+        summarizeError(dbError),
+      );
+
+      return {
+        id: createLocalId(),
+        mode: "local",
+        warning:
+          "Edge Function e banco não aceitaram a sessão. A reunião continuará localmente; o resumo não será salvo até a infraestrutura ser publicada.",
+      };
+    }
+  }
+}
+
+async function finalizeDatabaseSession(
+  sessionId: string,
+  transcript: string,
+  topicSummary: TopicSummary,
+) {
+  const { error } = await db
+    .from("meeting_sessions")
+    .update({
+      status: "finished",
+      ended_at: new Date().toISOString(),
+      transcript_text: transcript,
+      transcript_segments: topicSummary.points,
+      action_items: topicSummary.actions,
+      decisions: topicSummary.decisions,
+      mentioned_numbers: topicSummary.numbers,
+    })
+    .eq("id", sessionId);
+
+  if (error) throw error;
 }
 
 export function useMeetingRecorder() {
@@ -69,7 +223,9 @@ export function useMeetingRecorder() {
   const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
   const [topicSummary, setTopicSummary] = useState<TopicSummary | null>(null);
   const [meetingSessionId, setMeetingSessionId] = useState<string | null>(null);
+  const [persistenceMode, setPersistenceMode] = useState<SessionPersistenceMode | null>(null);
   const [demoMode, setDemoMode] = useState(false);
+
   const tickerRef = useRef<number | null>(null);
   const mockIdxRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -90,20 +246,22 @@ export function useMeetingRecorder() {
         /* noop */
       }
     }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
+
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
     mediaRecorderRef.current = null;
   };
 
-  useEffect(() => () => {
-    clearTicker();
-    stopStream();
+  useEffect(() => {
+    return () => {
+      clearTicker();
+      stopStream();
+    };
   }, []);
 
   const startTicker = () => {
     clearTicker();
+
     tickerRef.current = window.setInterval(() => {
       setTranscriptLines((prev) => {
         const line = mockRollingLines[mockIdxRef.current % mockRollingLines.length];
@@ -114,71 +272,77 @@ export function useMeetingRecorder() {
   };
 
   const start = async () => {
+    clearTicker();
+    stopStream();
+
+    setStatus("idle");
     setPermissionError(null);
     setTopicSummary(null);
     setTranscriptLines([]);
+    setMeetingSessionId(null);
+    setPersistenceMode(null);
+    setDemoMode(false);
+
     mockIdxRef.current = 0;
 
-    // 1) Try microphone — failure means demo mode, not blocked
-    let micWarning: string | null = null;
-    let stream: MediaStream | null = null;
-    try {
-      stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
-    } catch (err) {
-      micWarning = describeMicError(err);
-      stream = null;
-    }
-    if (!stream) {
-      stream = await tryGetMic();
-    }
+    const title = `Reunião ${new Date().toLocaleString("pt-BR")}`;
+    const mic = await getMicStream();
 
-    if (stream) {
+    let warning = mic.warning;
+
+    if (mic.stream && typeof MediaRecorder !== "undefined") {
       try {
-        streamRef.current = stream;
-        mediaRecorderRef.current = new MediaRecorder(stream);
+        streamRef.current = mic.stream;
+        mediaRecorderRef.current = new MediaRecorder(mic.stream);
         mediaRecorderRef.current.start();
         setDemoMode(false);
       } catch (err) {
-        micWarning = describeMicError(err);
+        warning = describeMicError(err);
         stopStream();
         setDemoMode(true);
       }
     } else {
       setDemoMode(true);
+
+      if (mic.stream) {
+        streamRef.current = mic.stream;
+        warning =
+          "Este navegador não suporta MediaRecorder. A reunião continuará em modo de acompanhamento.";
+      }
     }
 
-    // 2) Open backend session
-    try {
-      const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
-        body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` },
-      });
-      if (error) throw error;
-      const parsed = data as StartSessionResponse;
-      setMeetingSessionId(parsed.meeting_session_id);
-      setStatus("recording");
-      setPermissionError(micWarning); // keep mic warning visible alongside demo banner
-      startTicker();
-    } catch (err) {
-      stopStream();
-      clearTicker();
-      setStatus("idle");
-      const msg = err instanceof Error ? err.message : "Falha ao iniciar sessão de reunião.";
-      setPermissionError(`Não foi possível iniciar a reunião: ${msg}`);
-    }
+    const session = await openMeetingSession(title);
+
+    setMeetingSessionId(session.id);
+    setPersistenceMode(session.mode);
+    setStatus("recording");
+    setPermissionError([warning, session.warning].filter(Boolean).join(" ") || null);
+
+    startTicker();
   };
 
   const pause = () => {
     if (mediaRecorderRef.current?.state === "recording") {
-      try { mediaRecorderRef.current.pause(); } catch { /* noop */ }
+      try {
+        mediaRecorderRef.current.pause();
+      } catch {
+        /* noop */
+      }
     }
+
     setStatus("paused");
     clearTicker();
   };
 
   const resume = () => {
     if (mediaRecorderRef.current?.state === "paused") {
-      try { mediaRecorderRef.current.resume(); } catch { /* noop */ }
+      try {
+        mediaRecorderRef.current.resume();
+      } catch {
+        /* noop */
+      }
     }
+
     setStatus("recording");
     startTicker();
   };
@@ -194,22 +358,48 @@ export function useMeetingRecorder() {
     stopStream();
 
     const transcriptText = sanitizeText(transcriptLines.join("\n")) || "Sem conteúdo";
-    const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
-      body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: transcriptText },
-    });
+    const localSummary = buildTopicSummary(transcriptText);
 
-    if (!error && data) {
-      const parsed = data as FinalizeSessionResponse;
-      setTopicSummary(parsed.topic_summary);
+    try {
+      if (persistenceMode === "edge") {
+        const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
+          body: {
+            action: "finalize_session",
+            meeting_session_id: meetingSessionId,
+            transcript_text: transcriptText,
+          },
+        });
+
+        if (error) throw error;
+
+        const parsed = data as FinalizeSessionResponse;
+        setTopicSummary(parsed.topic_summary ?? localSummary);
+      } else if (persistenceMode === "database") {
+        await finalizeDatabaseSession(meetingSessionId, transcriptText, localSummary);
+        setTopicSummary(localSummary);
+      } else {
+        setTopicSummary(localSummary);
+      }
+
+      const wasLocal = persistenceMode === "local";
+
       setMeetingSessionId(null);
+      setPersistenceMode(null);
       setStatus("idle");
       setDemoMode(false);
-      return;
-    }
+      setPermissionError(
+        wasLocal ? "Resumo gerado localmente. Esta sessão não foi salva no banco." : null,
+      );
+    } catch (err) {
+      console.warn("[reports-meetings] finalize failed, keeping local summary", summarizeError(err));
 
-    setStatus("idle");
-    const msg = error instanceof Error ? error.message : "Erro ao finalizar a reunião. Tente novamente.";
-    setPermissionError(msg);
+      setTopicSummary(localSummary);
+      setMeetingSessionId(null);
+      setPersistenceMode(null);
+      setStatus("idle");
+      setDemoMode(false);
+      setPermissionError("Resumo gerado localmente, mas houve falha ao salvar/finalizar no backend.");
+    }
   };
 
   const transcriptText = useMemo(() => transcriptLines.join("\n"), [transcriptLines]);
@@ -222,6 +412,7 @@ export function useMeetingRecorder() {
     topicSummary,
     demoMode,
     publicUrl: PUBLIC_URL,
+    persistenceMode,
     start,
     pause,
     resume,

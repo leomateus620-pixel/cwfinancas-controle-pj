@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { AlertCircle, ExternalLink, Info } from "lucide-react";
+import type { MeetingStatus } from "../hooks/useMeetingRecorder";
 
 interface MeetingRecorderPanelProps {
-  status: string;
+  status: MeetingStatus;
   start: () => void;
   pause: () => void;
   resume: () => void;
@@ -12,9 +13,9 @@ interface MeetingRecorderPanelProps {
   publicUrl?: string;
 }
 
-const STATUS_LABELS: Record<string, string> = {
+const STATUS_LABELS: Record<MeetingStatus, string> = {
   idle: "Pronto para iniciar",
-  recording: "Gravando",
+  recording: "Gravando/acompanhando",
   paused: "Pausado",
   finishing: "Finalizando…",
   blocked: "Bloqueado",
@@ -30,12 +31,15 @@ export function MeetingRecorderPanel({
   demoMode,
   publicUrl,
 }: MeetingRecorderPanelProps) {
-  const canPauseResume = status === "recording" || status === "paused";
-  const canFinish = status === "recording" || status === "paused";
+  const isRecording = status === "recording";
+  const isPaused = status === "paused";
+  const isFinishing = status === "finishing";
+  const canPauseResume = isRecording || isPaused;
+  const canFinish = isRecording || isPaused;
   const startLabel = status === "blocked" ? "Tentar novamente" : "Iniciar reunião";
 
   return (
-    <div className="liquid-glass rounded-2xl p-4 md:p-5 space-y-3">
+    <div className="liquid-glass space-y-3 rounded-2xl p-4 md:p-5">
       <div>
         <div className="text-base font-semibold">Modo reunião</div>
         <div className="text-sm text-muted-foreground">
@@ -48,8 +52,10 @@ export function MeetingRecorderPanel({
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <div className="space-y-1">
             <div>
-              Microfone indisponível no preview. Gravação rodando em <strong>modo demonstração</strong>.
+              Microfone indisponível no preview. A reunião continua em{" "}
+              <strong>modo demonstração/acompanhamento</strong>.
             </div>
+
             {publicUrl && (
               <a
                 href={publicUrl}
@@ -66,25 +72,27 @@ export function MeetingRecorderPanel({
       )}
 
       {error && (
-        <div className="flex items-start gap-2 text-sm text-destructive">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-sm text-amber-800">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button onClick={start} disabled={status === "recording" || status === "paused" || status === "finishing"}>
+        <Button onClick={start} disabled={isRecording || isPaused || isFinishing}>
           {startLabel}
         </Button>
+
         <Button
           variant="outline"
-          onClick={status === "paused" ? resume : pause}
-          disabled={!canPauseResume}
+          onClick={isPaused ? resume : pause}
+          disabled={!canPauseResume || isFinishing}
         >
-          {status === "paused" ? "Retomar" : "Pausar"}
+          {isPaused ? "Retomar" : "Pausar"}
         </Button>
-        <Button variant="destructive" onClick={finish} disabled={!canFinish}>
-          Finalizar reunião
+
+        <Button variant="destructive" onClick={finish} disabled={!canFinish || isFinishing}>
+          {isFinishing ? "Finalizando..." : "Finalizar reunião"}
         </Button>
       </div>
     </div>
