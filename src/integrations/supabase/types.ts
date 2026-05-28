@@ -1787,6 +1787,215 @@ export type Database = {
         }
         Relationships: []
       }
+      meeting_audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string
+          id: string
+          metadata: Json
+          user_id: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          metadata?: Json
+          user_id: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          metadata?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
+      meeting_comparisons: {
+        Row: {
+          alignment_score: number | null
+          company_id: string | null
+          created_at: string
+          divergences: Json
+          error_message: string | null
+          final_pdf_storage_path: string | null
+          final_summary: string | null
+          financial_impacts: Json
+          id: string
+          matched_points: Json
+          meeting_session_id: string | null
+          new_decisions: Json
+          pre_report_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alignment_score?: number | null
+          company_id?: string | null
+          created_at?: string
+          divergences?: Json
+          error_message?: string | null
+          final_pdf_storage_path?: string | null
+          final_summary?: string | null
+          financial_impacts?: Json
+          id?: string
+          matched_points?: Json
+          meeting_session_id?: string | null
+          new_decisions?: Json
+          pre_report_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alignment_score?: number | null
+          company_id?: string | null
+          created_at?: string
+          divergences?: Json
+          error_message?: string | null
+          final_pdf_storage_path?: string | null
+          final_summary?: string | null
+          financial_impacts?: Json
+          id?: string
+          matched_points?: Json
+          meeting_session_id?: string | null
+          new_decisions?: Json
+          pre_report_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_comparisons_meeting_session_id_fkey"
+            columns: ["meeting_session_id"]
+            isOneToOne: false
+            referencedRelation: "meeting_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_comparisons_pre_report_id_fkey"
+            columns: ["pre_report_id"]
+            isOneToOne: false
+            referencedRelation: "pre_meeting_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meeting_sessions: {
+        Row: {
+          action_items: Json
+          adjustments: Json
+          audio_storage_path: string | null
+          company_id: string | null
+          created_at: string
+          decisions: Json
+          ended_at: string | null
+          id: string
+          mentioned_numbers: Json
+          participants: Json
+          pre_report_id: string | null
+          started_at: string | null
+          status: string
+          title: string
+          transcript_segments: Json
+          transcript_text: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          action_items?: Json
+          adjustments?: Json
+          audio_storage_path?: string | null
+          company_id?: string | null
+          created_at?: string
+          decisions?: Json
+          ended_at?: string | null
+          id?: string
+          mentioned_numbers?: Json
+          participants?: Json
+          pre_report_id?: string | null
+          started_at?: string | null
+          status?: string
+          title: string
+          transcript_segments?: Json
+          transcript_text?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          action_items?: Json
+          adjustments?: Json
+          audio_storage_path?: string | null
+          company_id?: string | null
+          created_at?: string
+          decisions?: Json
+          ended_at?: string | null
+          id?: string
+          mentioned_numbers?: Json
+          participants?: Json
+          pre_report_id?: string | null
+          started_at?: string | null
+          status?: string
+          title?: string
+          transcript_segments?: Json
+          transcript_text?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_sessions_pre_report_id_fkey"
+            columns: ["pre_report_id"]
+            isOneToOne: false
+            referencedRelation: "pre_meeting_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meeting_sources: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          external_id: string | null
+          external_name: string
+          id: string
+          metadata: Json
+          source_type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          external_id?: string | null
+          external_name: string
+          id?: string
+          metadata?: Json
+          source_type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          external_id?: string | null
+          external_name?: string
+          id?: string
+          metadata?: Json
+          source_type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           body: string | null
@@ -1910,6 +2119,66 @@ export type Database = {
           manual_type?: string | null
           status?: string
           transaction_count?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      pre_meeting_reports: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          error_message: string | null
+          executive_summary: string | null
+          id: string
+          insights: Json
+          pdf_storage_path: string | null
+          period_end: string | null
+          period_start: string | null
+          report_json: Json
+          risks: Json
+          source_ids: string[] | null
+          status: string
+          suggested_agenda: Json
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          executive_summary?: string | null
+          id?: string
+          insights?: Json
+          pdf_storage_path?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          report_json?: Json
+          risks?: Json
+          source_ids?: string[] | null
+          status?: string
+          suggested_agenda?: Json
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          executive_summary?: string | null
+          id?: string
+          insights?: Json
+          pdf_storage_path?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          report_json?: Json
+          risks?: Json
+          source_ids?: string[] | null
+          status?: string
+          suggested_agenda?: Json
+          title?: string
           updated_at?: string
           user_id?: string
         }

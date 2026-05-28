@@ -1,33 +1,42 @@
+## Diagnóstico
 
-## Exportar os 6 gráficos em PNG de alta qualidade
+A mensagem **"Failed to send a request to the Edge Function"** aparece quando o `supabase.functions.invoke` falha no `fetch` (rede/CORS), antes de receber uma resposta HTTP utilizável.
 
-Já existe `/tmp/gen_v3.py` que gera os 6 gráficos (1 em 2D + 5 com faux-3D leve). Vou reaproveitá-lo, ajustando apenas a saída para gerar PNGs individuais "stand-alone" (título acima + gráfico + fonte abaixo, sem o texto explicativo do PDF), em 300 dpi e fundo branco sólido.
+Testei a função diretamente com `curl_edge_functions` (autenticado) e ela responde **200 OK** retornando `meeting_session_id`. Ou seja, o código da função está correto, a tabela `meeting_sessions` recebe o insert, e os GRANTs aplicados no último migration estão funcionando.
 
-### O que vou fazer
+O problema está na configuração de gateway:
 
-1. Criar `/tmp/export_pngs.py` que importa as funções de plotagem do `gen_v3.py` e, para cada gráfico, monta uma figura `Matplotlib` única contendo:
-   - título centralizado acima (Times New Roman, 12 pt)
-   - o gráfico (faux-3D leve ou 2D, exatamente como na v3 do PDF)
-   - linha de fonte abaixo, centralizada, Times New Roman 10 pt cinza escuro
-   - fundo branco sólido (`facecolor="white"`), sem transparência
+- `supabase/config.toml` lista todas as edge functions do projeto com `verify_jwt = false` (google-*, asana-*, dre-sync, etc.).
+- As três funções novas do módulo de reuniões **não estão registradas**: `reports-meetings-transcribe`, `reports-meetings-generate`, `reports-meetings-compare`.
+- Sem o bloco no `config.toml`, o gateway aplica `verify_jwt = true` por padrão. Quando o navegador envia o request (mesmo logado), a validação JWT acontece **antes** do código da função rodar, e em caso de rejeição o gateway responde **sem os CORS headers**. O browser então bloqueia a resposta e o cliente `supabase-js` lança exatamente a mensagem `Failed to send a request to the Edge Function` (FunctionsFetchError).
+- O `curl` funciona porque não passa por CORS de browser.
 
-2. Exportar cada PNG em 300 dpi e dimensões alvo ≈ 1800 × 1200 px (`figsize=(6, 4)` a 300 dpi) usando `bbox_inches="tight"` e `pad_inches=0.25`. Sem botões, sem chrome.
+A função já valida o JWT internamente via `authClient.auth.getUser(token)`, então desabilitar a verificação de gateway é seguro e segue o mesmo padrão usado nas demais funções do projeto.
 
-3. Nomes dos arquivos (em `/mnt/documents/graficos_pesque_pague/`):
-   - `grafico_1_fluxo_caixa_projetado_acumulado.png`
-   - `grafico_2_payback_simples_descontado_3d.png`
-   - `grafico_3_vpl_cenarios_3d.png`
-   - `grafico_4_tir_cenarios_tma_3d.png`
-   - `grafico_5_payback_cenarios_3d.png`
-   - `grafico_6_receitas_custos_fluxo_liquido_3d.png`
+## Correção
 
-4. Empacotar em `/mnt/documents/graficos_viabilidade_economica_pesque_pague_png.zip` contendo os 6 PNGs.
+1. **Adicionar ao `supabase/config.toml`** os três blocos faltantes:
+   ```toml
+   [functions.reports-meetings-transcribe]
+   verify_jwt = false
 
-5. QA: abrir cada PNG e verificar título legível, rótulos sem corte/sobreposição, linha TMA visível no G4, linha y=0 visível no G3, nota italicizada no G5, fundo branco, sem chrome. Iterar se necessário.
+   [functions.reports-meetings-generate]
+   verify_jwt = false
 
-### Entrega
+   [functions.reports-meetings-compare]
+   verify_jwt = false
+   ```
 
-- 6 arquivos PNG individuais (artifacts separados)
-- 1 ZIP contendo os 6 PNGs (artifact único)
+2. **Redeploy** das três funções para aplicar a nova configuração de gateway.
 
-Observação: este é um task de geração de artefatos (sem UI). O "botão de download" do prompt é atendido pelos próprios artifacts entregues no chat — não precisa de página web no app.
+## Validação
+
+- `supabase--curl_edge_functions` em `/reports-meetings-transcribe` com `start_session` → esperar 200 + `meeting_session_id`.
+- Conferir nos logs da edge function `booted` recente após o deploy.
+- Testar no preview clicando em **Iniciar reunião**: status deve ir para `Gravando` (sem o erro vermelho). Em ambiente sem microfone, o banner âmbar de "modo demonstração" aparece, mas a sessão é criada normalmente.
+- `supabase--read_query` em `meeting_sessions ORDER BY created_at DESC LIMIT 3` confirmando a linha inserida com `status = recording`.
+- Clicar **Finalizar reunião** e validar que `meeting_audit_logs` recebe `meeting_finished`.
+
+## Escopo
+
+Apenas configuração de gateway das três funções do módulo. Sem mudanças no hook do recorder, no painel, no edge code ou no banco — todos os fixes anteriores permanecem.
