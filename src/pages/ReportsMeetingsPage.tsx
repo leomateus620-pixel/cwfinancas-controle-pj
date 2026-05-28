@@ -5,6 +5,7 @@ import { MeetingTranscriptPanel } from "@/features/reports-meetings/components/M
 import { PreMeetingReportPanel } from "@/features/reports-meetings/components/PreMeetingReportPanel";
 import { ReportPdfPreview } from "@/features/reports-meetings/components/ReportPdfPreview";
 import { ReportsHistoryTable } from "@/features/reports-meetings/components/ReportsHistoryTable";
+import { MeetingsHistoryPanel } from "@/features/reports-meetings/components/MeetingsHistoryPanel";
 import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
 import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
 import { SourceSelectorCard } from "@/features/reports-meetings/components/SourceSelectorCard";
