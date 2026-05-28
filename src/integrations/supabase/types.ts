@@ -1896,6 +1896,7 @@ export type Database = {
           audio_chunks: string[]
           audio_purged_at: string | null
           audio_storage_path: string | null
+          cloud_status: string
           company_id: string | null
           created_at: string
           decisions: Json
@@ -1912,8 +1913,10 @@ export type Database = {
           pre_report_id: string | null
           started_at: string | null
           status: string
+          summary_error: string | null
           summary_generated_at: string | null
           summary_markdown: string | null
+          summary_status: string
           title: string
           transcript_segments: Json
           transcript_text: string | null
@@ -1926,6 +1929,7 @@ export type Database = {
           audio_chunks?: string[]
           audio_purged_at?: string | null
           audio_storage_path?: string | null
+          cloud_status?: string
           company_id?: string | null
           created_at?: string
           decisions?: Json
@@ -1942,8 +1946,10 @@ export type Database = {
           pre_report_id?: string | null
           started_at?: string | null
           status?: string
+          summary_error?: string | null
           summary_generated_at?: string | null
           summary_markdown?: string | null
+          summary_status?: string
           title: string
           transcript_segments?: Json
           transcript_text?: string | null
@@ -1956,6 +1962,7 @@ export type Database = {
           audio_chunks?: string[]
           audio_purged_at?: string | null
           audio_storage_path?: string | null
+          cloud_status?: string
           company_id?: string | null
           created_at?: string
           decisions?: Json
@@ -1972,8 +1979,10 @@ export type Database = {
           pre_report_id?: string | null
           started_at?: string | null
           status?: string
+          summary_error?: string | null
           summary_generated_at?: string | null
           summary_markdown?: string | null
+          summary_status?: string
           title?: string
           transcript_segments?: Json
           transcript_text?: string | null
