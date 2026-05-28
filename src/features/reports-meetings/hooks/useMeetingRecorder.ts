@@ -1,30 +1,64 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { buildAutosavePayload, buildTopicSummary, dedupeTranscriptSegments, sanitizeText, shouldAutoFinishMeeting, type TopicSummary } from "../lib/meetingRecorderUtils";
+import {
+  buildTopicSummary,
+  dedupeTranscriptSegments,
+  sanitizeText,
+  shouldAutoFinishMeeting,
+  type TopicSummary,
+} from "../lib/meetingRecorderUtils";
+import {
+  autosaveCloudMeetingSession,
+  createCloudMeetingSession,
+  finalizeCloudMeetingSession,
+  requestEnhancedSummary,
+  uploadMeetingAudioChunk,
+  type AudioChunkMeta,
+} from "../lib/meetingCloudRepository";
 
-const db = supabase as any;
 export type MeetingStatus = "idle" | "recording" | "paused" | "finishing" | "blocked";
-export type SessionPersistenceMode = "edge" | "database" | "local";
+export type SessionPersistenceMode = "database" | "local";
 
 type SpeechRecognitionCtor = new () => any;
-declare global { interface Window { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor; } }
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  }
+}
 
-const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
-  let timeoutId: number | null = null;
-  const timeoutPromise = new Promise<T>((resolve) => {
-    timeoutId = window.setTimeout(() => resolve(fallbackValue), timeoutMs);
-  });
-  const result = await Promise.race([promise, timeoutPromise]);
-  if (timeoutId) window.clearTimeout(timeoutId);
-  return result;
-};
+function devWarn(msg: string, e?: unknown) {
+  if (import.meta.env.DEV) console.warn(`[meeting-recorder] ${msg}`, e);
+}
+
+function buildLocalSummary(transcript: string, title: string) {
+  const summary = buildTopicSummary(transcript);
+  const description = transcript.trim()
+    ? `${title}: ${transcript.replace(/\s+/g, " ").slice(0, 220)}`
+    : `${title}: reunião sem transcrição capturada.`;
+  const md = transcript.trim()
+    ? [
+        "## Resumo",
+        summary.executiveSummary || transcript.slice(0, 320),
+        summary.decisions.length ? "\n## Decisões\n" + summary.decisions.map((d) => `- ${d}`).join("\n") : "",
+        summary.actions.length ? "\n## Ações\n" + summary.actions.map((a) => `- ${a}`).join("\n") : "",
+        summary.numbers.length ? "\n## Números mencionados\n" + summary.numbers.map((n) => `- ${n}`).join("\n") : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "## Resumo\n\nNenhuma fala foi capturada nesta reunião.";
+  return { description, summaryMarkdown: md, summary };
+}
 
 export function useMeetingRecorder() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const statusRef = useRef<MeetingStatus>("idle");
-  const setStatusSafe = (next: MeetingStatus) => { statusRef.current = next; setStatus(next); };
+  const setStatusSafe = (next: MeetingStatus) => {
+    statusRef.current = next;
+    setStatus(next);
+  };
+
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -38,34 +72,45 @@ export function useMeetingRecorder() {
   const [recognitionRestarted, setRecognitionRestarted] = useState(false);
   const [recognitionUnstable, setRecognitionUnstable] = useState(false);
   const [finalizationStage, setFinalizationStage] = useState("inativo");
-  const [cloudError, setCloudError] = useState<string | null>(null);
-  const [cloudStatus, setCloudStatus] = useState<"pending"|"active"|"finalized"|"local"|"error">("pending");
 
-  const audioChunksRef = useRef<string[]>([]);
+  const meetingSessionIdRef = useRef<string | null>(null);
+  const persistenceModeRef = useRef<SessionPersistenceMode | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  const durationMsRef = useRef(0);
+  const manualTranscriptRef = useRef("");
+  const audioChunksRef = useRef<AudioChunkMeta[]>([]);
+  const pendingAudioBlobsRef = useRef<{ blob: Blob; sequence: number }[]>([]);
+  const chunkSeqRef = useRef(0);
   const transcriptLinesRef = useRef<string[]>([]);
   const confirmedTranscriptRef = useRef<string[]>([]);
+
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
   const autosaveRef = useRef<number | null>(null);
-  const autosaveInFlightRef = useRef<Promise<void> | null>(null);
   const meetingStartedAtRef = useRef<number>(0);
   const isFinishingRef = useRef(false);
   const isPausedRef = useRef(false);
   const shouldKeepRecognitionAliveRef = useRef(false);
   const recognitionRestartTimeoutRef = useRef<number | null>(null);
   const recognitionManuallyStoppedRef = useRef(false);
-  const lastFinalTranscriptAtRef = useRef<number>(0);
   const lastInterimTranscriptRef = useRef("");
 
-  const getSpeechCtor = () => (typeof window !== "undefined" ? window.SpeechRecognition ?? window.webkitSpeechRecognition : undefined);
+  useEffect(() => {
+    manualTranscriptRef.current = manualTranscript;
+  }, [manualTranscript]);
 
-  const appendTranscriptSegment = (text: string, _source: "speech-final" | "interim-flush" | "manual") => {
+  const getSpeechCtor = () =>
+    typeof window !== "undefined" ? window.SpeechRecognition ?? window.webkitSpeechRecognition : undefined;
+
+  const appendTranscriptSegment = (text: string) => {
     const clean = sanitizeText(text);
     if (!clean) return false;
     const normalized = clean.toLocaleLowerCase("pt-BR");
-    const exists = confirmedTranscriptRef.current.some((line) => sanitizeText(line).toLocaleLowerCase("pt-BR") === normalized);
+    const exists = confirmedTranscriptRef.current.some(
+      (line) => sanitizeText(line).toLocaleLowerCase("pt-BR") === normalized,
+    );
     if (exists) return false;
     confirmedTranscriptRef.current = [...confirmedTranscriptRef.current, clean];
     transcriptLinesRef.current = [...transcriptLinesRef.current, clean];
@@ -74,10 +119,15 @@ export function useMeetingRecorder() {
     return true;
   };
 
-  const clearTimers = () => { if (timerRef.current) window.clearInterval(timerRef.current); if (autosaveRef.current) window.clearInterval(autosaveRef.current); if (recognitionRestartTimeoutRef.current) window.clearTimeout(recognitionRestartTimeoutRef.current); };
+  const clearTimers = () => {
+    if (timerRef.current) window.clearInterval(timerRef.current);
+    if (autosaveRef.current) window.clearInterval(autosaveRef.current);
+    if (recognitionRestartTimeoutRef.current) window.clearTimeout(recognitionRestartTimeoutRef.current);
+  };
+
   const flushInterimIfRelevant = () => {
     const text = sanitizeText(lastInterimTranscriptRef.current || interimTranscript);
-    if (text.length >= 4) appendTranscriptSegment(text, "interim-flush");
+    if (text.length >= 4) appendTranscriptSegment(text);
     lastInterimTranscriptRef.current = "";
     setInterimTranscript("");
   };
@@ -85,44 +135,84 @@ export function useMeetingRecorder() {
   const buildFinalTranscriptFromRefs = () => {
     const lines = [...confirmedTranscriptRef.current];
     const interim = sanitizeText(lastInterimTranscriptRef.current || interimTranscript);
-    const manual = sanitizeText(manualTranscript);
+    const manual = sanitizeText(manualTranscriptRef.current);
     return dedupeTranscriptSegments([...lines, interim, manual].filter(Boolean)).join("\n");
   };
 
+  const tryFlushPendingAudio = async () => {
+    if (!userIdRef.current || !meetingSessionIdRef.current) return;
+    const pending = [...pendingAudioBlobsRef.current];
+    pendingAudioBlobsRef.current = [];
+    for (const item of pending) {
+      const meta = await uploadMeetingAudioChunk({
+        meetingSessionId: meetingSessionIdRef.current,
+        userId: userIdRef.current,
+        blob: item.blob,
+        sequence: item.sequence,
+      });
+      if (meta) audioChunksRef.current = [...audioChunksRef.current, meta];
+      else pendingAudioBlobsRef.current.push(item);
+    }
+  };
+
   async function autosaveMeetingProgress() {
-    if (!meetingSessionId || persistenceMode === "local" || isFinishingRef.current) return;
+    const sid = meetingSessionIdRef.current;
+    if (!sid || persistenceModeRef.current !== "database" || isFinishingRef.current) return;
+    await tryFlushPendingAudio();
     const transcript = buildFinalTranscriptFromRefs();
-    const payload = buildAutosavePayload({ meeting_session_id: meetingSessionId, transcript_text: transcript, transcript_segments: transcriptLinesRef.current, live_transcript_segments: dedupeTranscriptSegments([...transcriptLinesRef.current, interimTranscript].filter(Boolean)), duration_seconds: Math.floor(durationMs / 1000), audio_chunks: audioChunksRef.current, last_interim_text: interimTranscript || undefined });
-    autosaveInFlightRef.current = (async () => {
-      try {
-        await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: payload }), 5000, null as any);
-        setAutosaveState("Salvo há instantes");
-      } catch {
-        setAutosaveState("Falha no autosave"); setCloudError("autosave_session falhou no Edge Function");
-      }
-    })();
-    await autosaveInFlightRef.current;
-    autosaveInFlightRef.current = null;
+    try {
+      await autosaveCloudMeetingSession({
+        meetingSessionId: sid,
+        transcriptText: transcript,
+        transcriptSegments: transcriptLinesRef.current,
+        liveSegments: dedupeTranscriptSegments(
+          [...transcriptLinesRef.current, interimTranscript].filter(Boolean),
+        ),
+        audioChunks: audioChunksRef.current,
+        durationSeconds: Math.floor(durationMsRef.current / 1000),
+        lastInterim: interimTranscript || undefined,
+      });
+      setAutosaveState("Salvo há instantes");
+    } catch (e) {
+      devWarn("autosave falhou", e);
+      setAutosaveState("Salvando...");
+    }
   }
 
-  const stopMediaRecorderSafely = async (timeoutMs = 4000): Promise<Blob | null> => {
+  const stopMediaRecorderSafely = (timeoutMs = 4000): Promise<Blob | null> => {
     const recorder = mediaRecorderRef.current;
-    if (!recorder) return null;
+    if (!recorder) return Promise.resolve(null);
     return new Promise((resolve) => {
       const chunks: BlobPart[] = [];
-      const finish = () => resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
+      const finish = () =>
+        resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
       const timer = window.setTimeout(finish, timeoutMs);
-      const prevOnData = recorder.ondataavailable;
+      recorder.addEventListener("dataavailable", (event: BlobEvent) => {
+        if (event.data?.size) chunks.push(event.data);
+      });
       const prevOnStop = recorder.onstop;
-      recorder.addEventListener("dataavailable", (event: BlobEvent) => { if (event.data?.size) chunks.push(event.data); });
-      recorder.onstop = () => { window.clearTimeout(timer); finish(); if (typeof prevOnStop === "function") prevOnStop.call(recorder, new Event("stop")); recorder.ondataavailable = prevOnData; recorder.onstop = prevOnStop; };
-      try { recorder.requestData?.(); } catch (e) { setCloudError(String((e as any)?.message ?? e)); }
-      try { if (recorder.state !== "inactive") recorder.stop(); else { window.clearTimeout(timer); finish(); } } catch { window.clearTimeout(timer); finish(); }
+      recorder.onstop = () => {
+        window.clearTimeout(timer);
+        finish();
+        if (typeof prevOnStop === "function") prevOnStop.call(recorder, new Event("stop"));
+      };
+      try {
+        recorder.requestData?.();
+      } catch {}
+      try {
+        if (recorder.state !== "inactive") recorder.stop();
+        else {
+          window.clearTimeout(timer);
+          finish();
+        }
+      } catch {
+        window.clearTimeout(timer);
+        finish();
+      }
     });
   };
 
   const finish = async (reason?: string) => {
-    const safeReason = typeof reason === "string" ? reason : undefined;
     if (isFinishingRef.current) return;
     isFinishingRef.current = true;
     shouldKeepRecognitionAliveRef.current = false;
@@ -131,112 +221,150 @@ export function useMeetingRecorder() {
     setFinalizationStage("finalizando áudio");
     if (recognitionRestartTimeoutRef.current) window.clearTimeout(recognitionRestartTimeoutRef.current);
     flushInterimIfRelevant();
-    try { recognitionRef.current?.stop(); } catch {}
-    const recordedBlob = await stopMediaRecorderSafely();
+    try {
+      recognitionRef.current?.stop();
+    } catch {}
+
+    await stopMediaRecorderSafely();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     clearTimers();
-    await withTimeout(autosaveInFlightRef.current ?? Promise.resolve(), 2000, undefined);
+
+    // Final attempt to upload any pending audio
+    await tryFlushPendingAudio();
+
     const transcriptText = buildFinalTranscriptFromRefs();
-    const fallbackText = transcriptText || "Nenhuma fala foi transcrita. Verifique microfone/permissão ou cole a transcrição manualmente.";
-    if (!meetingSessionId) {
-      setFinalizationStage("finalizado localmente (sem sessão backend)");
-      setPermissionError("Sessão backend não encontrada. Resumo gerado localmente com a transcrição capturada.");
-      setCloudStatus("local");
-      setTopicSummary(buildTopicSummary(fallbackText));
-      setStatusSafe("idle");
-      isFinishingRef.current = false;
-      return;
-    }
-    const summary = buildTopicSummary(fallbackText);
-    let finalized = false;
-    setFinalizationStage("salvando transcrição");
-    try {
-      const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 15000, null as any);
-      if (res?.error) throw res.error;
-      if (res?.data?.status === "finished") { finalized = true; setCloudStatus("finalized"); }
-    } catch (e) {
-      setCloudError(`finalize falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
-    }
-    if (!finalized) {
+    const fallback =
+      transcriptText ||
+      "Nenhuma fala foi transcrita. Verifique microfone/permissão ou adicione a transcrição manualmente.";
+    const sid = meetingSessionIdRef.current;
+    const local = buildLocalSummary(fallback, "Reunião");
+
+    if (sid && persistenceModeRef.current === "database") {
+      setFinalizationStage("salvando na nuvem");
       try {
-        const dbRes = await withTimeout(db.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: fallbackText, transcript_segments: dedupeTranscriptSegments(fallbackText.split("\n")), action_items: summary.actions, decisions: summary.decisions, mentioned_numbers: summary.numbers, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000) }).eq("id", meetingSessionId), 8000, null as any);
-        if (!dbRes?.error) { finalized = true; setCloudStatus("finalized"); }
+        await finalizeCloudMeetingSession({
+          meetingSessionId: sid,
+          transcriptText: fallback,
+          transcriptSegments: dedupeTranscriptSegments(fallback.split("\n")),
+          audioChunks: audioChunksRef.current,
+          durationSeconds: Math.floor(durationMsRef.current / 1000),
+          description: local.description,
+          summaryMarkdown: local.summaryMarkdown,
+          actionItems: local.summary.actions,
+          decisions: local.summary.decisions,
+          mentionedNumbers: local.summary.numbers,
+        });
+        setFinalizationStage("concluído");
       } catch (e) {
-        setCloudError(`fallback DB falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+        devWarn("finalize cloud falhou — mantendo resumo local", e);
+        setFinalizationStage("concluído");
       }
+      // Optional AI refinement, completely non-blocking
+      void requestEnhancedSummary(sid).then((ok) => {
+        if (ok) {
+          queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
+          queryClient.invalidateQueries({ queryKey: ["meeting-detail", sid] });
+        }
+      });
+    } else {
+      setFinalizationStage("concluído localmente");
     }
-    setFinalizationStage(finalized ? "concluído" : "finalizado localmente por falha no backend");
-    if (safeReason) setPermissionError(safeReason);
-    else if (!finalized) setPermissionError("Falha no backend ao finalizar. Resumo gerado localmente.");
-    setTopicSummary(summary);
+
+    setTopicSummary(local.summary);
+    if (reason) setPermissionError(reason);
     setStatusSafe("idle");
     isFinishingRef.current = false;
-    // Recarrega histórico de nuvem para a reunião aparecer imediatamente
     queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
-    // Polling curto para pegar description/summary quando a summarize concluir
-    if (finalized) {
-      let tries = 0;
-      const poll = window.setInterval(() => {
-        tries += 1;
-        queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
-        if (tries >= 6) window.clearInterval(poll);
-      }, 4000);
-    }
   };
 
   const start = async () => {
-    setStatus("idle"); setPermissionError(null); setTranscriptLines([]); transcriptLinesRef.current = []; confirmedTranscriptRef.current = []; setInterimTranscript(""); lastInterimTranscriptRef.current = ""; setManualTranscript(""); setDurationMs(0); setRecognitionRestarted(false); setRecognitionUnstable(false); setFinalizationStage("inativo");
-    setCloudError(null);
-    setCloudStatus("pending");
+    setStatus("idle");
+    setPermissionError(null);
+    setTranscriptLines([]);
+    transcriptLinesRef.current = [];
+    confirmedTranscriptRef.current = [];
+    setInterimTranscript("");
+    lastInterimTranscriptRef.current = "";
+    setManualTranscript("");
+    manualTranscriptRef.current = "";
+    setDurationMs(0);
+    durationMsRef.current = 0;
+    setRecognitionRestarted(false);
+    setRecognitionUnstable(false);
+    setFinalizationStage("inativo");
+    audioChunksRef.current = [];
+    pendingAudioBlobsRef.current = [];
+    chunkSeqRef.current = 0;
+
+    // Primary path: create session directly in DB
     let sessionId: string | null = null;
+    let userId: string | null = null;
     try {
-      const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` } });
-      if (error) throw error;
-      sessionId = typeof data?.meeting_session_id === "string" ? data.meeting_session_id : null;
+      const created = await createCloudMeetingSession(`Reunião ${new Date().toLocaleString("pt-BR")}`);
+      sessionId = created.id;
+      userId = created.userId;
     } catch (e) {
-      setCloudError(`start_session falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+      devWarn("createCloudMeetingSession falhou — modo local", e);
     }
-    if (!sessionId) {
-      try {
-        const { data: authData } = await supabase.auth.getUser();
-        if (authData.user) {
-          const { data, error } = await db.from("meeting_sessions").insert({ user_id: authData.user.id, title: `Reunião ${new Date().toLocaleString("pt-BR")}`, status: "recording", started_at: new Date().toISOString() }).select("id").single();
-          if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); setCloudStatus("active"); }
-          else setCloudError(`insert direto falhou: ${error.message}`);
-        }
-      } catch (e) {
-        setCloudError(`fallback insert falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
-      }
-    }
-    if (!sessionId) { setPersistenceMode("local"); setCloudStatus("local"); setPermissionError("Sessão backend ausente. Finalização será local."); }
-    else if (persistenceMode !== "database") { setPersistenceMode("edge"); setCloudStatus("active"); }
+
+    meetingSessionIdRef.current = sessionId;
+    userIdRef.current = userId;
     setMeetingSessionId(sessionId);
+    if (sessionId) {
+      persistenceModeRef.current = "database";
+      setPersistenceMode("database");
+    } else {
+      persistenceModeRef.current = "local";
+      setPersistenceMode("local");
+    }
     queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    streamRef.current = stream;
-    if (typeof MediaRecorder !== "undefined") {
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported?.(t));
-      mediaRecorderRef.current = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      mediaRecorderRef.current.ondataavailable = async (event) => {
-        if (!event.data?.size || !sessionId) return;
-        const { data: authData } = await supabase.auth.getUser();
-        const uid = authData.user?.id ?? "anon";
-        const filePath = `${uid}/${sessionId}/audio/chunk-${Date.now()}.webm`;
-        const { error } = await withTimeout(supabase.storage.from("meeting-reports").upload(filePath, event.data, { upsert: true, contentType: event.data.type || "audio/webm" }), 8000, { error: new Error("timeout") } as any);
-        if (!error) audioChunksRef.current = [...audioChunksRef.current, filePath];
-      };
-      mediaRecorderRef.current.start(30000);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      if (typeof MediaRecorder !== "undefined") {
+        const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((t) =>
+          MediaRecorder.isTypeSupported?.(t),
+        );
+        mediaRecorderRef.current = mimeType
+          ? new MediaRecorder(stream, { mimeType })
+          : new MediaRecorder(stream);
+        mediaRecorderRef.current.ondataavailable = async (event) => {
+          if (!event.data?.size) return;
+          const sid = meetingSessionIdRef.current;
+          const uid = userIdRef.current;
+          if (!sid || !uid || persistenceModeRef.current !== "database") return;
+          const sequence = ++chunkSeqRef.current;
+          const meta = await uploadMeetingAudioChunk({
+            meetingSessionId: sid,
+            userId: uid,
+            blob: event.data,
+            sequence,
+          });
+          if (meta) audioChunksRef.current = [...audioChunksRef.current, meta];
+          else pendingAudioBlobsRef.current.push({ blob: event.data, sequence });
+        };
+        mediaRecorderRef.current.start(30000);
+      }
+    } catch (e) {
+      setPermissionError("Não foi possível acessar o microfone. Verifique a permissão do navegador.");
+      devWarn("getUserMedia falhou", e);
+      return;
     }
 
     const speechCtor = getSpeechCtor();
     setIsSpeechSupported(Boolean(speechCtor));
     if (speechCtor) {
-      const rec = new speechCtor(); rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
+      const rec = new speechCtor();
+      rec.lang = "pt-BR";
+      rec.continuous = true;
+      rec.interimResults = true;
       rec.onresult = (event: any) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i]; const text = sanitizeText(result[0]?.transcript ?? "");
-          if (result.isFinal) { appendTranscriptSegment(text, "speech-final"); lastFinalTranscriptAtRef.current = Date.now(); }
+          const result = event.results[i];
+          const text = sanitizeText(result[0]?.transcript ?? "");
+          if (result.isFinal) appendTranscriptSegment(text);
           else interim = `${interim} ${text}`.trim();
         }
         lastInterimTranscriptRef.current = interim;
@@ -244,32 +372,103 @@ export function useMeetingRecorder() {
       };
       rec.onend = () => {
         flushInterimIfRelevant();
-        const canRestart = statusRef.current === "recording" && shouldKeepRecognitionAliveRef.current && !isFinishingRef.current && !isPausedRef.current && !recognitionManuallyStoppedRef.current && !shouldAutoFinishMeeting(meetingStartedAtRef.current, Date.now());
+        const canRestart =
+          statusRef.current === "recording" &&
+          shouldKeepRecognitionAliveRef.current &&
+          !isFinishingRef.current &&
+          !isPausedRef.current &&
+          !recognitionManuallyStoppedRef.current &&
+          !shouldAutoFinishMeeting(meetingStartedAtRef.current, Date.now());
         if (canRestart) {
-          recognitionRestartTimeoutRef.current = window.setTimeout(() => { try { rec.start(); setRecognitionRestarted(true); } catch { setRecognitionUnstable(true); } }, 700);
+          recognitionRestartTimeoutRef.current = window.setTimeout(() => {
+            try {
+              rec.start();
+              setRecognitionRestarted(true);
+            } catch {
+              setRecognitionUnstable(true);
+            }
+          }, 700);
         }
       };
-      recognitionRef.current = rec; shouldKeepRecognitionAliveRef.current = true; recognitionManuallyStoppedRef.current = false; try { rec.start(); } catch { setRecognitionUnstable(true); }
+      recognitionRef.current = rec;
+      shouldKeepRecognitionAliveRef.current = true;
+      recognitionManuallyStoppedRef.current = false;
+      try {
+        rec.start();
+      } catch {
+        setRecognitionUnstable(true);
+      }
     } else {
-      setPermissionError("Transcrição em tempo real indisponível neste dispositivo. A gravação de áudio e texto manual continuam disponíveis.");
+      setPermissionError(
+        "Transcrição em tempo real indisponível neste dispositivo. A gravação de áudio e texto manual continuam disponíveis.",
+      );
     }
 
     meetingStartedAtRef.current = Date.now();
     timerRef.current = window.setInterval(() => {
       const elapsed = Date.now() - meetingStartedAtRef.current;
       setDurationMs(elapsed);
-      if (shouldAutoFinishMeeting(meetingStartedAtRef.current, Date.now())) void finish("Limite máximo de 5 horas atingido. A reunião foi finalizada automaticamente.");
+      durationMsRef.current = elapsed;
+      if (shouldAutoFinishMeeting(meetingStartedAtRef.current, Date.now()))
+        void finish("Limite máximo de 5 horas atingido. A reunião foi finalizada automaticamente.");
     }, 1000);
-    autosaveRef.current = window.setInterval(() => { void autosaveMeetingProgress(); }, 15000);
+    autosaveRef.current = window.setInterval(() => {
+      void autosaveMeetingProgress();
+    }, 15000);
     isPausedRef.current = false;
     setStatusSafe("recording");
   };
 
-  const pause = () => { isPausedRef.current = true; flushInterimIfRelevant(); recognitionManuallyStoppedRef.current = true; shouldKeepRecognitionAliveRef.current = false; recognitionRef.current?.stop(); mediaRecorderRef.current?.pause(); setStatusSafe("paused"); };
-  const resume = () => { isPausedRef.current = false; shouldKeepRecognitionAliveRef.current = true; recognitionManuallyStoppedRef.current = false; mediaRecorderRef.current?.resume(); try { recognitionRef.current?.start(); } catch {} setStatusSafe("recording"); };
+  const pause = () => {
+    isPausedRef.current = true;
+    flushInterimIfRelevant();
+    recognitionManuallyStoppedRef.current = true;
+    shouldKeepRecognitionAliveRef.current = false;
+    try {
+      recognitionRef.current?.stop();
+    } catch {}
+    try {
+      mediaRecorderRef.current?.pause();
+    } catch {}
+    setStatusSafe("paused");
+  };
 
-  useEffect(() => { transcriptLinesRef.current = transcriptLines; }, [transcriptLines]);
+  const resume = () => {
+    isPausedRef.current = false;
+    shouldKeepRecognitionAliveRef.current = true;
+    recognitionManuallyStoppedRef.current = false;
+    try {
+      mediaRecorderRef.current?.resume();
+    } catch {}
+    try {
+      recognitionRef.current?.start();
+    } catch {}
+    setStatusSafe("recording");
+  };
 
-  const hasBackendSession = Boolean(meetingSessionId && persistenceMode !== "local");
-  return { status, permissionError, cloudError, cloudStatus, isSpeechSupported, interimTranscript, transcriptLines, manualTranscript, setManualTranscript, topicSummary, persistenceMode, meetingSessionId, hasBackendSession, durationMs, autosaveState, recognitionRestarted, recognitionUnstable, finalizationStage, start, pause, resume, finish, autosaveMeetingProgress };
+  const hasBackendSession = persistenceMode === "database" && Boolean(meetingSessionId);
+
+  return {
+    status,
+    permissionError,
+    isSpeechSupported,
+    interimTranscript,
+    transcriptLines,
+    manualTranscript,
+    setManualTranscript,
+    topicSummary,
+    persistenceMode,
+    meetingSessionId,
+    hasBackendSession,
+    durationMs,
+    autosaveState,
+    recognitionRestarted,
+    recognitionUnstable,
+    finalizationStage,
+    start,
+    pause,
+    resume,
+    finish,
+    autosaveMeetingProgress,
+  };
 }

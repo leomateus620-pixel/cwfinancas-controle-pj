@@ -4,7 +4,6 @@ import { MeetingRecorderPanel } from "@/features/reports-meetings/components/Mee
 import { MeetingTranscriptPanel } from "@/features/reports-meetings/components/MeetingTranscriptPanel";
 import { PreMeetingReportPanel } from "@/features/reports-meetings/components/PreMeetingReportPanel";
 import { ReportPdfPreview } from "@/features/reports-meetings/components/ReportPdfPreview";
-import { ReportsHistoryTable } from "@/features/reports-meetings/components/ReportsHistoryTable";
 import { MeetingsHistoryPanel } from "@/features/reports-meetings/components/MeetingsHistoryPanel";
 import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
 import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
@@ -30,12 +29,34 @@ export default function ReportsMeetingsPage() {
         <div className="space-y-4">
           <SourceSelectorCard />
           <PreMeetingReportPanel />
-          <MeetingRecorderPanel status={recorder.status} start={recorder.start} pause={recorder.pause} resume={recorder.resume} finish={recorder.finish} error={recorder.permissionError} isSpeechSupported={recorder.isSpeechSupported} persistenceMode={recorder.persistenceMode} durationMs={recorder.durationMs} autosaveState={recorder.autosaveState} recognitionRestarted={recorder.recognitionRestarted} recognitionUnstable={recorder.recognitionUnstable} finalizationStage={recorder.finalizationStage} hasBackendSession={recorder.hasBackendSession} cloudStatus={recorder.cloudStatus} cloudError={recorder.cloudError} />
+          <MeetingRecorderPanel
+            status={recorder.status}
+            start={recorder.start}
+            pause={recorder.pause}
+            resume={recorder.resume}
+            finish={recorder.finish}
+            error={recorder.permissionError}
+            isSpeechSupported={recorder.isSpeechSupported}
+            persistenceMode={recorder.persistenceMode}
+            durationMs={recorder.durationMs}
+            autosaveState={recorder.autosaveState}
+            recognitionRestarted={recorder.recognitionRestarted}
+            recognitionUnstable={recorder.recognitionUnstable}
+            finalizationStage={recorder.finalizationStage}
+            hasBackendSession={recorder.hasBackendSession}
+          />
           <ReportPdfPreview />
         </div>
 
         <div className="space-y-4">
-          <MeetingTranscriptPanel lines={recorder.transcriptLines} interimTranscript={recorder.interimTranscript} status={recorder.status} manualTranscript={recorder.manualTranscript} onManualTranscriptChange={recorder.setManualTranscript} recognitionUnstable={recorder.recognitionUnstable} />
+          <MeetingTranscriptPanel
+            lines={recorder.transcriptLines}
+            interimTranscript={recorder.interimTranscript}
+            status={recorder.status}
+            manualTranscript={recorder.manualTranscript}
+            onManualTranscriptChange={recorder.setManualTranscript}
+            recognitionUnstable={recorder.recognitionUnstable}
+          />
           <div className="grid gap-2 md:grid-cols-2">
             <SmartTopicIsland
               title="Ponto falado"
@@ -51,8 +72,6 @@ export default function ReportsMeetingsPage() {
       </div>
 
       <MeetingsHistoryPanel />
-
-      <ReportsHistoryTable />
     </div>
   );
 }
