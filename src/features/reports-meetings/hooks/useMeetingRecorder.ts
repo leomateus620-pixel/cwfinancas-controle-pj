@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { buildAutosavePayload, buildTopicSummary, dedupeTranscriptSegments, sanitizeText, shouldAutoFinishMeeting, type TopicSummary } from "../lib/meetingRecorderUtils";
 
@@ -20,6 +21,7 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackV
 };
 
 export function useMeetingRecorder() {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const statusRef = useRef<MeetingStatus>("idle");
   const setStatusSafe = (next: MeetingStatus) => { statusRef.current = next; setStatus(next); };
@@ -149,15 +151,19 @@ export function useMeetingRecorder() {
     let finalized = false;
     setFinalizationStage("salvando transcrição");
     try {
-      const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 10000, null as any);
+      const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 15000, null as any);
       if (res?.error) throw res.error;
       if (res?.data?.status === "finished") { finalized = true; setCloudStatus("finalized"); }
-    } catch {}
+    } catch (e) {
+      setCloudError(`finalize falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+    }
     if (!finalized) {
       try {
         const dbRes = await withTimeout(db.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: fallbackText, transcript_segments: dedupeTranscriptSegments(fallbackText.split("\n")), action_items: summary.actions, decisions: summary.decisions, mentioned_numbers: summary.numbers, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000) }).eq("id", meetingSessionId), 8000, null as any);
-        if (!dbRes?.error) finalized = true;
-      } catch {}
+        if (!dbRes?.error) { finalized = true; setCloudStatus("finalized"); }
+      } catch (e) {
+        setCloudError(`fallback DB falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+      }
     }
     setFinalizationStage(finalized ? "concluído" : "finalizado localmente por falha no backend");
     if (safeReason) setPermissionError(safeReason);
@@ -165,25 +171,47 @@ export function useMeetingRecorder() {
     setTopicSummary(summary);
     setStatusSafe("idle");
     isFinishingRef.current = false;
+    // Recarrega histórico de nuvem para a reunião aparecer imediatamente
+    queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
+    // Polling curto para pegar description/summary quando a summarize concluir
+    if (finalized) {
+      let tries = 0;
+      const poll = window.setInterval(() => {
+        tries += 1;
+        queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
+        if (tries >= 6) window.clearInterval(poll);
+      }, 4000);
+    }
   };
 
   const start = async () => {
     setStatus("idle"); setPermissionError(null); setTranscriptLines([]); transcriptLinesRef.current = []; confirmedTranscriptRef.current = []; setInterimTranscript(""); lastInterimTranscriptRef.current = ""; setManualTranscript(""); setDurationMs(0); setRecognitionRestarted(false); setRecognitionUnstable(false); setFinalizationStage("inativo");
+    setCloudError(null);
+    setCloudStatus("pending");
     let sessionId: string | null = null;
     try {
       const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` } });
       if (error) throw error;
       sessionId = typeof data?.meeting_session_id === "string" ? data.meeting_session_id : null;
-    } catch {}
+    } catch (e) {
+      setCloudError(`start_session falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+    }
     if (!sessionId) {
       try {
-        const { data, error } = await db.from("meeting_sessions").insert({ title: `Reunião ${new Date().toLocaleString("pt-BR")}`, status: "recording", started_at: new Date().toISOString() }).select("id").single();
-        if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); }
-      } catch {}
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData.user) {
+          const { data, error } = await db.from("meeting_sessions").insert({ user_id: authData.user.id, title: `Reunião ${new Date().toLocaleString("pt-BR")}`, status: "recording", started_at: new Date().toISOString() }).select("id").single();
+          if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); setCloudStatus("active"); }
+          else setCloudError(`insert direto falhou: ${error.message}`);
+        }
+      } catch (e) {
+        setCloudError(`fallback insert falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+      }
     }
     if (!sessionId) { setPersistenceMode("local"); setCloudStatus("local"); setPermissionError("Sessão backend ausente. Finalização será local."); }
     else if (persistenceMode !== "database") { setPersistenceMode("edge"); setCloudStatus("active"); }
     setMeetingSessionId(sessionId);
+    queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     if (typeof MediaRecorder !== "undefined") {
