@@ -7,7 +7,7 @@ import { ReportPdfPreview } from "@/features/reports-meetings/components/ReportP
 import { MeetingsHistoryPanel } from "@/features/reports-meetings/components/MeetingsHistoryPanel";
 import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
 import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
-import { SourceSelectorCard } from "@/features/reports-meetings/components/SourceSelectorCard";
+import { MeetingSourcePickerCard } from "@/features/reports-meetings/components/MeetingSourcePickerCard";
 import { useMeetingRecorder } from "@/features/reports-meetings/hooks/useMeetingRecorder";
 
 export default function ReportsMeetingsPage() {
