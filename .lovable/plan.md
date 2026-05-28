@@ -1,96 +1,105 @@
-## Plano de correção definitiva: Relatórios e reuniões na nuvem
+# Conexão dedicada Sheets/Excel para Relatórios & Reuniões
 
-### Diagnóstico confirmado
-- O histórico atual ainda chama `reports-meetings-list` no front, e a rede mostra `Failed to fetch` para essa Edge Function.
-- O hook `useMeetingRecorder.ts` ainda usa `reports-meetings-transcribe` como caminho principal para iniciar, autosalvar e finalizar.
-- A UI renderiza diagnóstico técnico em `ReportsHistoryTable.tsx` e mensagens como “Sessão backend ausente” / “Finalização será local”.
-- O banco e o bucket existem, mas `audio_chunks` e `live_transcript_segments` ainda aparecem como array de texto no schema ativo, enquanto o fluxo desejado pede JSON com metadados dos chunks.
+## Objetivo
+Adicionar uma conexão Google Sheets **isolada** para o card "Fontes da reunião", com seletor 3D de planilhas/abas, sem conflitar com a conexão financeira existente (Receitas/Despesas/DRE/Cartão). Também relocar a conexão Excel para este menu.
 
-### 1. Ajustar schema e storage de forma idempotente
-Vou criar/aplicar uma migration definitiva para:
-- Garantir todos os campos necessários em `public.meeting_sessions`.
-- Converter `audio_chunks` para `jsonb` com estrutura de metadados do arquivo.
-- Converter `live_transcript_segments` para `jsonb`.
-- Recriar/normalizar grants para `authenticated` e `service_role`.
-- Manter RLS owner-only em `meeting_sessions`.
-- Garantir bucket privado `meeting-reports`.
-- Recriar policies owner-only do storage usando path `{user_id}/{meeting_id}/...`.
-- Adicionar índice por `user_id, started_at`.
+## Arquitetura — isolamento de contexto
 
-### 2. Criar repositório direto de nuvem
-Criar `src/features/reports-meetings/lib/meetingCloudRepository.ts` centralizando o core sem Edge Functions:
-- `createCloudMeetingSession`
-- `autosaveCloudMeetingSession`
-- `finalizeCloudMeetingSession`
-- `uploadMeetingAudioChunk`
-- `listCloudMeetings`
-- `getCloudMeetingDetail`
-- `deleteCloudMeeting`
-- `requestEnhancedSummary` como melhoria opcional, sem bloquear o core
+Hoje `google_sheet_connections` é usada para o módulo financeiro. Para evitar conflito, vamos marcar as conexões deste menu com um **scope distinto**:
 
-Todas as operações principais usarão:
-- `supabase.auth.getUser()`
-- `supabase.from('meeting_sessions')`
-- `supabase.storage.from('meeting-reports')`
+- Nova coluna `purpose text` em `google_sheet_connections` com default `'financial'`.
+- Conexões criadas pelo menu Reuniões usam `purpose = 'meetings'`.
+- Todos os hooks financeiros existentes (`useActiveConnection`, sync, DRE, etc.) passam a filtrar `purpose = 'financial'` (ou `IS NULL` por compatibilidade).
+- O novo hook do menu reuniões filtra `purpose = 'meetings'`.
+- OAuth Google é compartilhado (já usa `google_oauth_tokens` por usuário) — não há retrabalho de auth.
 
-### 3. Refatorar `useMeetingRecorder.ts`
-Trocar o fluxo principal para banco/storage direto:
-- `start()` cria a sessão diretamente em `meeting_sessions` com `user_id` obrigatório.
-- Remover dependência de `reports-meetings-transcribe/start_session`.
-- Criar refs sincronizadas para evitar state stale:
-  - `meetingSessionIdRef`
-  - `persistenceModeRef`
-  - `durationMsRef`
-  - `manualTranscriptRef`
-  - `audioChunksRef`
-  - fila de blobs pendentes para retry
-- `autosaveMeetingProgress()` atualiza `meeting_sessions` direto.
-- `MediaRecorder.ondataavailable` sobe chunks direto no bucket e salva metadados.
-- Se upload falhar, guardar blob em memória para retry no próximo chunk e no `finish()`.
-- `finish()` finaliza direto no banco com transcrição, duração, chunks, descrição e resumo local determinístico.
-- Chamada de IA/resumo via Edge Function será opcional e não exibirá erro ao usuário.
+## Backend (migração única)
 
-### 4. Limpar UI e remover diagnóstico visual
-Em `MeetingRecorderPanel.tsx`:
-- Remover mensagens técnicas como `cloudError`, `Sessão backend ausente`, `Finalização será local`.
-- Manter apenas status operacional simples e amigável.
+```sql
+ALTER TABLE public.google_sheet_connections
+  ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'financial';
+CREATE INDEX IF NOT EXISTS idx_gsc_user_purpose
+  ON public.google_sheet_connections(user_id, purpose);
 
-Em `ReportsHistoryTable.tsx`:
-- Remover import/uso de `cloudDiagnostics`.
-- Remover botão “Testar nuvem”.
-- Remover JSON técnico.
-- Buscar histórico direto do banco.
-- Em erro, mostrar só: “Não foi possível carregar o histórico agora.”
+-- Vínculo opcional: reunião -> planilha de contexto
+ALTER TABLE public.meeting_sessions
+  ADD COLUMN IF NOT EXISTS source_connection_id uuid,
+  ADD COLUMN IF NOT EXISTS source_sheet_tabs jsonb DEFAULT '[]'::jsonb;
+```
 
-Em `ReportsMeetingsPage.tsx`:
-- Remover duplicidade de histórico, mantendo uma única experiência limpa.
+Nenhuma policy nova: RLS já é por `user_id`.
 
-### 5. Atualizar hooks de biblioteca/histórico
-Em `useMeetingsLibrary.ts`:
-- Listagem e detalhe passam a usar o repositório direto no banco.
-- Exclusão passa a remover arquivos no storage e depois excluir linha do banco diretamente.
-- Regeneração de resumo continua Edge Function opcional, com fallback silencioso e invalidação de cache.
+## Frontend
 
-### 6. Manter Edge Functions como complementares
-Vou revisar e ajustar as funções existentes para continuarem úteis, mas não obrigatórias:
-- `reports-meetings-summarize`: refinamento de resumo por IA e purge opcional.
-- `reports-meetings-purge-audio`: limpeza de áudio por usuário.
-- `reports-meetings-list/detail/delete/transcribe`: mantidas para compatibilidade/admin, mas não chamadas pelo core.
+### 1. Novo componente `MeetingSourcePickerCard.tsx` (substitui `SourceSelectorCard`)
+Card "Fontes da reunião" no `ReportsMeetingsPage`, com:
+- Estado vazio: dois botões — **"Conectar Google Sheets"** e **"Importar Excel"**.
+- Estado conectado: grid 3D (`ThreeDIconCard` style) com cada planilha como card glass — nome, ícone Sheets/Excel, contador de abas, ação "Trocar / Desconectar".
+- Botão "+ Adicionar planilha" sempre visível.
 
-### 7. Validação
-Depois da implementação em build mode, validarei:
-- Schema real de `meeting_sessions` e policies.
-- Upload/listagem do bucket `meeting-reports` via path owner-only.
-- Ausência de chamadas obrigatórias para `reports-meetings-list/transcribe` na UI principal.
-- Testes automatizados relevantes do projeto.
-- Fluxo manual no preview: iniciar reunião, autosave, finalizar, recarregar e ver histórico sem depender de Edge Function.
+### 2. Modal `MeetingSheetsPickerModal.tsx`
+Reaproveita `google-sheets-list` (já lista Drive) e `google-sheets-auth` para OAuth:
+- Passo 1: lista todas as planilhas do Drive do usuário em grid 3D (capas com gradiente, hover lift, badge de data de modificação).
+- Passo 2: ao escolher uma planilha, mostra suas abas como chips selecionáveis (multi-select).
+- Confirmar → cria linha em `google_sheet_connections` com `purpose='meetings'`, `sheet_name` = aba(s) escolhida(s) serializada(s).
 
-### Critérios de aceite
-- Nenhum painel/botão/JSON de diagnóstico aparece no front.
-- Usuário não vê `Failed to send a request to the Edge Function`.
-- Reunião é criada no banco ao iniciar.
-- Áudio é salvo no Storage em chunks.
-- Autosave atualiza transcrição e duração no banco.
-- Finalização salva status, resumo local, descrição e chunks no banco.
-- Histórico carrega direto do banco.
-- Edge Functions podem falhar sem derrubar o fluxo principal.
+### 3. Modal `MeetingExcelPickerCard` (reaproveita upload Excel)
+Migra o fluxo Excel já existente (`parse-excel-upload`) para este menu — botão "Importar Excel" no card de fontes abre o mesmo modal já consolidado, mas grava metadata em `meeting_sessions.source_*` e/ou em `google_sheet_connections` com `purpose='meetings'` e tipo `excel_upload`.
+
+### 4. Hook `useMeetingSources.ts`
+```ts
+useQuery(['meeting-sources', userId], () =>
+  supabase.from('google_sheet_connections')
+    .select('id, spreadsheet_id, spreadsheet_name, sheet_name, data_type, updated_at')
+    .eq('user_id', userId)
+    .eq('purpose', 'meetings')
+)
+```
+Mutations: `connectSheet`, `disconnectSource`.
+
+### 5. Atualizações nos hooks financeiros existentes
+Adicionar `.or('purpose.eq.financial,purpose.is.null')` em:
+- `src/hooks/useActiveConnection.ts`
+- `src/hooks/useGoogleSheets.ts` (lista de conexões)
+- Edge functions `google-sheets-sync`, `sheets-sync-all-tabs`, `scheduled-sync`, `dre-sync`, `reset-sheet-data` — filtros por `purpose='financial'` para evitar sync acidental das planilhas de reunião.
+
+### 6. Integração com gravação
+`useMeetingRecorder` ganha `attachedSources: { connectionId, tabs[] }` salvos em `meeting_sessions.source_connection_id` ao iniciar a sessão, dando contexto para o resumo IA pós-reunião.
+
+## Design (Liquid Glass Premium)
+
+```text
+┌──────────────────────────────────────────────┐
+│  Fontes da reunião       [+ Adicionar]       │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
+│  │ 📊 Sheet │  │ 📈 Sheet │  │ 📗 Excel │    │
+│  │ Vendas Q2│  │ DRE 2026 │  │ Reuniao  │    │
+│  │ 3 abas   │  │ 12 abas  │  │ Upload   │    │
+│  └──────────┘  └──────────┘  └──────────┘    │
+└──────────────────────────────────────────────┘
+```
+Cards 3D: blur 24px, borda glow primary/30, hover -translate-y-1, ícone colorido por provedor (verde Sheets, azul Excel), capsule "X abas" em `tabular-nums`.
+
+## Arquivos a criar/editar
+
+**Criar**
+- `src/features/reports-meetings/components/MeetingSourcePickerCard.tsx`
+- `src/features/reports-meetings/components/MeetingSheetsPickerModal.tsx`
+- `src/features/reports-meetings/components/MeetingSourceCard3D.tsx`
+- `src/features/reports-meetings/hooks/useMeetingSources.ts`
+- `supabase/migrations/*_meeting_sources_purpose.sql`
+
+**Editar**
+- `src/pages/ReportsMeetingsPage.tsx` — trocar `SourceSelectorCard` pelo novo card
+- `src/features/reports-meetings/hooks/useMeetingRecorder.ts` — anexar fontes à sessão
+- `src/hooks/useActiveConnection.ts`, `src/hooks/useGoogleSheets.ts` — filtrar `purpose='financial'`
+- Edge functions de sync financeiro — filtro `purpose='financial'`
+
+**Remover**
+- `src/features/reports-meetings/components/SourceSelectorCard.tsx` (substituído)
+
+## Garantias
+- Conexão financeira em uso permanece intocada (todas existentes recebem `purpose='financial'` no default).
+- Conexões de reunião nunca entram nos jobs de sync financeiro.
+- OAuth Google é único por usuário — não pede reautenticação.
+- Excel: mesmo parser já consolidado, apenas redirecionado para este menu.
