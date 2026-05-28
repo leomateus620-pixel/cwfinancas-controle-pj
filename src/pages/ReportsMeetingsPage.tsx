@@ -29,21 +29,12 @@ export default function ReportsMeetingsPage() {
         <div className="space-y-4">
           <SourceSelectorCard />
           <PreMeetingReportPanel />
-          <MeetingRecorderPanel
-            status={recorder.status}
-            start={recorder.start}
-            pause={recorder.pause}
-            resume={recorder.resume}
-            finish={recorder.finish}
-            error={recorder.permissionError}
-            isSpeechSupported={recorder.isSpeechSupported}
-            persistenceMode={recorder.persistenceMode}
-          />
+          <MeetingRecorderPanel status={recorder.status} start={recorder.start} pause={recorder.pause} resume={recorder.resume} finish={recorder.finish} error={recorder.permissionError} isSpeechSupported={recorder.isSpeechSupported} persistenceMode={recorder.persistenceMode} durationMs={recorder.durationMs} autosaveState={recorder.autosaveState} recognitionRestarted={recorder.recognitionRestarted} recognitionUnstable={recorder.recognitionUnstable} />
           <ReportPdfPreview />
         </div>
 
         <div className="space-y-4">
-          <MeetingTranscriptPanel lines={recorder.transcriptLines} interimTranscript={recorder.interimTranscript} status={recorder.status} isSpeechSupported={recorder.isSpeechSupported} manualTranscript={recorder.manualTranscript} onManualTranscriptChange={recorder.setManualTranscript} />
+          <MeetingTranscriptPanel lines={recorder.transcriptLines} interimTranscript={recorder.interimTranscript} status={recorder.status} manualTranscript={recorder.manualTranscript} onManualTranscriptChange={recorder.setManualTranscript} recognitionRestarted={recorder.recognitionRestarted} />
           <div className="grid gap-2 md:grid-cols-2">
             <SmartTopicIsland
               title="Ponto falado"
