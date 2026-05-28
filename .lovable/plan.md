@@ -1,57 +1,96 @@
-## Diagnóstico encontrado
+## Plano de correção definitiva: Relatórios e reuniões na nuvem
 
-A falha visível no painel vem do fluxo de nuvem das reuniões. O backend está online, a função `reports-meetings-list` responde quando chamada diretamente e já existem reuniões sendo criadas no banco. Porém há inconsistências que impedem o fluxo completo de salvar/listar/resumir funcionar de forma confiável no app:
+### Diagnóstico confirmado
+- O histórico atual ainda chama `reports-meetings-list` no front, e a rede mostra `Failed to fetch` para essa Edge Function.
+- O hook `useMeetingRecorder.ts` ainda usa `reports-meetings-transcribe` como caminho principal para iniciar, autosalvar e finalizar.
+- A UI renderiza diagnóstico técnico em `ReportsHistoryTable.tsx` e mensagens como “Sessão backend ausente” / “Finalização será local”.
+- O banco e o bucket existem, mas `audio_chunks` e `live_transcript_segments` ainda aparecem como array de texto no schema ativo, enquanto o fluxo desejado pede JSON com metadados dos chunks.
 
-- A tabela `meeting_sessions` está sem permissões explícitas de acesso via API para `authenticated` e `service_role`. Mesmo usando funções de backend, isso deixa fallback direto do frontend e alguns caminhos de leitura/gravação vulneráveis a falhas de permissão.
-- A função `reports-meetings-transcribe` em produção não responde corretamente ao health check usado pelos diagnósticos, indicando que o código implantado pode estar desalinhado com o arquivo local ou com a rota de validação.
-- As reuniões estão sendo finalizadas sem `description`, `summary_markdown`, `summary_generated_at` e `audio_purged_at`, então o histórico aparece sem dados úteis e sem confirmação de descarte do áudio.
-- O frontend engole erros em `start`, `autosave` e `finish` em alguns pontos, gerando avisos genéricos como “Failed to send a request to the Edge Function” sem recuperar ou expor a causa real.
-- O fluxo de resumo atual não aciona descarte de áudio ao final, apesar da regra do produto ser manter apenas descrição e resumo consultáveis.
+### 1. Ajustar schema e storage de forma idempotente
+Vou criar/aplicar uma migration definitiva para:
+- Garantir todos os campos necessários em `public.meeting_sessions`.
+- Converter `audio_chunks` para `jsonb` com estrutura de metadados do arquivo.
+- Converter `live_transcript_segments` para `jsonb`.
+- Recriar/normalizar grants para `authenticated` e `service_role`.
+- Manter RLS owner-only em `meeting_sessions`.
+- Garantir bucket privado `meeting-reports`.
+- Recriar policies owner-only do storage usando path `{user_id}/{meeting_id}/...`.
+- Adicionar índice por `user_id, started_at`.
 
-## Plano de correção
+### 2. Criar repositório direto de nuvem
+Criar `src/features/reports-meetings/lib/meetingCloudRepository.ts` centralizando o core sem Edge Functions:
+- `createCloudMeetingSession`
+- `autosaveCloudMeetingSession`
+- `finalizeCloudMeetingSession`
+- `uploadMeetingAudioChunk`
+- `listCloudMeetings`
+- `getCloudMeetingDetail`
+- `deleteCloudMeeting`
+- `requestEnhancedSummary` como melhoria opcional, sem bloquear o core
 
-1. **Corrigir permissões e consistência do banco**
-   - Aplicar uma migração segura em `meeting_sessions` para garantir permissões explícitas a usuários autenticados e serviço interno.
-   - Garantir índices necessários para histórico por usuário/data.
-   - Manter RLS owner-only: cada usuário só acessa as próprias reuniões.
+Todas as operações principais usarão:
+- `supabase.auth.getUser()`
+- `supabase.from('meeting_sessions')`
+- `supabase.storage.from('meeting-reports')`
 
-2. **Fortalecer as funções de backend**
-   - Padronizar CORS, respostas JSON e validação JWT nas funções `reports-meetings-*`.
-   - Corrigir `reports-meetings-transcribe` para responder corretamente a `health`, `start_session`, `autosave_session` e `finalize_session`.
-   - Corrigir `reports-meetings-summarize` para sempre persistir `description`, `summary_markdown`, `summary_generated_at`, `summary_status` e chamar o descarte de áudio após concluir.
-   - Corrigir `reports-meetings-list/detail/delete/purge-audio` para usar o mesmo padrão de autenticação, erro e escopo por usuário.
+### 3. Refatorar `useMeetingRecorder.ts`
+Trocar o fluxo principal para banco/storage direto:
+- `start()` cria a sessão diretamente em `meeting_sessions` com `user_id` obrigatório.
+- Remover dependência de `reports-meetings-transcribe/start_session`.
+- Criar refs sincronizadas para evitar state stale:
+  - `meetingSessionIdRef`
+  - `persistenceModeRef`
+  - `durationMsRef`
+  - `manualTranscriptRef`
+  - `audioChunksRef`
+  - fila de blobs pendentes para retry
+- `autosaveMeetingProgress()` atualiza `meeting_sessions` direto.
+- `MediaRecorder.ondataavailable` sobe chunks direto no bucket e salva metadados.
+- Se upload falhar, guardar blob em memória para retry no próximo chunk e no `finish()`.
+- `finish()` finaliza direto no banco com transcrição, duração, chunks, descrição e resumo local determinístico.
+- Chamada de IA/resumo via Edge Function será opcional e não exibirá erro ao usuário.
 
-3. **Corrigir o frontend do gravador**
-   - Remover fallbacks silenciosos que mascaram falhas internas.
-   - Mostrar estado real da nuvem: iniciando, salvando, salvo, finalizando, erro recuperável.
-   - Ao finalizar, invalidar/recarregar o histórico para a reunião aparecer imediatamente.
-   - Transformar erros técnicos em mensagens úteis, preservando detalhes para debug.
+### 4. Limpar UI e remover diagnóstico visual
+Em `MeetingRecorderPanel.tsx`:
+- Remover mensagens técnicas como `cloudError`, `Sessão backend ausente`, `Finalização será local`.
+- Manter apenas status operacional simples e amigável.
 
-4. **Corrigir o histórico na nuvem**
-   - Garantir que a listagem use a função correta com sessão autenticada.
-   - Exibir estados de processamento de resumo, sem resumo, resumo pronto e áudio descartado.
-   - Manter descrição e resumo como os únicos dados consultáveis pelo usuário após processamento.
+Em `ReportsHistoryTable.tsx`:
+- Remover import/uso de `cloudDiagnostics`.
+- Remover botão “Testar nuvem”.
+- Remover JSON técnico.
+- Buscar histórico direto do banco.
+- Em erro, mostrar só: “Não foi possível carregar o histórico agora.”
 
-5. **Validação completa da feature**
-   - Testar chamadas diretas das funções: health, start, autosave, finalize, summarize, list, detail e purge/delete quando aplicável.
-   - Confirmar no banco que a reunião criada recebe `status=finished`, `description`, `summary_markdown`, `summary_generated_at` e `audio_purged_at`.
-   - Confirmar que a listagem retorna a reunião finalizada para o usuário autenticado.
-   - Verificar no frontend que o painel sai de erro e o histórico carrega sem “Failed to send a request to the Edge Function”.
+Em `ReportsMeetingsPage.tsx`:
+- Remover duplicidade de histórico, mantendo uma única experiência limpa.
 
-## Resultado esperado
+### 5. Atualizar hooks de biblioteca/histórico
+Em `useMeetingsLibrary.ts`:
+- Listagem e detalhe passam a usar o repositório direto no banco.
+- Exclusão passa a remover arquivos no storage e depois excluir linha do banco diretamente.
+- Regeneração de resumo continua Edge Function opcional, com fallback silencioso e invalidação de cache.
 
-Ao final, o fluxo ficará:
+### 6. Manter Edge Functions como complementares
+Vou revisar e ajustar as funções existentes para continuarem úteis, mas não obrigatórias:
+- `reports-meetings-summarize`: refinamento de resumo por IA e purge opcional.
+- `reports-meetings-purge-audio`: limpeza de áudio por usuário.
+- `reports-meetings-list/detail/delete/transcribe`: mantidas para compatibilidade/admin, mas não chamadas pelo core.
 
-```text
-Iniciar reunião
-  -> cria sessão na nuvem
-  -> grava/transcreve/autosalva
-Finalizar reunião
-  -> salva transcrição final
-  -> gera descrição e resumo
-  -> descarta áudio temporário
-  -> histórico lista reunião salva
-  -> detalhe exibe resumo consultável
-```
+### 7. Validação
+Depois da implementação em build mode, validarei:
+- Schema real de `meeting_sessions` e policies.
+- Upload/listagem do bucket `meeting-reports` via path owner-only.
+- Ausência de chamadas obrigatórias para `reports-meetings-list/transcribe` na UI principal.
+- Testes automatizados relevantes do projeto.
+- Fluxo manual no preview: iniciar reunião, autosave, finalizar, recarregar e ver histórico sem depender de Edge Function.
 
-Vou implementar apenas esse fluxo de reuniões na nuvem, sem mexer em outros menus ou módulos.
+### Critérios de aceite
+- Nenhum painel/botão/JSON de diagnóstico aparece no front.
+- Usuário não vê `Failed to send a request to the Edge Function`.
+- Reunião é criada no banco ao iniciar.
+- Áudio é salvo no Storage em chunks.
+- Autosave atualiza transcrição e duração no banco.
+- Finalização salva status, resumo local, descrição e chunks no banco.
+- Histórico carrega direto do banco.
+- Edge Functions podem falhar sem derrubar o fluxo principal.

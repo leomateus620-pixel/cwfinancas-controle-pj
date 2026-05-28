@@ -1893,7 +1893,7 @@ export type Database = {
         Row: {
           action_items: Json
           adjustments: Json
-          audio_chunks: string[]
+          audio_chunks: Json
           audio_purged_at: string | null
           audio_storage_path: string | null
           cloud_status: string
@@ -1906,7 +1906,7 @@ export type Database = {
           id: string
           language: string
           last_autosave_at: string | null
-          live_transcript_segments: string[]
+          live_transcript_segments: Json
           mentioned_numbers: Json
           metadata: Json
           participants: Json
@@ -1926,7 +1926,7 @@ export type Database = {
         Insert: {
           action_items?: Json
           adjustments?: Json
-          audio_chunks?: string[]
+          audio_chunks?: Json
           audio_purged_at?: string | null
           audio_storage_path?: string | null
           cloud_status?: string
@@ -1939,7 +1939,7 @@ export type Database = {
           id?: string
           language?: string
           last_autosave_at?: string | null
-          live_transcript_segments?: string[]
+          live_transcript_segments?: Json
           mentioned_numbers?: Json
           metadata?: Json
           participants?: Json
@@ -1959,7 +1959,7 @@ export type Database = {
         Update: {
           action_items?: Json
           adjustments?: Json
-          audio_chunks?: string[]
+          audio_chunks?: Json
           audio_purged_at?: string | null
           audio_storage_path?: string | null
           cloud_status?: string
@@ -1972,7 +1972,7 @@ export type Database = {
           id?: string
           language?: string
           last_autosave_at?: string | null
-          live_transcript_segments?: string[]
+          live_transcript_segments?: Json
           mentioned_numbers?: Json
           metadata?: Json
           participants?: Json
