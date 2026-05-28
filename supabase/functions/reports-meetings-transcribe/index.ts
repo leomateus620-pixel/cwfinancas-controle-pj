@@ -29,16 +29,18 @@ Deno.serve(async (req) => {
 
     if (body.action === "autosave_session") {
       const i = autosaveSchema.parse(body);
-      const { error } = await supabase.from("meeting_sessions").update({ transcript_text: sanitizeText(i.transcript_text), transcript_segments: i.transcript_segments, live_transcript_segments: i.live_transcript_segments ?? i.transcript_segments, duration_seconds: i.duration_seconds, audio_chunks: i.audio_chunks ?? [], last_autosave_at: new Date().toISOString(), status: "recording", metadata: { last_interim_text: i.last_interim_text ?? null } }).eq("id", i.meeting_session_id).eq("user_id", user.id);
+      const { data: updatedAutosave, error } = await supabase.from("meeting_sessions").update({ transcript_text: sanitizeText(i.transcript_text), transcript_segments: i.transcript_segments, live_transcript_segments: i.live_transcript_segments ?? i.transcript_segments, duration_seconds: i.duration_seconds, audio_chunks: i.audio_chunks ?? [], last_autosave_at: new Date().toISOString(), status: "recording", metadata: { last_interim_text: i.last_interim_text ?? null } }).eq("id", i.meeting_session_id).eq("user_id", user.id).select("id");
       if (error) throw error;
+      if (!updatedAutosave?.length) return new Response(JSON.stringify({ error: "Sessão não encontrada para autosave" }), { status: 404, headers: corsHeaders });
       return new Response(JSON.stringify({ status: "recording" }), { headers: corsHeaders });
     }
 
     const i = finishSchema.parse(body);
     const transcript = sanitizeText(i.transcript_text);
     const parts = split(transcript);
-    const { error } = await supabase.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: transcript, transcript_segments: parts, action_items: parts.filter((p) => /responsável|prazo|fazer|entregar/i.test(p)), decisions: parts.filter((p) => /decid|aprov/i.test(p)), mentioned_numbers: parts.filter((p) => /\d|r\$/i.test(p)), audio_chunks: i.audio_chunks ?? [], duration_seconds: i.duration_seconds, audio_storage_path: i.audio_storage_path ?? null }).eq("id", i.meeting_session_id).eq("user_id", user.id);
+    const { data: updatedFinalize, error } = await supabase.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: transcript, transcript_segments: parts, action_items: parts.filter((p) => /responsável|prazo|fazer|entregar/i.test(p)), decisions: parts.filter((p) => /decid|aprov/i.test(p)), mentioned_numbers: parts.filter((p) => /\d|r\$/i.test(p)), audio_chunks: i.audio_chunks ?? [], duration_seconds: i.duration_seconds, audio_storage_path: i.audio_storage_path ?? null }).eq("id", i.meeting_session_id).eq("user_id", user.id).select("id");
     if (error) throw error;
+    if (!updatedFinalize?.length) return new Response(JSON.stringify({ error: "Sessão não encontrada para finalização" }), { status: 404, headers: corsHeaders });
     return new Response(JSON.stringify({ status: "finished", transcript_text: transcript, note: "Sem conteúdo fictício." }), { headers: corsHeaders });
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Erro inesperado na função." }), { status: 400, headers: corsHeaders });

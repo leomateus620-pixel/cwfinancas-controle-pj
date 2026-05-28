@@ -20,6 +20,8 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackV
 
 export function useMeetingRecorder() {
   const [status, setStatus] = useState<MeetingStatus>("idle");
+  const statusRef = useRef<MeetingStatus>("idle");
+  const setStatusSafe = (next: MeetingStatus) => { statusRef.current = next; setStatus(next); };
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -105,19 +107,22 @@ export function useMeetingRecorder() {
       const chunks: BlobPart[] = [];
       const finish = () => resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : null);
       const timer = window.setTimeout(finish, timeoutMs);
-      recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
-      recorder.onstop = () => { window.clearTimeout(timer); finish(); };
+      const prevOnData = recorder.ondataavailable;
+      const prevOnStop = recorder.onstop;
+      recorder.addEventListener("dataavailable", (event: BlobEvent) => { if (event.data?.size) chunks.push(event.data); });
+      recorder.onstop = () => { window.clearTimeout(timer); finish(); if (typeof prevOnStop === "function") prevOnStop.call(recorder, new Event("stop")); recorder.ondataavailable = prevOnData; recorder.onstop = prevOnStop; };
       try { recorder.requestData?.(); } catch {}
       try { if (recorder.state !== "inactive") recorder.stop(); else { window.clearTimeout(timer); finish(); } } catch { window.clearTimeout(timer); finish(); }
     });
   };
 
   const finish = async (reason?: string) => {
-    if (!meetingSessionId || isFinishingRef.current) return;
+    const safeReason = typeof reason === "string" ? reason : undefined;
+    if (isFinishingRef.current) return;
     isFinishingRef.current = true;
     shouldKeepRecognitionAliveRef.current = false;
     recognitionManuallyStoppedRef.current = true;
-    setStatus("finishing");
+    setStatusSafe("finishing");
     setFinalizationStage("finalizando áudio");
     if (recognitionRestartTimeoutRef.current) window.clearTimeout(recognitionRestartTimeoutRef.current);
     flushInterimIfRelevant();
@@ -128,31 +133,53 @@ export function useMeetingRecorder() {
     await withTimeout(autosaveInFlightRef.current ?? Promise.resolve(), 2000, undefined);
     const transcriptText = buildFinalTranscriptFromRefs();
     const fallbackText = transcriptText || "Nenhuma fala foi transcrita. Verifique microfone/permissão ou cole a transcrição manualmente.";
+    if (!meetingSessionId) {
+      setFinalizationStage("finalizado localmente (sem sessão backend)");
+      setPermissionError("Sessão backend não encontrada. Resumo gerado localmente com a transcrição capturada.");
+      setTopicSummary(buildTopicSummary(fallbackText));
+      setStatusSafe("idle");
+      isFinishingRef.current = false;
+      return;
+    }
     const summary = buildTopicSummary(fallbackText);
     let finalized = false;
     setFinalizationStage("salvando transcrição");
     try {
-      await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 10000, null as any);
-      finalized = true;
+      const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 10000, null as any);
+      if (res?.error) throw res.error;
+      if (res?.data?.status === "finished") finalized = true;
     } catch {}
     if (!finalized) {
       try {
-        await withTimeout(db.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: fallbackText, transcript_segments: dedupeTranscriptSegments(fallbackText.split("\n")), action_items: summary.actions, decisions: summary.decisions, mentioned_numbers: summary.numbers, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000) }).eq("id", meetingSessionId), 8000, null as any);
-        finalized = true;
+        const dbRes = await withTimeout(db.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: fallbackText, transcript_segments: dedupeTranscriptSegments(fallbackText.split("\n")), action_items: summary.actions, decisions: summary.decisions, mentioned_numbers: summary.numbers, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000) }).eq("id", meetingSessionId), 8000, null as any);
+        if (!dbRes?.error) finalized = true;
       } catch {}
     }
     setFinalizationStage(finalized ? "concluído" : "finalizado localmente por falha no backend");
-    if (reason) setPermissionError(reason);
+    if (safeReason) setPermissionError(safeReason);
+    else if (!finalized) setPermissionError("Falha no backend ao finalizar. Resumo gerado localmente.");
     setTopicSummary(summary);
-    setStatus("idle");
+    setStatusSafe("idle");
     isFinishingRef.current = false;
   };
 
   const start = async () => {
     setStatus("idle"); setPermissionError(null); setTranscriptLines([]); transcriptLinesRef.current = []; confirmedTranscriptRef.current = []; setInterimTranscript(""); lastInterimTranscriptRef.current = ""; setManualTranscript(""); setDurationMs(0); setRecognitionRestarted(false); setRecognitionUnstable(false); setFinalizationStage("inativo");
-    const { data } = await supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` } });
-    const sessionId = data?.meeting_session_id;
-    setMeetingSessionId(sessionId); setPersistenceMode("edge");
+    let sessionId: string | null = null;
+    try {
+      const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` } });
+      if (error) throw error;
+      sessionId = typeof data?.meeting_session_id === "string" ? data.meeting_session_id : null;
+    } catch {}
+    if (!sessionId) {
+      try {
+        const { data, error } = await db.from("meeting_sessions").insert({ title: `Reunião ${new Date().toLocaleString("pt-BR")}`, status: "recording", started_at: new Date().toISOString() }).select("id").single();
+        if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); }
+      } catch {}
+    }
+    if (!sessionId) { setPersistenceMode("local"); setPermissionError("Sessão backend ausente. Finalização será local."); }
+    else if (persistenceMode !== "database") setPersistenceMode("edge");
+    setMeetingSessionId(sessionId);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     if (typeof MediaRecorder !== "undefined") {
@@ -185,7 +212,7 @@ export function useMeetingRecorder() {
       };
       rec.onend = () => {
         flushInterimIfRelevant();
-        const canRestart = status === "recording" && shouldKeepRecognitionAliveRef.current && !isFinishingRef.current && !isPausedRef.current && !recognitionManuallyStoppedRef.current && !shouldAutoFinishMeeting(meetingStartedAtRef.current, Date.now());
+        const canRestart = statusRef.current === "recording" && shouldKeepRecognitionAliveRef.current && !isFinishingRef.current && !isPausedRef.current && !recognitionManuallyStoppedRef.current && !shouldAutoFinishMeeting(meetingStartedAtRef.current, Date.now());
         if (canRestart) {
           recognitionRestartTimeoutRef.current = window.setTimeout(() => { try { rec.start(); setRecognitionRestarted(true); } catch { setRecognitionUnstable(true); } }, 700);
         }
@@ -203,13 +230,14 @@ export function useMeetingRecorder() {
     }, 1000);
     autosaveRef.current = window.setInterval(() => { void autosaveMeetingProgress(); }, 15000);
     isPausedRef.current = false;
-    setStatus("recording");
+    setStatusSafe("recording");
   };
 
-  const pause = () => { isPausedRef.current = true; flushInterimIfRelevant(); recognitionManuallyStoppedRef.current = true; shouldKeepRecognitionAliveRef.current = false; recognitionRef.current?.stop(); mediaRecorderRef.current?.pause(); setStatus("paused"); };
-  const resume = () => { isPausedRef.current = false; shouldKeepRecognitionAliveRef.current = true; recognitionManuallyStoppedRef.current = false; mediaRecorderRef.current?.resume(); try { recognitionRef.current?.start(); } catch {} setStatus("recording"); };
+  const pause = () => { isPausedRef.current = true; flushInterimIfRelevant(); recognitionManuallyStoppedRef.current = true; shouldKeepRecognitionAliveRef.current = false; recognitionRef.current?.stop(); mediaRecorderRef.current?.pause(); setStatusSafe("paused"); };
+  const resume = () => { isPausedRef.current = false; shouldKeepRecognitionAliveRef.current = true; recognitionManuallyStoppedRef.current = false; mediaRecorderRef.current?.resume(); try { recognitionRef.current?.start(); } catch {} setStatusSafe("recording"); };
 
   useEffect(() => { transcriptLinesRef.current = transcriptLines; }, [transcriptLines]);
 
-  return { status, permissionError, isSpeechSupported, interimTranscript, transcriptLines, manualTranscript, setManualTranscript, topicSummary, persistenceMode, durationMs, autosaveState, recognitionRestarted, recognitionUnstable, finalizationStage, start, pause, resume, finish, autosaveMeetingProgress };
+  const hasBackendSession = Boolean(meetingSessionId && persistenceMode !== "local");
+  return { status, permissionError, isSpeechSupported, interimTranscript, transcriptLines, manualTranscript, setManualTranscript, topicSummary, persistenceMode, meetingSessionId, hasBackendSession, durationMs, autosaveState, recognitionRestarted, recognitionUnstable, finalizationStage, start, pause, resume, finish, autosaveMeetingProgress };
 }
