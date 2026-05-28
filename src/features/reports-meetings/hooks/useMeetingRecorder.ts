@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 export type MeetingStatus = "idle" | "recording" | "paused" | "finishing" | "blocked";
@@ -33,15 +33,47 @@ const mockRollingLines = [
 
 const sanitizeText = (input: string) => input.replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 
+const PUBLIC_URL = "https://cwfinancas-controle-pj.lovable.app/relatorios-reunioes";
+
+function describeMicError(err: unknown): string {
+  if (!(err instanceof Error)) return "Não foi possível acessar o microfone.";
+  const name = (err as DOMException).name;
+  switch (name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Permissão de microfone negada. Libere o microfone nas configurações do navegador.";
+    case "NotFoundError":
+    case "OverconstrainedError":
+      return "Nenhum microfone foi detectado neste dispositivo.";
+    case "NotReadableError":
+      return "O microfone está sendo usado por outro aplicativo.";
+    default:
+      return err.message || "Falha ao acessar o microfone.";
+  }
+}
+
+async function tryGetMic(): Promise<MediaStream | null> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return null;
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    return null;
+  }
+}
+
 export function useMeetingRecorder() {
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const [permissionError, setPermissionError] = useState<string | null>(null);
   const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
   const [topicSummary, setTopicSummary] = useState<TopicSummary | null>(null);
   const [meetingSessionId, setMeetingSessionId] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
   const tickerRef = useRef<number | null>(null);
   const mockIdxRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const clearTicker = () => {
     if (tickerRef.current) {
@@ -49,6 +81,26 @@ export function useMeetingRecorder() {
       tickerRef.current = null;
     }
   };
+
+  const stopStream = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        /* noop */
+      }
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+  };
+
+  useEffect(() => () => {
+    clearTicker();
+    stopStream();
+  }, []);
 
   const startTicker = () => {
     clearTicker();
@@ -62,55 +114,88 @@ export function useMeetingRecorder() {
   };
 
   const start = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      mediaRecorderRef.current.start();
+    setPermissionError(null);
+    setTopicSummary(null);
+    setTranscriptLines([]);
+    mockIdxRef.current = 0;
 
-      const { data: startData, error: startErr } = await supabase.functions.invoke("reports-meetings-transcribe", {
+    // 1) Try microphone — failure means demo mode, not blocked
+    let micWarning: string | null = null;
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+    } catch (err) {
+      micWarning = describeMicError(err);
+      stream = null;
+    }
+    if (!stream) {
+      stream = await tryGetMic();
+    }
+
+    if (stream) {
+      try {
+        streamRef.current = stream;
+        mediaRecorderRef.current = new MediaRecorder(stream);
+        mediaRecorderRef.current.start();
+        setDemoMode(false);
+      } catch (err) {
+        micWarning = describeMicError(err);
+        stopStream();
+        setDemoMode(true);
+      }
+    } else {
+      setDemoMode(true);
+    }
+
+    // 2) Open backend session
+    try {
+      const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
         body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` },
       });
-      if (startErr) throw startErr;
-
-      const parsed = startData as StartSessionResponse;
+      if (error) throw error;
+      const parsed = data as StartSessionResponse;
       setMeetingSessionId(parsed.meeting_session_id);
       setStatus("recording");
-      setPermissionError(null);
-      setTopicSummary(null);
-      setTranscriptLines([]);
-      mockIdxRef.current = 0;
+      setPermissionError(micWarning); // keep mic warning visible alongside demo banner
       startTicker();
-    } catch {
-      setStatus("blocked");
-      setPermissionError("Sem permissão de microfone ou sessão indisponível");
+    } catch (err) {
+      stopStream();
+      clearTicker();
+      setStatus("idle");
+      const msg = err instanceof Error ? err.message : "Falha ao iniciar sessão de reunião.";
+      setPermissionError(`Não foi possível iniciar a reunião: ${msg}`);
     }
   };
 
   const pause = () => {
-    if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.pause();
+    if (mediaRecorderRef.current?.state === "recording") {
+      try { mediaRecorderRef.current.pause(); } catch { /* noop */ }
+    }
     setStatus("paused");
     clearTicker();
   };
 
   const resume = () => {
-    if (mediaRecorderRef.current?.state === "paused") mediaRecorderRef.current.resume();
+    if (mediaRecorderRef.current?.state === "paused") {
+      try { mediaRecorderRef.current.resume(); } catch { /* noop */ }
+    }
     setStatus("recording");
     startTicker();
   };
 
   const finish = async () => {
     if (!meetingSessionId) {
-      setPermissionError("Sessão de reunião não encontrada para finalizar");
+      setPermissionError("Sessão de reunião não encontrada para finalizar.");
       return;
     }
 
     setStatus("finishing");
     clearTicker();
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
+    stopStream();
 
-    const transcriptText = sanitizeText(transcriptLines.join("\n"));
+    const transcriptText = sanitizeText(transcriptLines.join("\n")) || "Sem conteúdo";
     const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
-      body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: transcriptText || "Sem conteúdo" },
+      body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: transcriptText },
     });
 
     if (!error && data) {
@@ -118,14 +203,28 @@ export function useMeetingRecorder() {
       setTopicSummary(parsed.topic_summary);
       setMeetingSessionId(null);
       setStatus("idle");
+      setDemoMode(false);
       return;
     }
 
-    setStatus("blocked");
-    setPermissionError("Erro ao finalizar a reunião. Tente novamente.");
+    setStatus("idle");
+    const msg = error instanceof Error ? error.message : "Erro ao finalizar a reunião. Tente novamente.";
+    setPermissionError(msg);
   };
 
   const transcriptText = useMemo(() => transcriptLines.join("\n"), [transcriptLines]);
 
-  return { status, permissionError, transcriptLines, transcriptText, topicSummary, start, pause, resume, finish };
+  return {
+    status,
+    permissionError,
+    transcriptLines,
+    transcriptText,
+    topicSummary,
+    demoMode,
+    publicUrl: PUBLIC_URL,
+    start,
+    pause,
+    resume,
+    finish,
+  };
 }
