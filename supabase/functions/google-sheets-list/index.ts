@@ -151,6 +151,28 @@ Deno.serve(async (req) => {
 
     // If spreadsheet_id is provided, get sheets from that spreadsheet
     if (spreadsheet_id) {
+      // First check the file's mimeType in Drive — Sheets API does NOT support Office files (.xlsx)
+      const metaResponse = await googleApiRequest(
+        `https://www.googleapis.com/drive/v3/files/${spreadsheet_id}?fields=id,name,mimeType`
+      );
+
+      if (metaResponse.ok) {
+        const meta = await metaResponse.json();
+        if (meta.mimeType && meta.mimeType !== "application/vnd.google-apps.spreadsheet") {
+          const isOffice = meta.mimeType.includes("spreadsheetml") || meta.mimeType.includes("ms-excel");
+          return new Response(
+            JSON.stringify({
+              error: isOffice
+                ? `"${meta.name}" é um arquivo Excel no Drive. Abra-o no Google Sheets e use "Arquivo → Salvar como Google Sheets", ou envie-o pelo upload de Excel.`
+                : `Este arquivo (${meta.mimeType}) não é uma planilha Google Sheets.`,
+              needs_auth: false,
+              unsupported_mime: meta.mimeType,
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+      }
+
       const sheetsResponse = await googleApiRequest(
         `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheet_id}?fields=sheets.properties,properties.title`
       );
