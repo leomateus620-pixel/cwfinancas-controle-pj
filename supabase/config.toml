@@ -80,3 +80,12 @@ verify_jwt = false
 
 [functions.reset-client-password]
 verify_jwt = false
+
+[functions.reports-meetings-transcribe]
+verify_jwt = false
+
+[functions.reports-meetings-generate]
+verify_jwt = false
+
+[functions.reports-meetings-compare]
+verify_jwt = false
