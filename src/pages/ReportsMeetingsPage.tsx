@@ -36,14 +36,14 @@ export default function ReportsMeetingsPage() {
             resume={recorder.resume}
             finish={recorder.finish}
             error={recorder.permissionError}
-            demoMode={recorder.demoMode}
-            publicUrl={recorder.publicUrl}
+            isSpeechSupported={recorder.isSpeechSupported}
+            persistenceMode={recorder.persistenceMode}
           />
           <ReportPdfPreview />
         </div>
 
         <div className="space-y-4">
-          <MeetingTranscriptPanel lines={recorder.transcriptLines} status={recorder.status} />
+          <MeetingTranscriptPanel lines={recorder.transcriptLines} interimTranscript={recorder.interimTranscript} status={recorder.status} isSpeechSupported={recorder.isSpeechSupported} manualTranscript={recorder.manualTranscript} onManualTranscriptChange={recorder.setManualTranscript} />
           <div className="grid gap-2 md:grid-cols-2">
             <SmartTopicIsland
               title="Ponto falado"
