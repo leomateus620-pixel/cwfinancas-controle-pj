@@ -50,6 +50,8 @@ export default function ReportsMeetingsPage() {
         </div>
       </div>
 
+      <MeetingsHistoryPanel />
+
       <ReportsHistoryTable />
     </div>
   );
