@@ -36,6 +36,8 @@ export default function ReportsMeetingsPage() {
             resume={recorder.resume}
             finish={recorder.finish}
             error={recorder.permissionError}
+            demoMode={recorder.demoMode}
+            publicUrl={recorder.publicUrl}
           />
           <ReportPdfPreview />
         </div>
