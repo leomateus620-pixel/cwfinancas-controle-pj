@@ -201,7 +201,7 @@ export function useMeetingRecorder() {
     setIsSpeechSupported(Boolean(speechCtor));
     if (speechCtor) {
       const rec = new speechCtor(); rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
-      rec.onresult = (event: SpeechRecognitionEvent) => {
+      rec.onresult = (event: any) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i]; const text = sanitizeText(result[0]?.transcript ?? "");
