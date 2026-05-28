@@ -30,7 +30,7 @@ export default function ReportsMeetingsPage() {
         <div className="space-y-4">
           <SourceSelectorCard />
           <PreMeetingReportPanel />
-          <MeetingRecorderPanel status={recorder.status} start={recorder.start} pause={recorder.pause} resume={recorder.resume} finish={recorder.finish} error={recorder.permissionError} isSpeechSupported={recorder.isSpeechSupported} persistenceMode={recorder.persistenceMode} durationMs={recorder.durationMs} autosaveState={recorder.autosaveState} recognitionRestarted={recorder.recognitionRestarted} recognitionUnstable={recorder.recognitionUnstable} finalizationStage={recorder.finalizationStage} hasBackendSession={recorder.hasBackendSession} />
+          <MeetingRecorderPanel status={recorder.status} start={recorder.start} pause={recorder.pause} resume={recorder.resume} finish={recorder.finish} error={recorder.permissionError} isSpeechSupported={recorder.isSpeechSupported} persistenceMode={recorder.persistenceMode} durationMs={recorder.durationMs} autosaveState={recorder.autosaveState} recognitionRestarted={recorder.recognitionRestarted} recognitionUnstable={recorder.recognitionUnstable} finalizationStage={recorder.finalizationStage} hasBackendSession={recorder.hasBackendSession} cloudStatus={recorder.cloudStatus} cloudError={recorder.cloudError} />
           <ReportPdfPreview />
         </div>
 

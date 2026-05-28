@@ -36,6 +36,8 @@ export function useMeetingRecorder() {
   const [recognitionRestarted, setRecognitionRestarted] = useState(false);
   const [recognitionUnstable, setRecognitionUnstable] = useState(false);
   const [finalizationStage, setFinalizationStage] = useState("inativo");
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<"pending"|"active"|"finalized"|"local"|"error">("pending");
 
   const audioChunksRef = useRef<string[]>([]);
   const transcriptLinesRef = useRef<string[]>([]);
@@ -94,7 +96,7 @@ export function useMeetingRecorder() {
         await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: payload }), 5000, null as any);
         setAutosaveState("Salvo há instantes");
       } catch {
-        setAutosaveState("Falha no autosave");
+        setAutosaveState("Falha no autosave"); setCloudError("autosave_session falhou no Edge Function");
       }
     })();
     await autosaveInFlightRef.current;
@@ -112,7 +114,7 @@ export function useMeetingRecorder() {
       const prevOnStop = recorder.onstop;
       recorder.addEventListener("dataavailable", (event: BlobEvent) => { if (event.data?.size) chunks.push(event.data); });
       recorder.onstop = () => { window.clearTimeout(timer); finish(); if (typeof prevOnStop === "function") prevOnStop.call(recorder, new Event("stop")); recorder.ondataavailable = prevOnData; recorder.onstop = prevOnStop; };
-      try { recorder.requestData?.(); } catch {}
+      try { recorder.requestData?.(); } catch (e) { setCloudError(String((e as any)?.message ?? e)); }
       try { if (recorder.state !== "inactive") recorder.stop(); else { window.clearTimeout(timer); finish(); } } catch { window.clearTimeout(timer); finish(); }
     });
   };
@@ -137,6 +139,7 @@ export function useMeetingRecorder() {
     if (!meetingSessionId) {
       setFinalizationStage("finalizado localmente (sem sessão backend)");
       setPermissionError("Sessão backend não encontrada. Resumo gerado localmente com a transcrição capturada.");
+      setCloudStatus("local");
       setTopicSummary(buildTopicSummary(fallbackText));
       setStatusSafe("idle");
       isFinishingRef.current = false;
@@ -148,7 +151,7 @@ export function useMeetingRecorder() {
     try {
       const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 10000, null as any);
       if (res?.error) throw res.error;
-      if (res?.data?.status === "finished") finalized = true;
+      if (res?.data?.status === "finished") { finalized = true; setCloudStatus("finalized"); }
     } catch {}
     if (!finalized) {
       try {
@@ -178,8 +181,8 @@ export function useMeetingRecorder() {
         if (!error) { sessionId = data?.id ?? null; setPersistenceMode("database"); }
       } catch {}
     }
-    if (!sessionId) { setPersistenceMode("local"); setPermissionError("Sessão backend ausente. Finalização será local."); }
-    else if (persistenceMode !== "database") setPersistenceMode("edge");
+    if (!sessionId) { setPersistenceMode("local"); setCloudStatus("local"); setPermissionError("Sessão backend ausente. Finalização será local."); }
+    else if (persistenceMode !== "database") { setPersistenceMode("edge"); setCloudStatus("active"); }
     setMeetingSessionId(sessionId);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
@@ -240,5 +243,5 @@ export function useMeetingRecorder() {
   useEffect(() => { transcriptLinesRef.current = transcriptLines; }, [transcriptLines]);
 
   const hasBackendSession = Boolean(meetingSessionId && persistenceMode !== "local");
-  return { status, permissionError, isSpeechSupported, interimTranscript, transcriptLines, manualTranscript, setManualTranscript, topicSummary, persistenceMode, meetingSessionId, hasBackendSession, durationMs, autosaveState, recognitionRestarted, recognitionUnstable, finalizationStage, start, pause, resume, finish, autosaveMeetingProgress };
+  return { status, permissionError, cloudError, cloudStatus, isSpeechSupported, interimTranscript, transcriptLines, manualTranscript, setManualTranscript, topicSummary, persistenceMode, meetingSessionId, hasBackendSession, durationMs, autosaveState, recognitionRestarted, recognitionUnstable, finalizationStage, start, pause, resume, finish, autosaveMeetingProgress };
 }
