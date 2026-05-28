@@ -6,7 +6,8 @@ const db = supabase as any;
 export type MeetingStatus = "idle" | "recording" | "paused" | "finishing" | "blocked";
 export type SessionPersistenceMode = "edge" | "database" | "local";
 
-declare global { interface Window { webkitSpeechRecognition?: typeof SpeechRecognition; } }
+type SpeechRecognitionCtor = new () => any;
+declare global { interface Window { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor; } }
 
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
   let timeoutId: number | null = null;
