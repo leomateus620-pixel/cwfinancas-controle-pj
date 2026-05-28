@@ -43,6 +43,7 @@ import DemandsApprovalsPage from "@/pages/demands/DemandsApprovalsPage";
 import DemandsDocumentsPage from "@/pages/demands/DemandsDocumentsPage";
 import DemandsSettingsPage from "@/pages/demands/DemandsSettingsPage";
 import AsanaSettingsPage from "@/pages/demands/AsanaSettingsPage";
+import ReportsMeetingsPage from "@/pages/ReportsMeetingsPage";
 
 
 const queryClient = new QueryClient({
@@ -111,6 +112,7 @@ const App = () => {
                   <Route path="/credit-cards" element={<CreditCardPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/statement-converter" element={<StatementConverterPage />} />
+                  <Route path="/relatorios-reunioes" element={<ReportsMeetingsPage />} />
                   <Route path="/demands" element={<DemandsListPage />} />
                   <Route path="/demands/dashboard" element={<DemandsDashboardPage />} />
                   <Route path="/demands/new" element={<NewDemandPage />} />
