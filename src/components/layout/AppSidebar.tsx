@@ -22,6 +22,7 @@ import {
   Sliders,
   LayoutGrid,
   ChevronRight,
+  Presentation,
 } from "lucide-react";
 import logoIcon from "@/assets/logo-icon.png";
 import logoFull from "@/assets/logo-full.png";
@@ -111,6 +112,14 @@ const groups: NavGroup[] = [
       { title: "Documentos", url: "/demands/documents", icon: FolderOpen, internalOnly: true },
       { title: "Configurações da Central", url: "/demands/settings", icon: Sliders, internalOnly: true },
     ],
+  },
+  {
+    id: "relatorios-reunioes",
+    label: "Relatórios e reuniões",
+    accent: "indigo",
+    kpi: "shimmer",
+    anchor: { title: "Relatórios e reuniões", url: "/relatorios-reunioes", icon: Presentation },
+    children: [],
   },
   {
     id: "ferramentas",
