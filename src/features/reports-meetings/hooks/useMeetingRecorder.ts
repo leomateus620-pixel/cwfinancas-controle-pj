@@ -6,7 +6,8 @@ const db = supabase as any;
 export type MeetingStatus = "idle" | "recording" | "paused" | "finishing" | "blocked";
 export type SessionPersistenceMode = "edge" | "database" | "local";
 
-declare global { interface Window { webkitSpeechRecognition?: typeof SpeechRecognition; } }
+type SpeechRecognitionCtor = new () => any;
+declare global { interface Window { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor; } }
 
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackValue: T): Promise<T> => {
   let timeoutId: number | null = null;
@@ -39,7 +40,7 @@ export function useMeetingRecorder() {
   const audioChunksRef = useRef<string[]>([]);
   const transcriptLinesRef = useRef<string[]>([]);
   const confirmedTranscriptRef = useRef<string[]>([]);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -200,7 +201,7 @@ export function useMeetingRecorder() {
     setIsSpeechSupported(Boolean(speechCtor));
     if (speechCtor) {
       const rec = new speechCtor(); rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
-      rec.onresult = (event: SpeechRecognitionEvent) => {
+      rec.onresult = (event: any) => {
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i]; const text = sanitizeText(result[0]?.transcript ?? "");

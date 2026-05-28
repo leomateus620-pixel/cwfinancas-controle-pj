@@ -89,3 +89,18 @@ verify_jwt = false
 
 [functions.reports-meetings-compare]
 verify_jwt = false
+
+[functions.reports-meetings-summarize]
+verify_jwt = false
+
+[functions.reports-meetings-purge-audio]
+verify_jwt = false
+
+[functions.reports-meetings-list]
+verify_jwt = false
+
+[functions.reports-meetings-detail]
+verify_jwt = false
+
+[functions.reports-meetings-delete]
+verify_jwt = false
