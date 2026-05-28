@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { buildAutosavePayload, buildTopicSummary, dedupeTranscriptSegments, sanitizeText, shouldAutoFinishMeeting, type TopicSummary } from "../lib/meetingRecorderUtils";
 
@@ -20,6 +21,7 @@ const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, fallbackV
 };
 
 export function useMeetingRecorder() {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<MeetingStatus>("idle");
   const statusRef = useRef<MeetingStatus>("idle");
   const setStatusSafe = (next: MeetingStatus) => { statusRef.current = next; setStatus(next); };
