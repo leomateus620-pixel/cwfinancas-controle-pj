@@ -13,9 +13,12 @@ export interface TopicSummary {
 
 interface StartSessionResponse {
   meeting_session_id: string;
+  status: "recording";
 }
 
 interface FinalizeSessionResponse {
+  status: "finished";
+  transcript_text: string;
   topic_summary: TopicSummary;
 }
 
@@ -58,58 +61,28 @@ export function useMeetingRecorder() {
     }, 2400);
   };
 
-  const createSession = async () => {
-    const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
-      body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` },
-    });
-
-    if (error) throw new Error(error.message || "Falha ao iniciar sessão no servidor");
-    const parsed = data as StartSessionResponse;
-    if (!parsed?.meeting_session_id) throw new Error("Sessão criada sem ID");
-    return parsed.meeting_session_id;
-  };
-
   const start = async () => {
-    setPermissionError(null);
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setStatus("blocked");
-      setPermissionError("Seu navegador não suporta captura de áudio");
-      return;
-    }
-
-    if (typeof MediaRecorder === "undefined") {
-      setStatus("blocked");
-      setPermissionError("MediaRecorder indisponível neste navegador/dispositivo");
-      return;
-    }
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorderRef.current = new MediaRecorder(stream);
       mediaRecorderRef.current.start();
 
+      const { data: startData, error: startErr } = await supabase.functions.invoke("reports-meetings-transcribe", {
+        body: { action: "start_session", title: `Reunião ${new Date().toLocaleString("pt-BR")}` },
+      });
+      if (startErr) throw startErr;
+
+      const parsed = startData as StartSessionResponse;
+      setMeetingSessionId(parsed.meeting_session_id);
       setStatus("recording");
+      setPermissionError(null);
       setTopicSummary(null);
       setTranscriptLines([]);
       mockIdxRef.current = 0;
       startTicker();
-
-      try {
-        const sessionId = await createSession();
-        setMeetingSessionId(sessionId);
-      } catch (sessionError) {
-        setPermissionError(
-          sessionError instanceof Error
-            ? `Áudio iniciado. Sessão remota indisponível: ${sessionError.message}`
-            : "Áudio iniciado. Sessão remota indisponível.",
-        );
-      }
-    } catch (err) {
+    } catch {
       setStatus("blocked");
-      setPermissionError(
-        err instanceof Error ? `Sem permissão de microfone: ${err.message}` : "Sem permissão de microfone",
-      );
+      setPermissionError("Sem permissão de microfone ou sessão indisponível");
     }
   };
 
@@ -126,35 +99,30 @@ export function useMeetingRecorder() {
   };
 
   const finish = async () => {
+    if (!meetingSessionId) {
+      setPermissionError("Sessão de reunião não encontrada para finalizar");
+      return;
+    }
+
     setStatus("finishing");
     clearTicker();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") mediaRecorderRef.current.stop();
 
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
+    const transcriptText = sanitizeText(transcriptLines.join("\n"));
+    const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
+      body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: transcriptText || "Sem conteúdo" },
+    });
 
-    try {
-      const ensuredSessionId = meetingSessionId ?? (await createSession());
-      const transcriptText = sanitizeText(transcriptLines.join("\n")) || "Sem conteúdo";
-
-      const { data, error } = await supabase.functions.invoke("reports-meetings-transcribe", {
-        body: { action: "finalize_session", meeting_session_id: ensuredSessionId, transcript_text: transcriptText },
-      });
-
-      if (error) throw new Error(error.message || "Falha ao finalizar sessão");
-
+    if (!error && data) {
       const parsed = data as FinalizeSessionResponse;
-      if (parsed?.topic_summary) {
-        setTopicSummary(parsed.topic_summary);
-      }
-
+      setTopicSummary(parsed.topic_summary);
       setMeetingSessionId(null);
-      setPermissionError(null);
       setStatus("idle");
-    } catch (err) {
-      setStatus("blocked");
-      setPermissionError(err instanceof Error ? `Erro ao finalizar reunião: ${err.message}` : "Erro ao finalizar reunião");
+      return;
     }
+
+    setStatus("blocked");
+    setPermissionError("Erro ao finalizar a reunião. Tente novamente.");
   };
 
   const transcriptText = useMemo(() => transcriptLines.join("\n"), [transcriptLines]);

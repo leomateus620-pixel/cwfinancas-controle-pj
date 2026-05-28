@@ -1,14 +1,14 @@
-import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
-import { SourceSelectorCard } from "@/features/reports-meetings/components/SourceSelectorCard";
-import { PreMeetingReportPanel } from "@/features/reports-meetings/components/PreMeetingReportPanel";
+import { GlassCard } from "@/components/home/GlassCard";
+import { FinalComparisonPanel } from "@/features/reports-meetings/components/FinalComparisonPanel";
 import { MeetingRecorderPanel } from "@/features/reports-meetings/components/MeetingRecorderPanel";
 import { MeetingTranscriptPanel } from "@/features/reports-meetings/components/MeetingTranscriptPanel";
-import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
-import { FinalComparisonPanel } from "@/features/reports-meetings/components/FinalComparisonPanel";
-import { ReportsHistoryTable } from "@/features/reports-meetings/components/ReportsHistoryTable";
+import { PreMeetingReportPanel } from "@/features/reports-meetings/components/PreMeetingReportPanel";
 import { ReportPdfPreview } from "@/features/reports-meetings/components/ReportPdfPreview";
+import { ReportsHistoryTable } from "@/features/reports-meetings/components/ReportsHistoryTable";
+import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
+import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
+import { SourceSelectorCard } from "@/features/reports-meetings/components/SourceSelectorCard";
 import { useMeetingRecorder } from "@/features/reports-meetings/hooks/useMeetingRecorder";
-import { GlassCard } from "@/components/home/GlassCard";
 
 export default function ReportsMeetingsPage() {
   const recorder = useMeetingRecorder();
@@ -18,8 +18,10 @@ export default function ReportsMeetingsPage() {
       <ReportsMeetingsHero onGenerate={() => {}} onStartMeeting={recorder.start} />
 
       <div className="grid gap-3 md:grid-cols-4">
-        {["Relatórios gerados", "Reuniões gravadas", "Ações pendentes", "Última comparação"].map((k) => (
-          <GlassCard key={k} variant="compact" className="p-3 text-sm font-medium">{k}</GlassCard>
+        {["Relatórios gerados", "Reuniões gravadas", "Ações pendentes", "Última comparação"].map((item) => (
+          <GlassCard key={item} variant="compact" className="p-3 text-sm font-medium">
+            {item}
+          </GlassCard>
         ))}
       </div>
 
@@ -41,8 +43,14 @@ export default function ReportsMeetingsPage() {
         <div className="space-y-4">
           <MeetingTranscriptPanel lines={recorder.transcriptLines} status={recorder.status} />
           <div className="grid gap-2 md:grid-cols-2">
-            <SmartTopicIsland title="Ponto falado" summary="Os cards crescem com a conversa, com limite e rolagem contínua." />
-            <SmartTopicIsland title="Divergência" summary="Números não confirmados ficam sinalizados para revisão ao final." />
+            <SmartTopicIsland
+              title="Ponto falado"
+              summary="Os cards crescem com a conversa, com limite e rolagem contínua."
+            />
+            <SmartTopicIsland
+              title="Divergência"
+              summary="Números não confirmados ficam sinalizados para revisão ao final."
+            />
           </div>
           <FinalComparisonPanel topicSummary={recorder.topicSummary} />
         </div>

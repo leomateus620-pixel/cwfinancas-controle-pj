@@ -1,12 +1,4 @@
 import { Button } from "@/components/ui/button";
-
-export function MeetingRecorderPanel({
-  status,
-  start,
-  pause,
-  resume,
-  finish,
-  error,
 }: {
   status: string;
   start: () => void;
