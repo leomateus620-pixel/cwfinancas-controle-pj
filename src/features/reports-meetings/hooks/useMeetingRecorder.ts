@@ -151,15 +151,19 @@ export function useMeetingRecorder() {
     let finalized = false;
     setFinalizationStage("salvando transcrição");
     try {
-      const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 10000, null as any);
+      const res = await withTimeout(supabase.functions.invoke("reports-meetings-transcribe", { body: { action: "finalize_session", meeting_session_id: meetingSessionId, transcript_text: fallbackText, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000), audio_storage_path: recordedBlob ? `local-${Date.now()}` : undefined } }), 15000, null as any);
       if (res?.error) throw res.error;
       if (res?.data?.status === "finished") { finalized = true; setCloudStatus("finalized"); }
-    } catch {}
+    } catch (e) {
+      setCloudError(`finalize falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+    }
     if (!finalized) {
       try {
         const dbRes = await withTimeout(db.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: fallbackText, transcript_segments: dedupeTranscriptSegments(fallbackText.split("\n")), action_items: summary.actions, decisions: summary.decisions, mentioned_numbers: summary.numbers, audio_chunks: audioChunksRef.current, duration_seconds: Math.floor(durationMs / 1000) }).eq("id", meetingSessionId), 8000, null as any);
-        if (!dbRes?.error) finalized = true;
-      } catch {}
+        if (!dbRes?.error) { finalized = true; setCloudStatus("finalized"); }
+      } catch (e) {
+        setCloudError(`fallback DB falhou: ${String((e as any)?.message ?? e).slice(0, 200)}`);
+      }
     }
     setFinalizationStage(finalized ? "concluído" : "finalizado localmente por falha no backend");
     if (safeReason) setPermissionError(safeReason);
@@ -167,6 +171,17 @@ export function useMeetingRecorder() {
     setTopicSummary(summary);
     setStatusSafe("idle");
     isFinishingRef.current = false;
+    // Recarrega histórico de nuvem para a reunião aparecer imediatamente
+    queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
+    // Polling curto para pegar description/summary quando a summarize concluir
+    if (finalized) {
+      let tries = 0;
+      const poll = window.setInterval(() => {
+        tries += 1;
+        queryClient.invalidateQueries({ queryKey: ["meetings-library"] });
+        if (tries >= 6) window.clearInterval(poll);
+      }, 4000);
+    }
   };
 
   const start = async () => {
