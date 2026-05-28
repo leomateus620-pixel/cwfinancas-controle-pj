@@ -41,7 +41,28 @@ Deno.serve(async (req) => {
     const { data: updatedFinalize, error } = await supabase.from("meeting_sessions").update({ status: "finished", ended_at: new Date().toISOString(), transcript_text: transcript, transcript_segments: parts, action_items: parts.filter((p) => /responsável|prazo|fazer|entregar/i.test(p)), decisions: parts.filter((p) => /decid|aprov/i.test(p)), mentioned_numbers: parts.filter((p) => /\d|r\$/i.test(p)), audio_chunks: i.audio_chunks ?? [], duration_seconds: i.duration_seconds, audio_storage_path: i.audio_storage_path ?? null }).eq("id", i.meeting_session_id).eq("user_id", user.id).select("id");
     if (error) throw error;
     if (!updatedFinalize?.length) return new Response(JSON.stringify({ error: "Sessão não encontrada para finalização" }), { status: 404, headers: corsHeaders });
-    return new Response(JSON.stringify({ status: "finished", transcript_text: transcript, note: "Sem conteúdo fictício." }), { headers: corsHeaders });
+
+    // Trigger summarize (which also purges audio on success) — fire-and-forget short await
+    let description: string | null = null;
+    let summary_markdown: string | null = null;
+    try {
+      const summarizeUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/reports-meetings-summarize`;
+      const sumRes = await Promise.race([
+        fetch(summarizeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({ meeting_session_id: i.meeting_session_id }),
+        }),
+        new Promise<Response>((resolve) => setTimeout(() => resolve(new Response("{}", { status: 504 })), 25000)),
+      ]);
+      if (sumRes.ok) {
+        const j = await sumRes.json().catch(() => ({}));
+        description = j?.description ?? null;
+        summary_markdown = j?.summary_markdown ?? null;
+      }
+    } catch {}
+
+    return new Response(JSON.stringify({ status: "finished", transcript_text: transcript, description, summary_markdown }), { headers: corsHeaders });
   } catch (error) {
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : "Erro inesperado na função." }), { status: 400, headers: corsHeaders });
   }
