@@ -1,0 +1,2 @@
+import { useState } from "react";
+export function SmartTopicIsland({title,summary}:{title:string;summary:string}){const[open,setOpen]=useState(false);return <button onClick={()=>setOpen(!open)} className="w-full text-left rounded-full border bg-white/60 px-4 py-2 backdrop-blur transition hover:bg-white/80"><div className="text-xs text-muted-foreground">{open?"Expandido":"Fechado"}</div><div className="font-medium">{title}</div>{open && <p className="text-sm mt-1">{summary}</p>}</button>}

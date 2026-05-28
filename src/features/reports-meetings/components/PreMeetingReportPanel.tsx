@@ -1,0 +1,1 @@
+export function PreMeetingReportPanel() { return <div id="pre-meeting-report" className="rounded-2xl border bg-white/70 p-4">Painel de relatório pré-reunião com KPIs, riscos, pauta sugerida e alertas.</div>; }
