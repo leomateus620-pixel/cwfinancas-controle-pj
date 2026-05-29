@@ -255,6 +255,8 @@ Deno.serve(async (req) => {
       const spreadsheets = result.files.map((file) => ({
         id: file.id,
         name: file.name,
+        mimeType: file.mimeType,
+        provider: file.mimeType === XLSX_MIME ? "drive_xlsx" : "google_sheets",
         modified_time: file.modifiedTime,
         owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || undefined,
         shared: file.shared ?? false,
@@ -294,6 +296,8 @@ Deno.serve(async (req) => {
         const spreadsheets = result.files.map((file) => ({
           id: file.id,
           name: file.name,
+          mimeType: file.mimeType,
+          provider: file.mimeType === XLSX_MIME ? "drive_xlsx" : "google_sheets",
           modified_time: file.modifiedTime,
           owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || undefined,
           shared: file.shared ?? false,
