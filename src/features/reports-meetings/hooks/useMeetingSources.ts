@@ -10,7 +10,7 @@ export interface MeetingSource {
   data_type: string;
   updated_at: string;
   created_at: string;
-  provider: "google_sheets" | "excel_upload";
+  provider: "google_sheets" | "drive_xlsx" | "excel_upload";
   selected_tabs: string[];
 }
 
@@ -42,11 +42,19 @@ export function useMeetingSources() {
         .eq("purpose", "meetings")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((row: any) => ({
-        ...row,
-        provider: row.data_type === "excel_upload" ? "excel_upload" : "google_sheets",
-        selected_tabs: parseTabs(row.sheet_name),
-      }));
+      return (data ?? []).map((row: any) => {
+        const provider: MeetingSource["provider"] =
+          row.data_type === "excel_upload"
+            ? "excel_upload"
+            : row.data_type === "drive_xlsx"
+              ? "drive_xlsx"
+              : "google_sheets";
+        return {
+          ...row,
+          provider,
+          selected_tabs: parseTabs(row.sheet_name),
+        };
+      });
     },
   });
 
@@ -55,8 +63,12 @@ export function useMeetingSources() {
       spreadsheet_id: string;
       spreadsheet_name: string;
       selected_tabs: string[];
+      provider?: "google_sheets" | "drive_xlsx" | "excel_upload";
     }) => {
       if (!user?.id) throw new Error("Sessão não encontrada.");
+      const provider = input.provider ?? "google_sheets";
+      const dataType =
+        provider === "excel_upload" ? "excel_upload" : provider === "drive_xlsx" ? "drive_xlsx" : "google_sheets";
       const { data, error } = await supabase
         .from("google_sheet_connections")
         .insert({
@@ -64,7 +76,7 @@ export function useMeetingSources() {
           spreadsheet_id: input.spreadsheet_id,
           spreadsheet_name: input.spreadsheet_name,
           sheet_name: JSON.stringify(input.selected_tabs),
-          data_type: "meetings_context",
+          data_type: dataType,
           purpose: "meetings",
           sync_frequency: "manual",
           sync_status: "ready",
