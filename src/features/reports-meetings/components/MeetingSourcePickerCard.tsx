@@ -86,7 +86,7 @@ function EmptyState({ onAddSheets }: { onAddSheets: () => void }) {
 }
 
 function SourceCard3D({ source, onRemove }: { source: MeetingSource; onRemove: () => void }) {
-  const isExcel = source.provider === "excel_upload";
+  const isExcel = source.provider === "excel_upload" || source.provider === "drive_xlsx";
   return (
     <div
       className={cn(
