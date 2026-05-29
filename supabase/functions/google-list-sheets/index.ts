@@ -21,10 +21,13 @@ interface TokenData {
 interface DriveFile {
   id: string;
   name: string;
+  mimeType?: string;
   modifiedTime: string;
   owners?: Array<{ displayName?: string; emailAddress?: string }>;
   shared?: boolean;
 }
+
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 async function refreshAccessToken(
   supabase: any,
@@ -95,7 +98,7 @@ async function listDriveSpreadsheets(
 
   const params = new URLSearchParams({
     q,
-    fields: "files(id,name,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken",
+    fields: "files(id,name,mimeType,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken",
     orderBy: "modifiedTime desc",
     pageSize: "50",
     supportsAllDrives: "true",

@@ -32,30 +32,19 @@ async function refreshAccessToken(
         grant_type: "refresh_token",
       }),
     });
-
     if (!response.ok) {
       console.error(`[${requestId}] Token refresh failed:`, await response.text());
       return null;
     }
-
     const data = await response.json();
     const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
-
     const updateData: any = {
       access_token: data.access_token,
       expires_at: expiresAt,
       updated_at: new Date().toISOString(),
     };
-
-    if (data.refresh_token) {
-      updateData.refresh_token = data.refresh_token;
-    }
-
-    await supabase
-      .from("google_oauth_tokens")
-      .update(updateData)
-      .eq("user_id", userId);
-
+    if (data.refresh_token) updateData.refresh_token = data.refresh_token;
+    await supabase.from("google_oauth_tokens").update(updateData).eq("user_id", userId);
     return { access_token: data.access_token, expires_at: expiresAt };
   } catch (error) {
     console.error(`[${requestId}] Error refreshing token:`, error);
@@ -65,14 +54,10 @@ async function refreshAccessToken(
 
 async function getFileMimeType(accessToken: string, fileId: string): Promise<{ mimeType: string; name: string }> {
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name`,
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=mimeType,name&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
-
-  if (!response.ok) {
-    throw new Error(`Drive API error: ${response.status} - ${await response.text()}`);
-  }
-
+  if (!response.ok) throw new Error(`Drive API error: ${response.status} - ${await response.text()}`);
   return response.json();
 }
 
@@ -81,11 +66,7 @@ async function getSpreadsheetMetadata(accessToken: string, spreadsheetId: string
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,sheets.properties`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
-
-  if (!response.ok) {
-    throw new Error(`Sheets API error: ${response.status} - ${await response.text()}`);
-  }
-
+  if (!response.ok) throw new Error(`Sheets API error: ${response.status} - ${await response.text()}`);
   return response.json();
 }
 
@@ -98,17 +79,21 @@ async function getSheetValues(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
-
   if (!response.ok) {
     console.error(`Failed to get values for range ${range}:`, await response.text());
     return [];
   }
-
   const data = await response.json();
   return data.values || [];
 }
 
-async function handleNativeSheet(accessToken: string, spreadsheetId: string, sheetName?: string) {
+async function handleNativeSheet(
+  accessToken: string,
+  spreadsheetId: string,
+  sheetName: string | undefined,
+  sheetNames: string[] | undefined,
+  mode: "preview" | "full"
+) {
   const metadata = await getSpreadsheetMetadata(accessToken, spreadsheetId);
   const spreadsheetName = metadata.properties?.title || "Sem nome";
   const sheets = (metadata.sheets || []).map((sheet: any) => ({
@@ -121,48 +106,57 @@ async function handleNativeSheet(accessToken: string, spreadsheetId: string, she
   const previewRange = `'${targetSheet}'!A1:Z20`;
   let previewValues = await getSheetValues(accessToken, spreadsheetId, previewRange);
   let usedRange = previewRange;
-
   if (previewValues.length === 0 && !sheetName && sheets.length > 0) {
     const fallbackRange = "A1:Z20";
     previewValues = await getSheetValues(accessToken, spreadsheetId, fallbackRange);
     usedRange = fallbackRange;
   }
 
-  return { spreadsheetName, sheets, previewValues, usedRange };
+  let workbookSheets: { name: string; rows: string[][] }[] | undefined;
+  if (sheetNames && sheetNames.length > 0) {
+    workbookSheets = [];
+    const rowCap = mode === "full" ? 5000 : 50;
+    const colRange = mode === "full" ? "ZZ" : "Z";
+    for (const name of sheetNames) {
+      const range = `'${name}'!A1:${colRange}${rowCap}`;
+      const rows = await getSheetValues(accessToken, spreadsheetId, range);
+      workbookSheets.push({ name, rows });
+    }
+  }
+
+  return { spreadsheetName, sheets, previewValues, usedRange, workbookSheets };
 }
 
-async function handleXlsxFile(accessToken: string, fileId: string, fileName: string, sheetName?: string) {
+async function handleXlsxFile(
+  accessToken: string,
+  fileId: string,
+  fileName: string,
+  sheetName: string | undefined,
+  sheetNames: string[] | undefined,
+  mode: "preview" | "full"
+) {
   const response = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
-
-  if (!response.ok) {
-    throw new Error(`Drive download error: ${response.status} - ${await response.text()}`);
-  }
+  if (!response.ok) throw new Error(`Drive download error: ${response.status} - ${await response.text()}`);
 
   const arrayBuffer = await response.arrayBuffer();
   const data = new Uint8Array(arrayBuffer);
 
-  // PASS 1 — Read only sheet names (no cell content) to avoid CPU exhaustion on large workbooks.
-  let sheetNames: string[] = [];
+  let allSheetNames: string[] = [];
   try {
     const wbMeta = XLSX.read(data, { type: "array", bookSheets: true });
-    sheetNames = wbMeta.SheetNames || [];
+    allSheetNames = wbMeta.SheetNames || [];
   } catch (err) {
-    console.error("[handleXlsxFile] PASS 1 (bookSheets) failed:", (err as Error)?.message);
+    console.error("[handleXlsxFile] bookSheets failed:", (err as Error)?.message);
     throw new Error(`Falha ao ler estrutura do arquivo .xlsx: ${(err as Error)?.message ?? "erro desconhecido"}`);
   }
 
-  const sheets = sheetNames.map((name: string, index: number) => ({
-    sheet_id: index,
-    title: name,
-    index,
-  }));
+  const sheets = allSheetNames.map((name, index) => ({ sheet_id: index, title: name, index }));
+  const targetSheet = sheetName || allSheetNames[0] || "";
 
-  const targetSheet = sheetName || sheetNames[0] || "";
-
-  // PASS 2 — Parse ONLY the target sheet, limited to first 20 rows. Skip formulas / styles / dates.
+  // preview values of the target sheet (always)
   let previewValues: string[][] = [];
   if (targetSheet) {
     try {
@@ -180,37 +174,61 @@ async function handleXlsxFile(accessToken: string, fileId: string, fileName: str
         bookProps: false,
         bookVBA: false,
       } as any);
-
-      const worksheet = wb.Sheets[targetSheet];
-      if (worksheet && worksheet["!ref"]) {
-        // Limit range to A1:Z20 to keep sheet_to_json bounded.
+      const ws = wb.Sheets[targetSheet];
+      if (ws && ws["!ref"]) {
         try {
-          const decoded = XLSX.utils.decode_range(worksheet["!ref"]);
+          const decoded = XLSX.utils.decode_range(ws["!ref"]);
           decoded.s.r = 0;
           decoded.s.c = 0;
           decoded.e.r = Math.min(decoded.e.r, 19);
           decoded.e.c = Math.min(decoded.e.c, 25);
-          worksheet["!ref"] = XLSX.utils.encode_range(decoded);
-        } catch {
-          /* keep original ref if decode fails */
-        }
-
-        const jsonRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
-          header: 1,
-          defval: "",
-          blankrows: false,
-        });
-        previewValues = jsonRows.slice(0, 20).map((row: any[]) =>
+          ws["!ref"] = XLSX.utils.encode_range(decoded);
+        } catch { /* keep */ }
+        const json: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", blankrows: false });
+        previewValues = json.slice(0, 20).map((row) =>
           (row || []).slice(0, 26).map((cell: any) => (cell != null ? String(cell) : ""))
         );
       }
     } catch (err) {
-      // Don't fail the whole request — list of tabs is the critical payload.
-      console.error(
-        `[handleXlsxFile] PASS 2 (preview of "${targetSheet}") failed:`,
-        (err as Error)?.message
-      );
+      console.error(`[handleXlsxFile] preview "${targetSheet}" failed:`, (err as Error)?.message);
       previewValues = [];
+    }
+  }
+
+  // workbook with requested sheetNames
+  let workbookSheets: { name: string; rows: string[][] }[] | undefined;
+  if (sheetNames && sheetNames.length > 0) {
+    workbookSheets = [];
+    const rowCap = mode === "full" ? 5000 : 50;
+    try {
+      const wb = XLSX.read(data, {
+        type: "array",
+        sheets: sheetNames,
+        sheetRows: rowCap,
+        cellFormula: false,
+        cellHTML: false,
+        cellStyles: false,
+        cellDates: false,
+        cellNF: false,
+        bookDeps: false,
+        bookFiles: false,
+        bookProps: false,
+        bookVBA: false,
+      } as any);
+      for (const name of sheetNames) {
+        const ws = wb.Sheets[name];
+        if (!ws) {
+          workbookSheets.push({ name, rows: [] });
+          continue;
+        }
+        const json: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", blankrows: false });
+        const rows = json.slice(0, rowCap).map((row) =>
+          (row || []).map((cell: any) => (cell != null ? String(cell) : ""))
+        );
+        workbookSheets.push({ name, rows });
+      }
+    } catch (err) {
+      console.error(`[handleXlsxFile] workbook read failed:`, (err as Error)?.message);
     }
   }
 
@@ -219,13 +237,12 @@ async function handleXlsxFile(accessToken: string, fileId: string, fileName: str
     sheets,
     previewValues,
     usedRange: targetSheet ? `'${targetSheet}'!A1:Z20` : "",
+    workbookSheets,
   };
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const requestId = crypto.randomUUID();
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -241,7 +258,6 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } = await supabase.auth.getUser(token);
-
     if (userError || !userData?.user) {
       return new Response(
         JSON.stringify({ code: "UNAUTHORIZED", message: "Usuário não autenticado", request_id: requestId }),
@@ -250,9 +266,11 @@ Deno.serve(async (req) => {
     }
 
     const userId = userData.user.id;
-
-    const body = await req.json();
-    const { spreadsheetId, sheetName } = body;
+    const body = await req.json().catch(() => ({}));
+    const spreadsheetId: string | undefined = body.spreadsheetId;
+    const sheetName: string | undefined = body.sheetName;
+    const sheetNames: string[] | undefined = Array.isArray(body.sheetNames) ? body.sheetNames : undefined;
+    const mode: "preview" | "full" = body.mode === "full" ? "full" : "preview";
 
     if (!spreadsheetId) {
       return new Response(
@@ -277,7 +295,6 @@ Deno.serve(async (req) => {
     let accessToken = tokenData.access_token;
     const refreshToken = tokenData.refresh_token;
     const expiresAt = new Date(tokenData.expires_at);
-
     if (expiresAt < new Date(Date.now() + 5 * 60 * 1000)) {
       const refreshResult = await refreshAccessToken(supabase, userId, refreshToken, requestId);
       if (!refreshResult) {
@@ -289,40 +306,56 @@ Deno.serve(async (req) => {
       accessToken = refreshResult.access_token;
     }
 
-    // Detect file type via Drive API
     const fileInfo = await getFileMimeType(accessToken, spreadsheetId);
-    console.log(`[${requestId}] File "${fileInfo.name}" mimeType: ${fileInfo.mimeType}`);
+    console.log(`[${requestId}] File "${fileInfo.name}" mimeType: ${fileInfo.mimeType} mode=${mode}`);
 
-    let result;
-    if (fileInfo.mimeType === XLSX_MIME) {
-      result = await handleXlsxFile(accessToken, spreadsheetId, fileInfo.name, sheetName);
-    } else {
-      result = await handleNativeSheet(accessToken, spreadsheetId, sheetName);
+    const isXlsx = fileInfo.mimeType === XLSX_MIME;
+    const isNative = fileInfo.mimeType === SHEETS_MIME;
+
+    if (!isXlsx && !isNative) {
+      return new Response(
+        JSON.stringify({
+          code: "UNSUPPORTED_MIME",
+          message: `Tipo de arquivo não suportado (${fileInfo.mimeType}). Use Google Sheets ou Excel (.xlsx).`,
+          request_id: requestId,
+        }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    console.log(`[${requestId}] Successfully fetched preview for ${spreadsheetId}`);
+    const provider = isXlsx ? "drive_xlsx" : "google_sheets";
+    const result = isXlsx
+      ? await handleXlsxFile(accessToken, spreadsheetId, fileInfo.name, sheetName, sheetNames, mode)
+      : await handleNativeSheet(accessToken, spreadsheetId, sheetName, sheetNames, mode);
 
-    return new Response(
-      JSON.stringify({
-        spreadsheet: { id: spreadsheetId, name: result.spreadsheetName },
-        sheets: result.sheets,
-        preview: {
-          range: result.usedRange,
-          values: result.previewValues,
-          row_count: result.previewValues.length,
-        },
-        request_id: requestId,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const payload: Record<string, unknown> = {
+      spreadsheet: { id: spreadsheetId, name: result.spreadsheetName, mimeType: fileInfo.mimeType, provider },
+      sheets: result.sheets,
+      preview: {
+        range: result.usedRange,
+        values: result.previewValues,
+        row_count: result.previewValues.length,
+      },
+      request_id: requestId,
+    };
+    if (result.workbookSheets) {
+      payload.workbook = {
+        sourceName: result.spreadsheetName,
+        provider,
+        sheets: result.workbookSheets,
+      };
+    }
+
+    return new Response(JSON.stringify(payload), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error: any) {
     console.error(`[${requestId}] Error reading sheet preview:`, error);
-
     return new Response(
       JSON.stringify({
         code: "GOOGLE_API_ERROR",
         message: "Falha ao ler dados da planilha",
-        details: error.message,
+        details: error?.message ?? String(error),
         request_id: requestId,
       }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
