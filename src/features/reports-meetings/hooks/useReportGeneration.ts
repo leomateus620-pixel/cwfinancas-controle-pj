@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+
 import { financeGr2026WorkbookFixture } from "../test-fixtures/financeGr2026Fixture";
 import { buildPreMeetingReportFromWorkbook, type ReportsMeetingsPackage } from "../lib/financialWorkbook";
 import { previewToWorkbookSnapshot, readSheetSource } from "../lib/sourceAdapters";
