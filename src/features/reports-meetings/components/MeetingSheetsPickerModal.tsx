@@ -110,12 +110,33 @@ export function MeetingSheetsPickerModal({ open, onOpenChange }: Props) {
       const { data, error } = await supabase.functions.invoke("google-sheets-list", {
         body: { spreadsheet_id: s.id },
       });
+      // Try to read body even on non-2xx (e.g. 400 unsupported mime)
+      let payload: any = data;
+      if (error && (error as any)?.context?.body) {
+        try {
+          const text = await (error as any).context.text();
+          payload = JSON.parse(text);
+        } catch {
+          // ignore
+        }
+      }
+      if (payload?.unsupported_mime) {
+        toast({
+          title: "Arquivo não suportado",
+          description: payload.error ?? "Este arquivo não é uma planilha Google Sheets nativa. Para arquivos Excel, use o upload de Excel.",
+          variant: "destructive",
+        });
+        setStep("list");
+        setSelected(null);
+        return;
+      }
       if (error) throw error;
-      setTabs(data?.sheets ?? []);
-      const first = data?.sheets?.[0]?.title;
+      setTabs(payload?.sheets ?? []);
+      const first = payload?.sheets?.[0]?.title;
       if (first) setPickedTabs(new Set([first]));
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message ?? "Erro ao carregar abas", variant: "destructive" });
+      setStep("list");
     } finally {
       setLoading(false);
     }
