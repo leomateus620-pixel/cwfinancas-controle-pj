@@ -26,11 +26,11 @@ export function detectRelevantVariations(series: number[]) {
 }
 
 export function extractActionsFromTranscript(text: string) {
-  return text.split(/[\n\.]/).map((line) => line.trim()).filter((line) => ACTION_KEYWORDS.some((k) => line.toLowerCase().includes(k)));
+  return text.split(/[\n.]/).map((line) => line.trim()).filter((line) => ACTION_KEYWORDS.some((k) => line.toLowerCase().includes(k)));
 }
 
 export function detectMentionedNumbers(text: string) {
-  return [...text.matchAll(/\b\d+[\.,]?\d*\b/g)].map((m) => Number(m[0].replace(",", "."))).filter(Number.isFinite);
+  return [...text.matchAll(/\b\d+[.,]?\d*\b/g)].map((m) => Number(m[0].replace(",", "."))).filter(Number.isFinite);
 }
 
 export function compareReportAndMeeting(kpis: { label: string; value: number | null }[], mentionedNumbers: number[]) {

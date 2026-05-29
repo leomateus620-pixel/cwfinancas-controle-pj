@@ -62,6 +62,7 @@ const App = () => {
   const [showIntro, setShowIntro] = useState(
     () => !sessionStorage.getItem("cwf-intro-seen")
   );
+  const exposeReportsMeetingsE2E = import.meta.env.VITE_REPORTS_MEETINGS_E2E === "1";
 
   const handleIntroComplete = useCallback(() => {
     sessionStorage.setItem("cwf-intro-seen", "true");
@@ -77,7 +78,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <AppUpdateHandler />
+            {!exposeReportsMeetingsE2E && <AppUpdateHandler />}
             <AuthProvider>
               <Routes>
                 {/* Public routes */}
@@ -87,6 +88,9 @@ const App = () => {
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/politica-de-privacidade" element={<PrivacyPolicyPage />} />
                 <Route path="/termos-de-uso" element={<TermsOfUsePage />} />
+                {exposeReportsMeetingsE2E && (
+                  <Route path="/relatorios-reunioes-e2e" element={<ReportsMeetingsPage />} />
+                )}
                 
                 {/* Protected routes */}
                 <Route element={
