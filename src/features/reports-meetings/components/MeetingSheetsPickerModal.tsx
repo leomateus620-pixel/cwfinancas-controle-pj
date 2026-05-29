@@ -11,6 +11,8 @@ import { useMeetingSources } from "../hooks/useMeetingSources";
 interface Spreadsheet {
   id: string;
   name: string;
+  mimeType?: string;
+  provider?: "google_sheets" | "drive_xlsx";
   modified_time?: string;
   modifiedTime?: string;
   owner?: string;
@@ -107,36 +109,34 @@ export function MeetingSheetsPickerModal({ open, onOpenChange }: Props) {
     setStep("tabs");
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("google-sheets-list", {
-        body: { spreadsheet_id: s.id },
+      const { data, error } = await supabase.functions.invoke("google-read-sheet-preview", {
+        body: { spreadsheetId: s.id },
       });
-      // Try to read body even on non-2xx (e.g. 400 unsupported mime)
-      let payload: any = data;
-      if (error && (error as any)?.context?.body) {
+      if (error) {
+        let detail = error.message ?? "Erro ao carregar abas";
+        let requestId: string | undefined;
         try {
-          const text = await (error as any).context.text();
-          payload = JSON.parse(text);
-        } catch {
-          // ignore
-        }
+          const text = await (error as any)?.context?.text?.();
+          if (text) {
+            const parsed = JSON.parse(text);
+            detail = parsed?.message ?? detail;
+            requestId = parsed?.request_id;
+          }
+        } catch { /* ignore */ }
+        throw new Error(requestId ? `${detail} (req ${requestId})` : detail);
       }
-      if (payload?.unsupported_mime) {
-        toast({
-          title: "Arquivo não suportado",
-          description: payload.error ?? "Este arquivo não é uma planilha Google Sheets nativa. Para arquivos Excel, use o upload de Excel.",
-          variant: "destructive",
-        });
-        setStep("list");
-        setSelected(null);
-        return;
-      }
-      if (error) throw error;
-      setTabs(payload?.sheets ?? []);
-      const first = payload?.sheets?.[0]?.title;
+      const provider = data?.spreadsheet?.provider as "google_sheets" | "drive_xlsx" | undefined;
+      setSelected({ ...s, provider, mimeType: data?.spreadsheet?.mimeType, name: data?.spreadsheet?.name ?? s.name });
+      setTabs(data?.sheets ?? []);
+      const first = data?.sheets?.[0]?.title;
       if (first) setPickedTabs(new Set([first]));
+      if (provider === "drive_xlsx") {
+        toast({ title: "Excel no Drive detectado", description: `${data?.sheets?.length ?? 0} aba(s) carregada(s).` });
+      }
     } catch (err: any) {
-      toast({ title: "Erro", description: err?.message ?? "Erro ao carregar abas", variant: "destructive" });
+      toast({ title: "Erro ao carregar abas", description: err?.message ?? "Falha desconhecida", variant: "destructive" });
       setStep("list");
+      setSelected(null);
     } finally {
       setLoading(false);
     }
@@ -158,8 +158,9 @@ export function MeetingSheetsPickerModal({ open, onOpenChange }: Props) {
         spreadsheet_id: selected.id,
         spreadsheet_name: selected.name,
         selected_tabs: Array.from(pickedTabs),
+        provider: selected.provider ?? "google_sheets",
       });
-      toast({ title: "Planilha vinculada", description: `${selected.name} pronta para reuniões.` });
+      toast({ title: "Fonte vinculada", description: `${selected.name} pronta para reuniões.` });
       onOpenChange(false);
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message ?? "Não foi possível vincular", variant: "destructive" });
@@ -214,33 +215,50 @@ export function MeetingSheetsPickerModal({ open, onOpenChange }: Props) {
                 <p className="text-center text-sm text-muted-foreground py-12">Nenhuma planilha encontrada</p>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 py-2">
-                  {filtered.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => pickSpreadsheet(s)}
-                      className={cn(
-                        "group relative text-left p-4 rounded-2xl border border-white/40",
-                        "bg-gradient-to-br from-emerald-50/80 via-white/60 to-emerald-100/50",
-                        "backdrop-blur-xl shadow-[0_4px_18px_-6px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.7)]",
-                        "transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_14px_36px_-10px_rgba(16,185,129,0.35),inset_0_1px_0_rgba(255,255,255,0.8)]",
-                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
-                          <FileSpreadsheet className="h-5 w-5 text-white" />
+                  {filtered.map((s) => {
+                    const isXlsx = s.provider === "drive_xlsx";
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => pickSpreadsheet(s)}
+                        className={cn(
+                          "group relative text-left p-4 rounded-2xl border border-white/40",
+                          isXlsx
+                            ? "bg-gradient-to-br from-blue-50/80 via-white/60 to-blue-100/50"
+                            : "bg-gradient-to-br from-emerald-50/80 via-white/60 to-emerald-100/50",
+                          "backdrop-blur-xl shadow-[0_4px_18px_-6px_rgba(15,23,42,0.12),inset_0_1px_0_rgba(255,255,255,0.7)]",
+                          "transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_14px_36px_-10px_rgba(15,23,42,0.22),inset_0_1px_0_rgba(255,255,255,0.8)]",
+                          "focus:outline-none focus-visible:ring-2",
+                          isXlsx ? "focus-visible:ring-blue-400/60" : "focus-visible:ring-emerald-400/60"
+                        )}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={cn(
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br shadow-lg",
+                            isXlsx ? "from-blue-500 to-blue-600 shadow-blue-500/30" : "from-emerald-500 to-emerald-600 shadow-emerald-500/30"
+                          )}>
+                            <FileSpreadsheet className="h-5 w-5 text-white" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold leading-tight line-clamp-2 text-slate-800">{s.name}</p>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <span className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold",
+                                isXlsx ? "bg-blue-500/15 text-blue-700" : "bg-emerald-500/15 text-emerald-700"
+                              )}>
+                                {isXlsx ? "Excel" : "Sheets"}
+                              </span>
+                              {(s.modified_time || s.modifiedTime) && (
+                                <span className="text-[10.5px] text-muted-foreground">
+                                  {new Date(s.modified_time || s.modifiedTime!).toLocaleDateString("pt-BR")}
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold leading-tight line-clamp-2 text-slate-800">{s.name}</p>
-                          {(s.modified_time || s.modifiedTime) && (
-                            <p className="text-[10.5px] text-muted-foreground mt-1">
-                              {new Date(s.modified_time || s.modifiedTime!).toLocaleDateString("pt-BR")}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

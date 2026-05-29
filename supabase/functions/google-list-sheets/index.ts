@@ -21,10 +21,13 @@ interface TokenData {
 interface DriveFile {
   id: string;
   name: string;
+  mimeType?: string;
   modifiedTime: string;
   owners?: Array<{ displayName?: string; emailAddress?: string }>;
   shared?: boolean;
 }
+
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 async function refreshAccessToken(
   supabase: any,
@@ -95,7 +98,7 @@ async function listDriveSpreadsheets(
 
   const params = new URLSearchParams({
     q,
-    fields: "files(id,name,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken",
+    fields: "files(id,name,mimeType,modifiedTime,owners(displayName,emailAddress),shared),nextPageToken",
     orderBy: "modifiedTime desc",
     pageSize: "50",
     supportsAllDrives: "true",
@@ -252,6 +255,8 @@ Deno.serve(async (req) => {
       const spreadsheets = result.files.map((file) => ({
         id: file.id,
         name: file.name,
+        mimeType: file.mimeType,
+        provider: file.mimeType === XLSX_MIME ? "drive_xlsx" : "google_sheets",
         modified_time: file.modifiedTime,
         owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || undefined,
         shared: file.shared ?? false,
@@ -291,6 +296,8 @@ Deno.serve(async (req) => {
         const spreadsheets = result.files.map((file) => ({
           id: file.id,
           name: file.name,
+          mimeType: file.mimeType,
+          provider: file.mimeType === XLSX_MIME ? "drive_xlsx" : "google_sheets",
           modified_time: file.modifiedTime,
           owner: file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || undefined,
           shared: file.shared ?? false,

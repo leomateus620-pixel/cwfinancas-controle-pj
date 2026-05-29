@@ -34,9 +34,13 @@ export async function listAvailableSheetSources(): Promise<MeetingSource[]> {
   }));
 }
 
-export async function readSheetSource(sourceId: string, options?: Record<string, unknown>) {
+export async function readSheetSource(sourceId: string, options?: { sheetNames?: string[]; mode?: "preview" | "full"; purpose?: string }) {
   const { data, error } = await supabase.functions.invoke("google-read-sheet-preview", {
-    body: { spreadsheetId: sourceId, ...options },
+    body: {
+      spreadsheetId: sourceId,
+      sheetNames: options?.sheetNames,
+      mode: options?.mode ?? "preview",
+    },
   });
   if (error) throw error;
   return data as unknown;

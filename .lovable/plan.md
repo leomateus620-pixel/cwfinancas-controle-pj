@@ -1,105 +1,61 @@
-# Conexão dedicada Sheets/Excel para Relatórios & Reuniões
+# Plano — Suporte real a .xlsx em /relatorios-reunioes
 
-## Objetivo
-Adicionar uma conexão Google Sheets **isolada** para o card "Fontes da reunião", com seletor 3D de planilhas/abas, sem conflitar com a conexão financeira existente (Receitas/Despesas/DRE/Cartão). Também relocar a conexão Excel para este menu.
+## Diagnóstico
 
-## Arquitetura — isolamento de contexto
+O erro acontece em `MeetingSheetsPickerModal.pickSpreadsheet`: ao clicar numa planilha, o front chama `google-sheets-list` com `spreadsheet_id`, que rejeita qualquer mimeType ≠ `application/vnd.google-apps.spreadsheet` e devolve 400 com `unsupported_mime`. A função `google-read-sheet-preview` já trata os dois casos (Sheets nativo e .xlsx via Drive + xlsx) e retorna `{ spreadsheet, sheets, preview, request_id }`. A correção essencial é trocar a função usada para carregar as abas. Os demais itens do pedido (pipeline real `reports-meetings-generate`, modo `full`, novo contrato `workbook`) podem ser feitos sem quebrar nada, mas o critério de aceite é destravado só com a troca no modal.
 
-Hoje `google_sheet_connections` é usada para o módulo financeiro. Para evitar conflito, vamos marcar as conexões deste menu com um **scope distinto**:
+## Mudanças
 
-- Nova coluna `purpose text` em `google_sheet_connections` com default `'financial'`.
-- Conexões criadas pelo menu Reuniões usam `purpose = 'meetings'`.
-- Todos os hooks financeiros existentes (`useActiveConnection`, sync, DRE, etc.) passam a filtrar `purpose = 'financial'` (ou `IS NULL` por compatibilidade).
-- O novo hook do menu reuniões filtra `purpose = 'meetings'`.
-- OAuth Google é compartilhado (já usa `google_oauth_tokens` por usuário) — não há retrabalho de auth.
+### 1. `MeetingSheetsPickerModal.tsx` (núcleo do fix)
+- Em `pickSpreadsheet`, trocar `google-sheets-list` por `google-read-sheet-preview` com body `{ spreadsheetId: s.id }`.
+- Remover o ramo `unsupported_mime` / toast "Arquivo não suportado".
+- Ler `payload.sheets` (mesmo formato `{ sheet_id, title, index }`) e `payload.spreadsheet.name` para refresh do nome.
+- Mensagens de status novas: "Excel no Drive detectado" / "Abas carregadas" quando `payload.spreadsheet.mimeType === XLSX_MIME` (ver item 2).
+- Em caso de erro real, mostrar `code` + `request_id` no toast.
 
-## Backend (migração única)
+### 2. `google-read-sheet-preview/index.ts`
+- Aceitar também `sheetNames: string[]` e `mode: "preview" | "full"` no body (default `preview`).
+- Retornar no payload:
+  - `spreadsheet: { id, name, mimeType, provider }` onde `provider` = `google_sheets` ou `drive_xlsx`.
+  - Continuar retornando `sheets` e `preview` como hoje (compatível).
+  - Quando `sheetNames` for enviado, retornar também `workbook: { sourceName, provider, sheets: [{ name, rows }] }` com as abas pedidas. No modo `full`, sem o cap de 20 linhas / Z (usar `sheetRows` maior, ex. 5000, sem limitar `decoded.e.c`); no modo `preview`, manter o cap atual.
+  - Para Sheets nativo no modo full: chamar `values` por aba sem limite Z (ex. `'aba'!A1:ZZ`).
+  - Para .xlsx: ler o workbook uma vez e iterar `sheetNames`.
 
-```sql
-ALTER TABLE public.google_sheet_connections
-  ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'financial';
-CREATE INDEX IF NOT EXISTS idx_gsc_user_purpose
-  ON public.google_sheet_connections(user_id, purpose);
+### 3. `google-list-sheets/index.ts`
+- Incluir `mimeType` no `files(...)` da query Drive.
+- Mapear `provider` no item devolvido: `mimeType === XLSX_MIME ? "drive_xlsx" : "google_sheets"`.
+- Sem mudanças de contrato; campos adicionais.
 
--- Vínculo opcional: reunião -> planilha de contexto
-ALTER TABLE public.meeting_sessions
-  ADD COLUMN IF NOT EXISTS source_connection_id uuid,
-  ADD COLUMN IF NOT EXISTS source_sheet_tabs jsonb DEFAULT '[]'::jsonb;
-```
+### 4. Lista de planilhas (UI no mesmo modal)
+- Mostrar pequeno chip "Excel" para `provider === "drive_xlsx"` (cor azul) e "Sheets" (verde). Sem novo modal.
 
-Nenhuma policy nova: RLS já é por `user_id`.
+### 5. `useMeetingSources.ts`
+- `connectSheet` passa a aceitar `provider`. Gravar `data_type`:
+  - `google_sheets` → mantém `google_sheets`
+  - `drive_xlsx` → `drive_xlsx`
+- `purpose: "meetings"` preservado. `parseTabs` e `provider` no SELECT já reconhecem `drive_xlsx` (ajustar a união do tipo).
 
-## Frontend
+### 6. `sourceAdapters.readSheetSource`
+- Enviar `{ spreadsheetId, sheetNames, mode: "full" }`.
+- `previewToWorkbookSnapshot` já cobre o formato; quando `payload.workbook` vier do backend, usar direto e pular conversão.
 
-### 1. Novo componente `MeetingSourcePickerCard.tsx` (substitui `SourceSelectorCard`)
-Card "Fontes da reunião" no `ReportsMeetingsPage`, com:
-- Estado vazio: dois botões — **"Conectar Google Sheets"** e **"Importar Excel"**.
-- Estado conectado: grid 3D (`ThreeDIconCard` style) com cada planilha como card glass — nome, ícone Sheets/Excel, contador de abas, ação "Trocar / Desconectar".
-- Botão "+ Adicionar planilha" sempre visível.
+### 7. `useReportGeneration`
+- Não chamar `reports-meetings-generate` (é placeholder). Caminho principal: para cada source vinculada → `readSheetSource(..., mode:"full")` → `buildPreMeetingReportFromWorkbook`.
+- AuditLog identifica origem por `source.provider`: "Google Sheets nativo", "Excel .xlsx no Drive", ou "fixture/fallback".
+- Fixture só com `forceFixture` ou se todas as fontes falharem.
 
-### 2. Modal `MeetingSheetsPickerModal.tsx`
-Reaproveita `google-sheets-list` (já lista Drive) e `google-sheets-auth` para OAuth:
-- Passo 1: lista todas as planilhas do Drive do usuário em grid 3D (capas com gradiente, hover lift, badge de data de modificação).
-- Passo 2: ao escolher uma planilha, mostra suas abas como chips selecionáveis (multi-select).
-- Confirmar → cria linha em `google_sheet_connections` com `purpose='meetings'`, `sheet_name` = aba(s) escolhida(s) serializada(s).
+### 8. `reports-meetings-generate`
+- Deixar como está (placeholder) e remover sua invocação do front (item 7). Sem deploy necessário.
 
-### 3. Modal `MeetingExcelPickerCard` (reaproveita upload Excel)
-Migra o fluxo Excel já existente (`parse-excel-upload`) para este menu — botão "Importar Excel" no card de fontes abre o mesmo modal já consolidado, mas grava metadata em `meeting_sessions.source_*` e/ou em `google_sheet_connections` com `purpose='meetings'` e tipo `excel_upload`.
+### 9. Testes
+- Unit: estender `sourceAdapters` tests cobrindo `workbook` direto do backend e fallback.
+- E2E (`e2e/reports-meetings.spec.ts`): adicionar caso "selecionar .xlsx → abas → vincular → gerar relatório" usando mock da edge function.
 
-### 4. Hook `useMeetingSources.ts`
-```ts
-useQuery(['meeting-sources', userId], () =>
-  supabase.from('google_sheet_connections')
-    .select('id, spreadsheet_id, spreadsheet_name, sheet_name, data_type, updated_at')
-    .eq('user_id', userId)
-    .eq('purpose', 'meetings')
-)
-```
-Mutations: `connectSheet`, `disconnectSource`.
+## Deploys necessários
+- `google-read-sheet-preview` (novo contrato com `sheetNames`/`mode`/`workbook`/`provider`).
+- `google-list-sheets` (adicionar `mimeType`/`provider`).
+- `google-sheets-list` permanece, mas não é mais chamado pelo módulo de reuniões.
 
-### 5. Atualizações nos hooks financeiros existentes
-Adicionar `.or('purpose.eq.financial,purpose.is.null')` em:
-- `src/hooks/useActiveConnection.ts`
-- `src/hooks/useGoogleSheets.ts` (lista de conexões)
-- Edge functions `google-sheets-sync`, `sheets-sync-all-tabs`, `scheduled-sync`, `dre-sync`, `reset-sheet-data` — filtros por `purpose='financial'` para evitar sync acidental das planilhas de reunião.
-
-### 6. Integração com gravação
-`useMeetingRecorder` ganha `attachedSources: { connectionId, tabs[] }` salvos em `meeting_sessions.source_connection_id` ao iniciar a sessão, dando contexto para o resumo IA pós-reunião.
-
-## Design (Liquid Glass Premium)
-
-```text
-┌──────────────────────────────────────────────┐
-│  Fontes da reunião       [+ Adicionar]       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐    │
-│  │ 📊 Sheet │  │ 📈 Sheet │  │ 📗 Excel │    │
-│  │ Vendas Q2│  │ DRE 2026 │  │ Reuniao  │    │
-│  │ 3 abas   │  │ 12 abas  │  │ Upload   │    │
-│  └──────────┘  └──────────┘  └──────────┘    │
-└──────────────────────────────────────────────┘
-```
-Cards 3D: blur 24px, borda glow primary/30, hover -translate-y-1, ícone colorido por provedor (verde Sheets, azul Excel), capsule "X abas" em `tabular-nums`.
-
-## Arquivos a criar/editar
-
-**Criar**
-- `src/features/reports-meetings/components/MeetingSourcePickerCard.tsx`
-- `src/features/reports-meetings/components/MeetingSheetsPickerModal.tsx`
-- `src/features/reports-meetings/components/MeetingSourceCard3D.tsx`
-- `src/features/reports-meetings/hooks/useMeetingSources.ts`
-- `supabase/migrations/*_meeting_sources_purpose.sql`
-
-**Editar**
-- `src/pages/ReportsMeetingsPage.tsx` — trocar `SourceSelectorCard` pelo novo card
-- `src/features/reports-meetings/hooks/useMeetingRecorder.ts` — anexar fontes à sessão
-- `src/hooks/useActiveConnection.ts`, `src/hooks/useGoogleSheets.ts` — filtrar `purpose='financial'`
-- Edge functions de sync financeiro — filtro `purpose='financial'`
-
-**Remover**
-- `src/features/reports-meetings/components/SourceSelectorCard.tsx` (substituído)
-
-## Garantias
-- Conexão financeira em uso permanece intocada (todas existentes recebem `purpose='financial'` no default).
-- Conexões de reunião nunca entram nos jobs de sync financeiro.
-- OAuth Google é único por usuário — não pede reautenticação.
-- Excel: mesmo parser já consolidado, apenas redirecionado para este menu.
+## Critério de aceite
+Selecionar "Financeiro GR - 2026.xlsx" no modal carrega as abas via `google-read-sheet-preview`, deixa selecionar, vincula como `drive_xlsx` com `purpose=meetings`, e a geração do relatório lê o workbook em modo full sem passar pela função placeholder e sem o toast "Arquivo não suportado".

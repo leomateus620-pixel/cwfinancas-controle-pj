@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+
 import { financeGr2026WorkbookFixture } from "../test-fixtures/financeGr2026Fixture";
 import { buildPreMeetingReportFromWorkbook, type ReportsMeetingsPackage } from "../lib/financialWorkbook";
 import { previewToWorkbookSnapshot, readSheetSource } from "../lib/sourceAdapters";
@@ -42,46 +42,41 @@ export function useReportGeneration() {
         ]);
       }
 
-      try {
-        const { data, error } = await supabase.functions.invoke("reports-meetings-generate", {
-          body: {
-            source_ids: sources.map((source) => source.id),
-            spreadsheet_ids: sources.map((source) => source.spreadsheet_id),
-            selected_tabs: sources.flatMap((source) => source.selected_tabs),
-            dry_run: true,
-          },
-        });
-        if (error) throw error;
-        if (data?.workbook) {
-          return appendAudit(buildPreMeetingReportFromWorkbook(data.workbook), [
-            "Relatorio recebido da Edge Function reports-meetings-generate.",
-          ]);
-        }
-        audit.push("Edge Function respondeu sem workbook processavel; usando leitura local segura.");
-      } catch (error) {
-        audit.push(
-          `Edge Function indisponivel temporariamente; fallback local acionado (${error instanceof Error ? error.message : "erro desconhecido"}).`,
-        );
-      }
-
       for (const source of sources) {
         try {
           const raw = await readSheetSource(source.spreadsheet_id, {
             sheetNames: source.selected_tabs,
+            mode: "full",
             purpose: "meetings",
           });
-          const workbook = previewToWorkbookSnapshot(raw, source);
+          const rawRecord = (raw && typeof raw === "object") ? (raw as Record<string, unknown>) : {};
+          const workbookPayload = rawRecord.workbook as
+            | { sourceName?: string; provider?: string; sheets?: { name: string; rows: unknown[][] }[] }
+            | undefined;
+          const providerLabel =
+            source.provider === "drive_xlsx"
+              ? "Excel .xlsx no Drive"
+              : source.provider === "excel_upload"
+                ? "Upload Excel"
+                : "Google Sheets nativo";
+          audit.push(`Fonte lida: ${source.spreadsheet_name} (${providerLabel}).`);
+          const workbook = previewToWorkbookSnapshot(
+            workbookPayload
+              ? { sheets: workbookPayload.sheets, spreadsheet_name: workbookPayload.sourceName ?? source.spreadsheet_name }
+              : raw,
+            source,
+          );
           return appendAudit(buildPreMeetingReportFromWorkbook(workbook), audit);
         } catch (error) {
           audit.push(
-            `Falha ao ler fonte ${source.spreadsheet_name}; mantendo fallback (${error instanceof Error ? error.message : "erro desconhecido"}).`,
+            `Falha ao ler fonte ${source.spreadsheet_name}; tentando próxima (${error instanceof Error ? error.message : "erro desconhecido"}).`,
           );
         }
       }
 
       return appendAudit(buildPreMeetingReportFromWorkbook(financeGr2026WorkbookFixture), [
         ...audit,
-        "Nenhuma fonte real pode ser lida neste ambiente; fixture Financeiro GR - 2026 usada sem gravar na planilha conectada.",
+        "Nenhuma fonte real pôde ser lida; fixture Financeiro GR - 2026 usada como fallback (não grava na planilha).",
       ], "fallback");
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pre-meeting-reports"] }),

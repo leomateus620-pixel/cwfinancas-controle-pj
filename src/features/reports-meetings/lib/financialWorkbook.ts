@@ -10,7 +10,7 @@ export interface WorkbookSheet {
 export interface WorkbookSnapshot {
   sourceName: string;
   sheets: WorkbookSheet[];
-  provider?: "google_sheets" | "excel_upload" | "fixture" | "manual";
+  provider?: "google_sheets" | "drive_xlsx" | "excel_upload" | "fixture" | "manual";
   fetchedAt?: string;
   audit?: string[];
 }
