@@ -11,6 +11,8 @@ import { useMeetingSources } from "../hooks/useMeetingSources";
 interface Spreadsheet {
   id: string;
   name: string;
+  mimeType?: string;
+  provider?: "google_sheets" | "drive_xlsx";
   modified_time?: string;
   modifiedTime?: string;
   owner?: string;
@@ -107,36 +109,34 @@ export function MeetingSheetsPickerModal({ open, onOpenChange }: Props) {
     setStep("tabs");
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("google-sheets-list", {
-        body: { spreadsheet_id: s.id },
+      const { data, error } = await supabase.functions.invoke("google-read-sheet-preview", {
+        body: { spreadsheetId: s.id },
       });
-      // Try to read body even on non-2xx (e.g. 400 unsupported mime)
-      let payload: any = data;
-      if (error && (error as any)?.context?.body) {
+      if (error) {
+        let detail = error.message ?? "Erro ao carregar abas";
+        let requestId: string | undefined;
         try {
-          const text = await (error as any).context.text();
-          payload = JSON.parse(text);
-        } catch {
-          // ignore
-        }
+          const text = await (error as any)?.context?.text?.();
+          if (text) {
+            const parsed = JSON.parse(text);
+            detail = parsed?.message ?? detail;
+            requestId = parsed?.request_id;
+          }
+        } catch { /* ignore */ }
+        throw new Error(requestId ? `${detail} (req ${requestId})` : detail);
       }
-      if (payload?.unsupported_mime) {
-        toast({
-          title: "Arquivo não suportado",
-          description: payload.error ?? "Este arquivo não é uma planilha Google Sheets nativa. Para arquivos Excel, use o upload de Excel.",
-          variant: "destructive",
-        });
-        setStep("list");
-        setSelected(null);
-        return;
-      }
-      if (error) throw error;
-      setTabs(payload?.sheets ?? []);
-      const first = payload?.sheets?.[0]?.title;
+      const provider = data?.spreadsheet?.provider as "google_sheets" | "drive_xlsx" | undefined;
+      setSelected({ ...s, provider, mimeType: data?.spreadsheet?.mimeType, name: data?.spreadsheet?.name ?? s.name });
+      setTabs(data?.sheets ?? []);
+      const first = data?.sheets?.[0]?.title;
       if (first) setPickedTabs(new Set([first]));
+      if (provider === "drive_xlsx") {
+        toast({ title: "Excel no Drive detectado", description: `${data?.sheets?.length ?? 0} aba(s) carregada(s).` });
+      }
     } catch (err: any) {
-      toast({ title: "Erro", description: err?.message ?? "Erro ao carregar abas", variant: "destructive" });
+      toast({ title: "Erro ao carregar abas", description: err?.message ?? "Falha desconhecida", variant: "destructive" });
       setStep("list");
+      setSelected(null);
     } finally {
       setLoading(false);
     }
@@ -158,8 +158,9 @@ export function MeetingSheetsPickerModal({ open, onOpenChange }: Props) {
         spreadsheet_id: selected.id,
         spreadsheet_name: selected.name,
         selected_tabs: Array.from(pickedTabs),
+        provider: selected.provider ?? "google_sheets",
       });
-      toast({ title: "Planilha vinculada", description: `${selected.name} pronta para reuniões.` });
+      toast({ title: "Fonte vinculada", description: `${selected.name} pronta para reuniões.` });
       onOpenChange(false);
     } catch (err: any) {
       toast({ title: "Erro", description: err?.message ?? "Não foi possível vincular", variant: "destructive" });
