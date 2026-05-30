@@ -85,15 +85,15 @@ test("fluxo recorrente de relatorios e reunioes", async ({ page }) => {
 
   await page.getByRole("button", { name: /Gerar relatorio pre-reuniao/i }).click();
   await expect(page.getByText(/Mai2026 analisada/i).first()).toBeVisible();
-  await expect(page.getByText("DRE offline pronta", { exact: true })).toBeVisible();
-  await expect(page.getByText(/dre-offline-2026-05\.xlsx/i).first()).toBeVisible();
+  await expect(page.getByText("XLSX atualizado pronto", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Financeiro GR - 2026 1-atualizado-2026-05\.xlsx/i).first()).toBeVisible();
 
   await page.getByRole("button", { name: /^Iniciar reuniao/i }).nth(1).click();
   await expect(page.getByText(/Status: recording/i)).toBeVisible();
   await expect(page.getByText(/validar RPAs/i)).toBeVisible();
 
   await page.getByPlaceholder(/Cole complemento/i).fill(
-    "Cliente pediu DRE offline ate sexta. Ana responsavel por conferir Simples Nacional em 10/06.",
+    "Cliente pediu XLSX atualizado ate sexta. Ana responsavel por conferir Simples Nacional em 10/06.",
   );
   await page.getByRole("button", { name: /Finalizar reuniao/i }).click();
 
