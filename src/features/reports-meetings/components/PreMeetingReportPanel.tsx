@@ -1,9 +1,9 @@
-import { Download, FileSpreadsheet } from "lucide-react";
+import type { ReactNode } from "react";
+import { AlertTriangle, CalendarDays, Download, FileSpreadsheet, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReportsMeetingsPackage } from "../lib/financialWorkbook";
-
-const money = (value: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+import { GlassPanel, MetricCard, StatusBadge } from "./reportsMeetingUi";
+import { humanizeMonth, money, percent } from "./reportsMeetingFormat";
 
 export function PreMeetingReportPanel({
   reportPackage,
@@ -16,151 +16,159 @@ export function PreMeetingReportPanel({
   error?: string | null;
   onDownloadWorkbook?: () => void;
 }) {
+  const status = reportPackage
+    ? reportPackage.mode === "live"
+      ? { label: "Gerado", tone: "success" as const }
+      : { label: "Fallback seguro", tone: "warning" as const }
+    : { label: "Pendente", tone: "neutral" as const };
+
   return (
-    <div id="pre-meeting-report" className="liquid-glass rounded-2xl p-4 md:p-5">
+    <GlassPanel id="pre-meeting-report" className="space-y-4 sm:space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold">Relatorio pre-reuniao</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Resumo executivo, KPIs, comparativo mensal por categoria e XLSX atualizado.
+          <h3 className="text-lg font-bold tracking-tight text-slate-950">Relatório pré-reunião</h3>
+          <p className="mt-1 text-sm leading-relaxed text-slate-600">
+            Resumo executivo com KPIs, riscos e pauta para conduzir a reunião com contexto financeiro confiável.
           </p>
         </div>
-        {reportPackage && (
-          <span className="rounded-md bg-white/70 px-2 py-1 text-[11px] font-medium text-muted-foreground">
-            {reportPackage.mode === "live" ? "fonte real" : "fallback seguro"}
-          </span>
-        )}
+        <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
       </div>
 
-      {isLoading && <p className="mt-4 text-sm text-muted-foreground">Gerando analise financeira...</p>}
-      {error && <p className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+      {isLoading && <p className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3 text-sm text-blue-800">Gerando análise financeira...</p>}
+      {error && <p className="rounded-2xl border border-rose-200 bg-rose-50/80 p-3 text-sm text-rose-800">{error}</p>}
 
       {!isLoading && !reportPackage && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Gere o relatorio para detectar a aba do mes atual, editar a DRE no XLSX e preparar a pauta.
+        <p className="rounded-2xl border border-dashed border-slate-200 bg-white/45 p-4 text-sm leading-relaxed text-slate-600">
+          Gere o relatório para detectar o mês atual, preparar a DRE offline e sugerir uma pauta objetiva para a conversa.
         </p>
       )}
 
       {reportPackage && (
-        <div className="mt-4 space-y-4">
-          <p className="text-sm leading-relaxed">{reportPackage.report.executive_summary}</p>
-
-          <div className="grid gap-2 sm:grid-cols-2">
-            {[
-              ["Receitas", reportPackage.analysis.revenue],
-              ["Despesas", reportPackage.analysis.expenses],
-              ["Resultado", reportPackage.analysis.result],
-              ["Lancamentos", reportPackage.analysis.transactions.length],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-xl border border-white/50 bg-white/60 p-3">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-                <p className="mt-1 text-sm font-semibold tabular-nums">
-                  {typeof value === "number" && label !== "Lancamentos" ? money(value) : value}
-                </p>
-              </div>
-            ))}
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/70 bg-white/55 p-4 shadow-inner">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+              <CalendarDays className="h-3.5 w-3.5" /> Mês analisado: {humanizeMonth(reportPackage.analysis.latestMonthLabel)}
+            </div>
+            <p className="max-w-3xl text-sm leading-7 text-slate-700">{reportPackage.report.executive_summary}</p>
           </div>
 
-          <CategoryComparisonSection reportPackage={reportPackage} />
-
-          <Section title="Riscos" items={reportPackage.report.risks} />
-          <Section title="Pauta sugerida" items={reportPackage.report.suggested_agenda} />
-
-          <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3 text-sm">
-            <div className="flex items-center gap-2 font-medium text-emerald-800">
-              <FileSpreadsheet className="h-4 w-4" />
-              XLSX atualizado pronto
-            </div>
-            <p className="mt-1 text-emerald-800/80">
-              {reportPackage.dreUpdate.fileName} atualiza a aba {reportPackage.dreUpdate.dreSheetName}, coluna{" "}
-              {reportPackage.dreUpdate.currentMonthKey}, com {reportPackage.dreUpdate.cellUpdates.length} linhas mapeadas.
-            </p>
-            <Button size="sm" variant="outline" className="mt-3 bg-white/70" onClick={onDownloadWorkbook}>
-              <Download className="h-3.5 w-3.5 mr-1.5" />
-              Baixar XLSX atualizado
-            </Button>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+            <MetricCard className="min-h-[122px]" label="Receitas" value={money(reportPackage.analysis.revenue)} tone="success" detail="Entradas do período" />
+            <MetricCard className="min-h-[122px]" label="Despesas" value={money(reportPackage.analysis.expenses)} tone="warning" detail="Saídas normalizadas" />
+            <MetricCard className="min-h-[122px]" label="Resultado" value={money(reportPackage.analysis.result)} tone={reportPackage.analysis.result >= 0 ? "success" : "danger"} detail={reportPackage.analysis.result >= 0 ? "Positivo" : "Negativo"} />
+            <MetricCard className="min-h-[122px]" label="Lançamentos" value={reportPackage.analysis.transactions.length} tone="info" detail="Registros analisados" />
+            <MetricCard className="min-h-[122px]" label="Margem" value={percent(reportPackage.analysis.margin)} tone="neutral" detail="Resultado / receita" />
           </div>
 
-          <details className="rounded-xl border border-white/50 bg-white/40 p-3 text-xs text-muted-foreground">
-            <summary className="cursor-pointer font-medium text-foreground">Logs de auditoria</summary>
-            <div className="mt-2 space-y-1">
-              {reportPackage.auditLog.map((log, index) => (
-                <p key={`${log}-${index}`}>{log}</p>
-              ))}
-            </div>
-          </details>
+          <ReportSectionCard title="Riscos" items={reportPackage.report.risks} icon={<AlertTriangle className="h-4 w-4" />} tone="warning" />
+          <ReportSectionCard title="Pauta sugerida" items={reportPackage.report.suggested_agenda} icon={<Sparkles className="h-4 w-4" />} tone="info" />
+          <DreOfflineCard reportPackage={reportPackage} onDownloadWorkbook={onDownloadWorkbook} />
+          <AuditTimeline logs={reportPackage.auditLog} />
+        </div>
+      )}
+    </GlassPanel>
+  );
+}
+
+function DreOfflineCard({ reportPackage, onDownloadWorkbook }: { reportPackage: ReportsMeetingsPackage; onDownloadWorkbook?: () => void }) {
+  const mappingStatus = reportPackage.dreUpdate.warnings.length
+    ? reportPackage.dreUpdate.cellUpdates.length
+      ? "Mapeamento parcial"
+      : "Template mínimo aplicado"
+    : "Template real detectado";
+  return (
+    <div className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/90 via-white/74 to-emerald-50/62 p-4 shadow-[0_16px_40px_-28px_rgba(16,185,129,0.65)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 font-semibold text-emerald-900">
+            <FileSpreadsheet className="h-4 w-4" /> DRE offline pronta
+          </div>
+          <p className="mt-1 text-sm text-emerald-900/75">Arquivo gerado sem alterar a planilha conectada.</p>
+        </div>
+        <Button size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={onDownloadWorkbook}>
+          <Download className="mr-1.5 h-3.5 w-3.5" /> Baixar DRE
+        </Button>
+      </div>
+      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-3">
+        <Info label="Arquivo" value={reportPackage.dreUpdate.fileName} />
+        <Info label="Período analisado" value={humanizeMonth(reportPackage.dreUpdate.currentMonthLabel)} />
+        <Info label="Status do mapeamento" value={mappingStatus} />
+      </div>
+      {reportPackage.dreUpdate.warnings.length > 0 && (
+        <div className="mt-3 space-y-1 rounded-xl border border-amber-200/80 bg-amber-50/75 p-3 text-xs text-amber-800">
+          {reportPackage.dreUpdate.warnings.map((warning, index) => (
+            <p key={`${warning}-${index}`}>{warning}</p>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function CategoryComparisonSection({ reportPackage }: { reportPackage: ReportsMeetingsPackage }) {
-  const items = reportPackage.analysis.categoryComparison.slice(0, 6);
-  if (!items.length) return null;
-
+function AuditTimeline({ logs }: { logs: string[] }) {
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comparativo por categoria</p>
-        <span className="text-[11px] text-muted-foreground">
-          {reportPackage.analysis.previousSheetName ?? "mes anterior nao localizado"}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {items.map((item) => (
-          <div key={item.category} className="rounded-xl border border-white/50 bg-white/50 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium">{item.category}</p>
-              <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${statusClass(item.status)}`}>
-                {statusLabel(item.status)}
-              </span>
+    <details className="group rounded-2xl border border-white/70 bg-white/45 p-3 text-sm text-slate-600 open:bg-white/62">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-semibold text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+        <span>Logs de auditoria</span>
+        <StatusBadge tone="neutral">{logs.length} eventos</StatusBadge>
+      </summary>
+      <div className="mt-4 space-y-3 border-l border-slate-200 pl-4">
+        {logs.map((log, index) => (
+          <div key={`${log}-${index}`} className="relative">
+            <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone={auditTone(log)}>{auditLabel(log)}</StatusBadge>
+              <span className="text-[11px] font-medium text-slate-400">Evento {index + 1}</span>
             </div>
-            <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-              <span>Atual: {money(item.currentValue)}</span>
-              <span>Anterior: {money(item.previousValue)}</span>
-              <span>Variacao: {money(item.deltaValue)}</span>
-            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">{log}</p>
           </div>
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 
-function statusLabel(status: ReportsMeetingsPackage["analysis"]["categoryComparison"][number]["status"]) {
-  const labels = {
-    up: "Aumentou",
-    down: "Caiu",
-    stable: "Estavel",
-    new: "Nova",
-    missing: "Ausente",
-  };
-  return labels[status];
-}
-
-function statusClass(status: ReportsMeetingsPackage["analysis"]["categoryComparison"][number]["status"]) {
-  const classes = {
-    up: "bg-amber-100 text-amber-900",
-    down: "bg-sky-100 text-sky-900",
-    stable: "bg-slate-100 text-slate-700",
-    new: "bg-emerald-100 text-emerald-900",
-    missing: "bg-zinc-100 text-zinc-700",
-  };
-  return classes[status];
-}
-
-function Section({ title, items }: { title: string; items: string[] }) {
+function ReportSectionCard({ title, items, icon, tone }: { title: string; items: string[]; icon: ReactNode; tone: "warning" | "info" }) {
   return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</p>
-      <div className="space-y-1.5">
+    <div className="rounded-2xl border border-white/70 bg-white/52 p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+        <span className={tone === "warning" ? "text-amber-600" : "text-blue-600"}>{icon}</span>
+        {title}
+      </div>
+      <div className="space-y-2">
         {items.map((item, index) => (
-          <p key={`${title}-${index}`} className="rounded-lg bg-white/50 px-3 py-2 text-sm">
+          <p key={`${title}-${index}`} className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 text-sm leading-relaxed text-slate-700 shadow-sm">
             {item}
           </p>
         ))}
       </div>
     </div>
   );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-white/75 bg-white/58 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700/70">{label}</p>
+      <p className="mt-1 truncate text-xs font-semibold text-slate-800" title={value}>{value}</p>
+    </div>
+  );
+}
+
+function auditLabel(log: string) {
+  const normalized = log.toLowerCase();
+  if (normalized.includes("dre") || normalized.includes("xlsx")) return "DRE";
+  if (normalized.includes("compar")) return "Comparação";
+  if (normalized.includes("fallback")) return "Fallback";
+  if (normalized.includes("erro")) return "Erro";
+  return "Leitura";
+}
+
+function auditTone(log: string) {
+  const label = auditLabel(log);
+  if (label === "Erro") return "danger" as const;
+  if (label === "Fallback") return "warning" as const;
+  if (label === "DRE") return "success" as const;
+  if (label === "Comparação") return "info" as const;
+  return "neutral" as const;
 }

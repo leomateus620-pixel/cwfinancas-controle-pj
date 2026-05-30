@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { GlassCard } from "@/components/home/GlassCard";
+import { Activity, BarChart3, CheckCircle2, Clock } from "lucide-react";
+import { CategoryComparisonCard } from "@/features/reports-meetings/components/CategoryComparisonCard";
 import { FinalComparisonPanel } from "@/features/reports-meetings/components/FinalComparisonPanel";
 import { MeetingRecorderPanel } from "@/features/reports-meetings/components/MeetingRecorderPanel";
 import { MeetingTranscriptPanel } from "@/features/reports-meetings/components/MeetingTranscriptPanel";
@@ -9,6 +10,7 @@ import { MeetingsHistoryPanel } from "@/features/reports-meetings/components/Mee
 import { ReportsMeetingsHero } from "@/features/reports-meetings/components/ReportsMeetingsHero";
 import { SmartTopicIsland } from "@/features/reports-meetings/components/SmartTopicIsland";
 import { MeetingSourcePickerCard } from "@/features/reports-meetings/components/MeetingSourcePickerCard";
+import { MetricCard } from "@/features/reports-meetings/components/reportsMeetingUi";
 import { useMeetingRecorder } from "@/features/reports-meetings/hooks/useMeetingRecorder";
 import { useMeetingSources } from "@/features/reports-meetings/hooks/useMeetingSources";
 import { useReportGeneration } from "@/features/reports-meetings/hooks/useReportGeneration";
@@ -43,12 +45,12 @@ export default function ReportsMeetingsPage() {
       const result = await reportGeneration.mutateAsync({ sources });
       setReportPackage(result);
       toast({
-        title: "Relatorio gerado",
+        title: "Relatório gerado",
         description: `${result.analysis.latestSheetName} analisada e XLSX atualizado pronto.`,
       });
     } catch (error) {
       toast({
-        title: "Erro ao gerar relatorio",
+        title: "Erro ao gerar relatório",
         description: error instanceof Error ? error.message : "Falha desconhecida",
         variant: "destructive",
       });
@@ -56,29 +58,22 @@ export default function ReportsMeetingsPage() {
   }
 
   return (
-    <div className="space-y-4 p-1">
+    <div className="home-glass-bg -m-5 min-h-[calc(100vh-64px)] space-y-4 p-4 sm:space-y-5 sm:p-5 md:-m-6 md:p-6">
       <ReportsMeetingsHero
         onGenerate={() => void generatePreMeetingReport()}
         onStartMeeting={recorder.start}
         isGenerating={reportGeneration.isPending}
       />
 
-      <div className="grid gap-3 md:grid-cols-4">
-        {[
-          ["Relatorios gerados", reportPackage ? "1 pronto" : "aguardando"],
-          ["Reunioes gravadas", recorder.topicSummary ? "1 finalizada" : "em aberto"],
-          ["Acoes pendentes", recorder.topicSummary?.actions.length ?? 0],
-          ["Ultima comparacao", comparison ? `${comparison.alignmentScore}%` : "pendente"],
-        ].map(([label, value]) => (
-          <GlassCard key={String(label)} variant="compact" className="p-3">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-            <p className="mt-1 text-sm font-semibold">{value}</p>
-          </GlassCard>
-        ))}
+      <div className="mx-auto grid max-w-[1540px] gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard className="min-h-[124px]" label="Relatórios gerados" value={reportPackage ? "1 pronto" : "Aguardando"} detail="Pré-reunião" tone={reportPackage ? "success" : "neutral"} icon={<BarChart3 className="h-4 w-4" />} />
+        <MetricCard className="min-h-[124px]" label="Reuniões gravadas" value={recorder.topicSummary ? "1 finalizada" : "Em aberto"} detail="Modo acompanhamento" tone={recorder.topicSummary ? "success" : "info"} icon={<Activity className="h-4 w-4" />} />
+        <MetricCard className="min-h-[124px]" label="Ações pendentes" value={recorder.topicSummary?.actions.length ?? 0} detail="Após a reunião" tone="warning" icon={<CheckCircle2 className="h-4 w-4" />} />
+        <MetricCard className="min-h-[124px]" label="Última comparação" value={comparison ? `${comparison.alignmentScore}%` : "Pendente"} detail="Relatório x reunião" tone={comparison ? "success" : "neutral"} icon={<Clock className="h-4 w-4" />} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.3fr]">
-        <div className="space-y-4">
+      <div className="mx-auto grid max-w-[1540px] gap-4 sm:gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+        <div className="space-y-5">
           <MeetingSourcePickerCard />
           <PreMeetingReportPanel
             reportPackage={reportPackage}
@@ -107,7 +102,8 @@ export default function ReportsMeetingsPage() {
           <ReportPdfPreview />
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
+          <CategoryComparisonCard reportPackage={reportPackage} />
           <MeetingTranscriptPanel
             lines={recorder.transcriptLines}
             interimTranscript={recorder.interimTranscript}
@@ -116,21 +112,20 @@ export default function ReportsMeetingsPage() {
             onManualTranscriptChange={recorder.setManualTranscript}
             recognitionUnstable={recorder.recognitionUnstable}
           />
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2">
             <SmartTopicIsland
               title="Ponto falado"
-              summary="Os cards crescem com a conversa, com limite e rolagem continua."
+              summary="Os principais assuntos capturados aparecem no resumo pós-reunião para validação executiva."
             />
             <SmartTopicIsland
-              title="Divergencia"
-              summary="Numeros nao confirmados ficam sinalizados para revisao ao final."
+              title="Próximas ações"
+              summary="As ações detectadas serão consolidadas com responsáveis, prazos e prioridades."
             />
           </div>
           <FinalComparisonPanel topicSummary={recorder.topicSummary} comparison={comparison} />
+          <MeetingsHistoryPanel />
         </div>
       </div>
-
-      <MeetingsHistoryPanel />
     </div>
   );
 }

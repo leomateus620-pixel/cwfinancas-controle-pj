@@ -78,27 +78,27 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("fluxo recorrente de relatorios e reunioes", async ({ page }) => {
+test("fluxo recorrente de relatórios e reuniões", async ({ page }) => {
   await page.goto("/relatorios-reunioes-e2e");
 
-  await expect(page.getByRole("heading", { name: /Relatorios e reunioes/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Relatórios e reuniões/i })).toBeVisible();
 
-  await page.getByRole("button", { name: /Gerar relatorio pre-reuniao/i }).click();
+  await page.getByRole("button", { name: /Gerar relatório pré-reunião/i }).click();
   await expect(page.getByText(/Mai2026 analisada/i).first()).toBeVisible();
-  await expect(page.getByText("XLSX atualizado pronto", { exact: true })).toBeVisible();
+  await expect(page.getByText("DRE offline pronta", { exact: true })).toBeVisible();
   await expect(page.getByText(/Financeiro GR - 2026 1-atualizado-2026-05\.xlsx/i).first()).toBeVisible();
 
-  await page.getByRole("button", { name: /^Iniciar reuniao/i }).nth(1).click();
-  await expect(page.getByText(/Status: recording/i)).toBeVisible();
+  await page.getByRole("button", { name: /^Iniciar reunião/i }).nth(1).click();
+  await expect(page.getByText(/Status: Gravando/i)).toBeVisible();
   await expect(page.getByText(/validar RPAs/i)).toBeVisible();
 
   await page.getByPlaceholder(/Cole complemento/i).fill(
     "Cliente pediu XLSX atualizado ate sexta. Ana responsavel por conferir Simples Nacional em 10/06.",
   );
-  await page.getByRole("button", { name: /Finalizar reuniao/i }).click();
+  await page.getByRole("button", { name: /Finalizar reunião/i }).click();
 
-  await expect(page.getByText(/Resumo inteligente pos-reuniao/i)).toBeVisible();
-  await expect(page.getByText(/Comparacao relatorio x reuniao/i)).toBeVisible();
-  await expect(page.getByText("Solicitacoes", { exact: true })).toBeVisible();
-  await expect(page.getByText("Conferencias", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Resumo inteligente pós-reunião/i)).toBeVisible();
+  await expect(page.getByText(/Comparação relatório x reunião/i)).toBeVisible();
+  await expect(page.getByText("Solicitações do cliente", { exact: true })).toBeVisible();
+  await expect(page.getByText("Pontos de atenção", { exact: true })).toBeVisible();
 });
