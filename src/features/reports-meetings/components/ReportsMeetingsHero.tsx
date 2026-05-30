@@ -11,21 +11,28 @@ export function ReportsMeetingsHero({
   isGenerating?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border bg-white/70 p-6 shadow-sm backdrop-blur">
-      <h1 className="text-2xl font-semibold">Relatorios e reunioes</h1>
-      <p className="text-sm text-muted-foreground mt-1">
-        Prepare reunioes com dados reais, registre decisoes e transforme conversas em acoes recorrentes.
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button onClick={onGenerate} disabled={isGenerating}>
-          {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-          Gerar relatorio pre-reuniao
-        </Button>
-        <Button variant="outline" onClick={onStartMeeting}>
-          <Mic className="h-4 w-4 mr-2" />
-          Iniciar reuniao
-        </Button>
+    <section className="relative overflow-hidden mx-auto max-w-[1540px] rounded-[1.5rem] border border-white/75 bg-gradient-to-br from-white/88 via-blue-50/52 to-emerald-50/48 p-5 shadow-[0_24px_80px_-48px_rgba(15,23,42,0.55),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-2xl md:p-7">
+      <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-blue-400/12 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-24 -left-20 h-56 w-56 rounded-full bg-emerald-400/14 blur-3xl" />
+      <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-2xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/75">Central executiva</p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Relatórios e reuniões</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600 md:text-base">
+            Prepare reuniões com dados reais, registre decisões e transforme conversas financeiras em ações recorrentes.
+          </p>
+        </div>
+        <div className="flex w-full flex-col gap-2.5 sm:w-auto sm:flex-row sm:items-center">
+          <Button onClick={onGenerate} disabled={isGenerating} className="h-11 rounded-xl shadow-[0_12px_30px_-16px_rgba(37,99,235,0.75)] transition-all hover:-translate-y-0.5 active:scale-[0.98]">
+            {isGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            Gerar relatório pré-reunião
+          </Button>
+          <Button variant="outline" onClick={onStartMeeting} className="h-11 rounded-xl border-white/70 bg-white/68 backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white/85 active:scale-[0.98]">
+            <Mic className="mr-2 h-4 w-4" />
+            Iniciar reunião
+          </Button>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

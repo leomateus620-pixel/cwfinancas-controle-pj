@@ -21,7 +21,7 @@ export function MeetingSourcePickerCard() {
         <div className="min-w-0">
           <h3 className="text-base font-semibold">Fontes da reunião</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Conexão dedicada — isolada do módulo financeiro.
+            Conexão dedicada ao contexto financeiro da reunião.
           </p>
         </div>
         <Button
@@ -52,8 +52,12 @@ export function MeetingSourcePickerCard() {
                   try {
                     await disconnectSource.mutateAsync(src.id);
                     toast({ title: "Fonte removida" });
-                  } catch (err: any) {
-                    toast({ title: "Erro", description: err?.message, variant: "destructive" });
+                  } catch (err) {
+                    toast({
+                      title: "Erro",
+                      description: err instanceof Error ? err.message : "Falha ao remover a fonte.",
+                      variant: "destructive",
+                    });
                   }
                 }}
               />
@@ -113,6 +117,7 @@ function SourceCard3D({ source, onRemove }: { source: MeetingSource; onRemove: (
           <p className="text-sm font-semibold leading-tight line-clamp-1 text-slate-800">
             {source.spreadsheet_name}
           </p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">{isExcel ? "Excel no Drive" : "Google Sheets"} • mês detectado: {detectMonth(source.selected_tabs)}</p>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             <span
               className={cn(
@@ -138,11 +143,16 @@ function SourceCard3D({ source, onRemove }: { source: MeetingSource; onRemove: (
         <button
           onClick={onRemove}
           className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-          aria-label="Remover"
+          aria-label="Remover fonte vinculada"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>
   );
+}
+
+function detectMonth(tabs: string[]) {
+  const candidate = tabs.find((tab) => /(20\d{2}|jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)/i.test(tab));
+  return candidate?.replace(/([A-Za-zÀ-ÿ]+)(20\d{2})/, "$1/$2") ?? "não informado";
 }
