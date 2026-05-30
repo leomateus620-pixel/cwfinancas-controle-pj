@@ -9,7 +9,7 @@ describe("meeting comparison", () => {
     const pkg = buildPreMeetingReportFromWorkbook(financeGr2026WorkbookFixture);
     const transcript = [
       "Ficou decidido revisar receitas de maio e validar as despesas de RPAs.",
-      "Cliente pediu DRE offline e prazo ate sexta.",
+      "Cliente pediu XLSX atualizado e prazo ate sexta.",
       "A receita mencionada foi 20747 e o resultado precisa ser conferido manualmente.",
     ].join(" ");
     const summary = buildTopicSummary(transcript);

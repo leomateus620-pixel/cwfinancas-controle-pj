@@ -14,7 +14,7 @@ import { useMeetingSources } from "@/features/reports-meetings/hooks/useMeetingS
 import { useReportGeneration } from "@/features/reports-meetings/hooks/useReportGeneration";
 import { buildFinalTranscript } from "@/features/reports-meetings/lib/meetingRecorderUtils";
 import { buildConsolidatedMeetingReport } from "@/features/reports-meetings/lib/meetingComparison";
-import { downloadOfflineDre } from "@/features/reports-meetings/lib/offlineDreExport";
+import { downloadUpdatedWorkbook } from "@/features/reports-meetings/lib/updatedWorkbookExport";
 import type { ReportsMeetingsPackage } from "@/features/reports-meetings/lib/financialWorkbook";
 import { toast } from "@/hooks/use-toast";
 
@@ -44,7 +44,7 @@ export default function ReportsMeetingsPage() {
       setReportPackage(result);
       toast({
         title: "Relatorio gerado",
-        description: `${result.analysis.latestSheetName} analisada e DRE offline pronta.`,
+        description: `${result.analysis.latestSheetName} analisada e XLSX atualizado pronto.`,
       });
     } catch (error) {
       toast({
@@ -84,7 +84,7 @@ export default function ReportsMeetingsPage() {
             reportPackage={reportPackage}
             isLoading={reportGeneration.isPending}
             error={reportGeneration.error?.message}
-            onDownloadDre={reportPackage ? () => downloadOfflineDre(reportPackage.offlineDre) : undefined}
+            onDownloadWorkbook={reportPackage ? () => downloadUpdatedWorkbook(reportPackage) : undefined}
           />
           <MeetingRecorderPanel
             status={recorder.status}
