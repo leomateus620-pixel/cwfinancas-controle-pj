@@ -5,15 +5,18 @@ import { buildConsolidatedMeetingReport } from "../meetingComparison";
 import { buildFinalTranscript, buildTopicSummary, cleanTranscriptSegments, detectMeetingInstability } from "../meetingRecorderUtils";
 
 describe("reports meetings recurring flow e2e", () => {
-  it("Google Sheets fixture -> pre-report -> DRE offline -> transcript -> summary -> final comparison", () => {
-    const pkg = buildPreMeetingReportFromWorkbook(financeGr2026WorkbookFixture);
+  it("Google Sheets fixture -> pre-report -> XLSX update -> transcript -> summary -> final comparison", () => {
+    const pkg = buildPreMeetingReportFromWorkbook(financeGr2026WorkbookFixture, {
+      currentDate: new Date("2026-05-30T12:00:00-03:00"),
+    });
     expect(pkg.analysis.latestSheetName).toBe("Mai2026");
-    expect(pkg.offlineDre.fileName).toBe("dre-offline-2026-05.xlsx");
+    expect(pkg.dreUpdate.fileName).toBe("Financeiro GR - 2026 1-atualizado-2026-05.xlsx");
+    expect(pkg.dreUpdate.mode).toBe("source_xlsx_edit");
 
     const messyTranscript = cleanTranscriptSegments([
       "Ana: vamos revisar receita de maio e confirmar despesas",
       "vamos revisar receita de maio e confirmar despesas",
-      "Cliente: pediu DRE offline ate sexta",
+      "Cliente: pediu XLSX atualizado ate sexta",
       "Joao: ficou decidido revisar RPAs e validar Simples Nacional em 10/06",
       "falha temporaria no audio audio",
     ]);
@@ -26,7 +29,7 @@ describe("reports meetings recurring flow e2e", () => {
       transcriptText: finalTranscript,
     });
 
-    expect(topicSummary.clientRequests.join(" ")).toContain("DRE offline");
+    expect(topicSummary.clientRequests.join(" ")).toContain("XLSX atualizado");
     expect(topicSummary.validationItems.length).toBeGreaterThan(0);
     expect(topicSummary.operationalStatus).toBe("attention");
     expect(comparison.financialSummary).toContain("resultado");

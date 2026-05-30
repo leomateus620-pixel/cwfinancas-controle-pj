@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { financeGr2026WorkbookFixture } from "../../test-fixtures/financeGr2026Fixture";
 import {
   buildPreMeetingReportFromWorkbook,
+  buildWorkbookDreUpdate,
   detectLatestMonthlySheet,
-  fillOfflineDreTemplate,
   normalizeFinancialDataFromWorkbook,
   parseCurrencyValue,
   parseMonthLabel,
@@ -28,21 +28,28 @@ describe("financial workbook analysis", () => {
     expect(analysis.revenue).toBeGreaterThan(20000);
     expect(analysis.expenses).toBeGreaterThan(20000);
     expect(analysis.topExpenseCategories[0].category).toContain("Distribuicao");
-    expect(analysis.auditLog.join(" ")).toContain("Aba mais recente");
+    expect(analysis.auditLog.join(" ")).toContain("Aba do mes atual");
   });
 
-  it("preenche uma DRE offline sem alterar a fonte", () => {
-    const analysis = normalizeFinancialDataFromWorkbook(financeGr2026WorkbookFixture);
-    const dre = fillOfflineDreTemplate(analysis);
-    expect(dre.fileName).toContain("2026-05");
-    expect(dre.rows.flat()).toContain("Receita bruta");
-    expect(dre.mappingLog.join(" ")).toContain("Template minimo");
+  it("edita a aba DRE do workbook para o mes atual", () => {
+    const analysis = normalizeFinancialDataFromWorkbook(financeGr2026WorkbookFixture, {
+      currentDate: new Date("2026-05-30T12:00:00-03:00"),
+    });
+    const dre = buildWorkbookDreUpdate(financeGr2026WorkbookFixture, analysis);
+    expect(dre.fileName).toBe("Financeiro GR - 2026 1-atualizado-2026-05.xlsx");
+    expect(dre.dreSheetName).toBe("DRE-Caixa");
+    expect(dre.currentMonthColumnIndex).toBe(5);
+    expect(dre.cellUpdates.some((cell) => cell.label.trim() === "FATURAMENTO")).toBe(true);
+    expect(dre.mappingLog.join(" ")).toContain("FATURAMENTO");
   });
 
   it("monta pacote de pre-reuniao com KPIs, riscos e DRE", () => {
-    const pkg = buildPreMeetingReportFromWorkbook(financeGr2026WorkbookFixture);
+    const pkg = buildPreMeetingReportFromWorkbook(financeGr2026WorkbookFixture, {
+      currentDate: new Date("2026-05-30T12:00:00-03:00"),
+    });
     expect(pkg.report.executive_summary).toContain("Mai2026");
     expect(pkg.report.suggested_agenda.length).toBeGreaterThan(3);
-    expect(pkg.offlineDre.rows.length).toBeGreaterThan(5);
+    expect(pkg.dreUpdate.rows.length).toBeGreaterThan(5);
+    expect(pkg.analysis.categoryComparison.length).toBeGreaterThan(0);
   });
 });

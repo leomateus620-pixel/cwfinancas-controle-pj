@@ -9,12 +9,12 @@ export function PreMeetingReportPanel({
   reportPackage,
   isLoading,
   error,
-  onDownloadDre,
+  onDownloadWorkbook,
 }: {
   reportPackage: ReportsMeetingsPackage | null;
   isLoading?: boolean;
   error?: string | null;
-  onDownloadDre?: () => void;
+  onDownloadWorkbook?: () => void;
 }) {
   return (
     <div id="pre-meeting-report" className="liquid-glass rounded-2xl p-4 md:p-5">
@@ -22,7 +22,7 @@ export function PreMeetingReportPanel({
         <div>
           <h3 className="text-base font-semibold">Relatorio pre-reuniao</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Resumo executivo, KPIs, riscos, oportunidades, pauta sugerida e DRE offline exportavel.
+            Resumo executivo, KPIs, comparativo mensal por categoria e XLSX atualizado.
           </p>
         </div>
         {reportPackage && (
@@ -37,7 +37,7 @@ export function PreMeetingReportPanel({
 
       {!isLoading && !reportPackage && (
         <p className="mt-4 text-sm text-muted-foreground">
-          Gere o relatorio para detectar a ultima aba mensal, preencher a DRE offline e preparar a pauta.
+          Gere o relatorio para detectar a aba do mes atual, editar a DRE no XLSX e preparar a pauta.
         </p>
       )}
 
@@ -61,20 +61,23 @@ export function PreMeetingReportPanel({
             ))}
           </div>
 
+          <CategoryComparisonSection reportPackage={reportPackage} />
+
           <Section title="Riscos" items={reportPackage.report.risks} />
           <Section title="Pauta sugerida" items={reportPackage.report.suggested_agenda} />
 
           <div className="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-3 text-sm">
             <div className="flex items-center gap-2 font-medium text-emerald-800">
               <FileSpreadsheet className="h-4 w-4" />
-              DRE offline pronta
+              XLSX atualizado pronto
             </div>
             <p className="mt-1 text-emerald-800/80">
-              {reportPackage.offlineDre.fileName} foi preenchido em memoria. A planilha conectada nao foi alterada.
+              {reportPackage.dreUpdate.fileName} atualiza a aba {reportPackage.dreUpdate.dreSheetName}, coluna{" "}
+              {reportPackage.dreUpdate.currentMonthKey}, com {reportPackage.dreUpdate.cellUpdates.length} linhas mapeadas.
             </p>
-            <Button size="sm" variant="outline" className="mt-3 bg-white/70" onClick={onDownloadDre}>
+            <Button size="sm" variant="outline" className="mt-3 bg-white/70" onClick={onDownloadWorkbook}>
               <Download className="h-3.5 w-3.5 mr-1.5" />
-              Baixar DRE
+              Baixar XLSX atualizado
             </Button>
           </div>
 
@@ -90,6 +93,61 @@ export function PreMeetingReportPanel({
       )}
     </div>
   );
+}
+
+function CategoryComparisonSection({ reportPackage }: { reportPackage: ReportsMeetingsPackage }) {
+  const items = reportPackage.analysis.categoryComparison.slice(0, 6);
+  if (!items.length) return null;
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Comparativo por categoria</p>
+        <span className="text-[11px] text-muted-foreground">
+          {reportPackage.analysis.previousSheetName ?? "mes anterior nao localizado"}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.category} className="rounded-xl border border-white/50 bg-white/50 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium">{item.category}</p>
+              <span className={`rounded-md px-2 py-1 text-[11px] font-medium ${statusClass(item.status)}`}>
+                {statusLabel(item.status)}
+              </span>
+            </div>
+            <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+              <span>Atual: {money(item.currentValue)}</span>
+              <span>Anterior: {money(item.previousValue)}</span>
+              <span>Variacao: {money(item.deltaValue)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function statusLabel(status: ReportsMeetingsPackage["analysis"]["categoryComparison"][number]["status"]) {
+  const labels = {
+    up: "Aumentou",
+    down: "Caiu",
+    stable: "Estavel",
+    new: "Nova",
+    missing: "Ausente",
+  };
+  return labels[status];
+}
+
+function statusClass(status: ReportsMeetingsPackage["analysis"]["categoryComparison"][number]["status"]) {
+  const classes = {
+    up: "bg-amber-100 text-amber-900",
+    down: "bg-sky-100 text-sky-900",
+    stable: "bg-slate-100 text-slate-700",
+    new: "bg-emerald-100 text-emerald-900",
+    missing: "bg-zinc-100 text-zinc-700",
+  };
+  return classes[status];
 }
 
 function Section({ title, items }: { title: string; items: string[] }) {
